@@ -134,6 +134,20 @@ public struct BaseCacheManager: Sendable {
         return try JSONDecoder.cybermac.decode(BaseCacheSnapshotMetadata.self, from: Data(contentsOf: url))
     }
 
+    public func currentSnapshotHash(for gameInstall: GameInstall) throws -> String {
+        let fingerprint = try fingerprint(gameInstall: gameInstall)
+        let metadata = try loadSnapshot(id: fingerprint.id)
+        let snapshotURL = snapshotDirectory(id: fingerprint.id).appendingPathComponent("final.redscripts")
+        guard FileManager.default.fileExists(atPath: snapshotURL.path) else {
+            throw CyberMacError.notFound("Base cache snapshot missing: \(snapshotURL.path)")
+        }
+        let actual = try fingerprintCache.sha256(url: snapshotURL)
+        guard actual == metadata.bundleCacheSHA256 else {
+            throw CyberMacError.fileSystem("Base cache snapshot hash mismatch for \(fingerprint.id)")
+        }
+        return metadata.bundleCacheSHA256
+    }
+
     public func copySnapshotToOverlay(snapshotID: String) throws -> URL {
         let sourceURL = snapshotDirectory(id: snapshotID).appendingPathComponent("final.redscripts")
         guard FileManager.default.fileExists(atPath: sourceURL.path) else {

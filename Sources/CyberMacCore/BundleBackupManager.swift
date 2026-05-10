@@ -3,10 +3,12 @@ import Foundation
 public struct BundleBackupManager: Sendable {
     private let home: CyberMacHomeManager
     private let baseCacheManager: BaseCacheManager
+    private let stateStore: StateStore
 
     public init(home: CyberMacHomeManager) {
         self.home = home
         self.baseCacheManager = BaseCacheManager(home: home)
+        self.stateStore = StateStore(home: home)
     }
 
     public func bundleTargetURL(gameInstall: GameInstall) -> URL {
@@ -104,7 +106,20 @@ public struct BundleBackupManager: Sendable {
             guard let expected = manifest.sha256,
                   FileManager.default.fileExists(atPath: targetURL.path)
             else { return false }
-            return try PathSafety.sha256(url: targetURL) == expected
+            let actual = try PathSafety.sha256(url: targetURL)
+            guard actual == expected else { return false }
+            if let gameInstall,
+               let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall),
+               actual == baseSnapshotHash {
+                var state = stateStore.load()
+                state.activationState = .requiresBundleActivation
+                state.bundleChangedSinceLastActivation = false
+                state.activeBundleTargetHashes = [:]
+                state.pendingExpectedHashes = [:]
+                state.pendingActivation = nil
+                try stateStore.save(state)
+            }
+            return true
         }
     }
 

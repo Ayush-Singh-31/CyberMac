@@ -251,6 +251,17 @@ struct CyberMacCLI {
         if let snapshot = status.snapshot {
             print("Base snapshot SHA-256: \(snapshot.bundleCacheSHA256)")
         }
+        let currentBundle: String
+        if status.snapshot?.bundleCacheSHA256 == status.bundleCacheSHA256 {
+            currentBundle = "vanilla"
+        } else if state.activeBundleTargetHashes[status.bundleCacheURL.path] == status.bundleCacheSHA256 {
+            currentBundle = "CyberMac active"
+        } else if state.pendingExpectedHashes[status.bundleCacheURL.path] == status.bundleCacheSHA256 {
+            currentBundle = "pending activation"
+        } else {
+            currentBundle = "unknown"
+        }
+        print("Current bundle: \(currentBundle)")
         print("Overlay mirror: \(status.mirrorExists ? "present" : "missing")")
         print("Activation state: \(state.activationState.rawValue)")
         print("Bundle changed since last activation: \(state.bundleChangedSinceLastActivation ? "yes" : "no")")

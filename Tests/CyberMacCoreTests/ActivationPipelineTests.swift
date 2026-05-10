@@ -95,6 +95,37 @@ final class ActivationPipelineTests: XCTestCase {
         XCTAssertTrue(try backupManager.verifyRestore(id: absent.id, gameInstall: game))
     }
 
+    func testRestoreVerifyClearsStateWhenBackupMatchesBaseSnapshot() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        let base = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        let backupManager = BundleBackupManager(home: home)
+        let backup = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+        let target = baseManager.bundleCacheURL(gameInstall: game)
+
+        try write("generated-cache", to: target)
+        try StateStore(home: home).save(CyberMacState(
+            activationState: .outOfSync,
+            bundleChangedSinceLastActivation: true,
+            pendingExpectedHashes: [target.path: try PathSafety.sha256(url: target)],
+            activeBundleTargetHashes: [target.path: try PathSafety.sha256(url: target)]
+        ))
+
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.copyItem(
+            at: backupManager.backupDirectory(id: backup.id).appendingPathComponent("final.redscripts"),
+            to: target
+        )
+
+        XCTAssertTrue(try backupManager.verifyRestore(id: backup.id, gameInstall: game))
+        let state = StateStore(home: home).load()
+        XCTAssertEqual(state.activationState, .requiresBundleActivation)
+        XCTAssertFalse(state.bundleChangedSinceLastActivation)
+        XCTAssertTrue(state.activeBundleTargetHashes.isEmpty)
+        XCTAssertTrue(state.pendingExpectedHashes.isEmpty)
+    }
+
+
     func testActivationDryRunBundleModeAndVerifyUseOnlyFinalRedscriptsBundleTarget() throws {
         let game = try makeGameApp(cacheContents: "vanilla-cache")
         try installFakeSCC()
@@ -133,14 +164,38 @@ final class ActivationPipelineTests: XCTestCase {
         XCTAssertEqual(state.activeBundleTargetHashes[BaseCacheManager(home: home).bundleCacheURL(gameInstall: game).path], activated.generatedSHA256)
     }
 
-    func testActivationDryRunRefusesWhenBundleChangedFlagIsSet() throws {
+    func testActivationDryRunClearsBundleChangedFlagWhenBundleMatchesBaseSnapshot() throws {
         let game = try makeGameApp(cacheContents: "vanilla-cache")
         try installFakeSCC()
         _ = try BaseCacheManager(home: home).refreshBaseCache(gameInstall: game, dryRun: false)
-        try StateStore(home: home).save(CyberMacState(bundleChangedSinceLastActivation: true))
+        try StateStore(home: home).save(CyberMacState(
+            activationState: .outOfSync,
+            bundleChangedSinceLastActivation: true,
+            activeBundleTargetHashes: [BaseCacheManager(home: home).bundleCacheURL(gameInstall: game).path: "old-generated-hash"]
+        ))
+
+        _ = try ActivationManager(home: home).dryRun(gameInstall: game)
+        let state = StateStore(home: home).load()
+        XCTAssertEqual(state.activationState, .requiresBundleActivation)
+        XCTAssertFalse(state.bundleChangedSinceLastActivation)
+        XCTAssertTrue(state.activeBundleTargetHashes.isEmpty)
+    }
+
+    func testActivationDryRunRefusesWhenBundleChangedFlagDoesNotMatchBaseOrActiveHash() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        try installFakeSCC()
+        let baseManager = BaseCacheManager(home: home)
+        _ = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        let target = baseManager.bundleCacheURL(gameInstall: game)
+        try write("unknown-bundle-cache", to: target)
+        try StateStore(home: home).save(CyberMacState(
+            activationState: .outOfSync,
+            bundleChangedSinceLastActivation: true,
+            activeBundleTargetHashes: [target.path: "old-generated-hash"]
+        ))
 
         XCTAssertThrowsError(try ActivationManager(home: home).dryRun(gameInstall: game)) { error in
-            XCTAssertTrue(String(describing: error).contains("Bundle changed"))
+            XCTAssertTrue(String(describing: error).contains("does not match the base snapshot"))
         }
     }
 

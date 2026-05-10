@@ -153,20 +153,47 @@ public struct ActivationManager: Sendable {
     }
 
     public func updateBundleChangedFlag(gameInstall: GameInstall) throws -> CyberMacState {
+        try reconcileBundleState(gameInstall: gameInstall)
+    }
+
+    public func reconcileBundleState(gameInstall: GameInstall) throws -> CyberMacState {
         var state = stateStore.load()
         let target = baseCacheManager.bundleCacheURL(gameInstall: gameInstall)
-        if let activeHash = state.activeBundleTargetHashes[target.path] {
-            if FileManager.default.fileExists(atPath: target.path) {
-                let currentHash = try fingerprintCache.sha256(url: target)
-                state.bundleChangedSinceLastActivation = currentHash != activeHash
-            } else {
-                state.bundleChangedSinceLastActivation = true
-            }
-            if state.bundleChangedSinceLastActivation, state.activationState == .active {
+        guard FileManager.default.fileExists(atPath: target.path) else {
+            if state.activationState == .active || state.bundleChangedSinceLastActivation {
                 state.activationState = .outOfSync
+                state.bundleChangedSinceLastActivation = true
+                try stateStore.save(state)
             }
-            try stateStore.save(state)
+            return state
         }
+
+        let currentBundleHash = try fingerprintCache.sha256(url: target)
+        let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall)
+        let activeHash = state.activeBundleTargetHashes[target.path]
+
+        if state.bundleChangedSinceLastActivation ||
+            (state.activationState == .active && activeHash != nil && currentBundleHash != activeHash) {
+            if let baseSnapshotHash, currentBundleHash == baseSnapshotHash {
+                state.activationState = .requiresBundleActivation
+                state.bundleChangedSinceLastActivation = false
+                state.activeBundleTargetHashes = [:]
+                state.pendingExpectedHashes = [:]
+                state.pendingActivation = nil
+                try stateStore.save(state)
+            } else if let activeHash, currentBundleHash == activeHash {
+                state.activationState = .active
+                state.bundleChangedSinceLastActivation = false
+                state.pendingExpectedHashes = [:]
+                state.pendingActivation = nil
+                try stateStore.save(state)
+            } else {
+                state.activationState = .outOfSync
+                state.bundleChangedSinceLastActivation = true
+                try stateStore.save(state)
+            }
+        }
+
         return state
     }
 
@@ -212,7 +239,7 @@ public struct ActivationManager: Sendable {
     private func refuseIfBundleChanged(gameInstall: GameInstall) throws {
         let state = try updateBundleChangedFlag(gameInstall: gameInstall)
         if state.bundleChangedSinceLastActivation {
-            throw CyberMacError.unsupported("Bundle changed since the last activation. Refreshing or restoring requires an explicit base-cache decision before activation.")
+            throw CyberMacError.unsupported("Bundle changed since the last activation and does not match the base snapshot. Restore vanilla, refresh base cache only after confirming a game update, or inspect manually before activation.")
         }
     }
 
