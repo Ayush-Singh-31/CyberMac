@@ -11,6 +11,7 @@ public struct ModArchiveScanner: Sendable {
         guard zipURL.pathExtension.lowercased() == "zip" else {
             throw CyberMacError.invalidInput("v0.1 scanner currently accepts .zip files only")
         }
+        try PathSafety.validateArchiveSize(zipURL)
         let archive: Archive
         do {
             archive = try Archive(url: zipURL, accessMode: .read)
@@ -23,14 +24,27 @@ public struct ModArchiveScanner: Sendable {
         var archiveEntries: [String] = []
         var unsupportedFindings: [ModScanFinding] = []
         var untestedFindings: [ModScanFinding] = []
-        var nonContentEntries: [String] = []
+        var entryCount = 0
 
         for entry in archive {
+            entryCount += 1
+            guard entryCount <= PathSafety.maxArchiveEntries else {
+                throw CyberMacError.invalidInput("Archive has too many entries: limit is \(PathSafety.maxArchiveEntries)")
+            }
             try PathSafety.validateArchivePath(entry.path)
-            guard entry.type == .file else { continue }
             let path = entry.path
             let lower = path.lowercased()
             allEntries.append(path)
+
+            switch entry.type {
+            case .directory:
+                continue
+            case .symlink:
+                untestedFindings.append(ModScanFinding(path: path, reason: "Symlink entries are not installed by CyberMac v0.1"))
+                continue
+            case .file:
+                break
+            }
 
             if lower.hasSuffix(".reds") {
                 redscriptEntries.append(path)
@@ -54,17 +68,25 @@ public struct ModArchiveScanner: Sendable {
             }
 
             if lower.hasSuffix(".lua") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "Lua script detected, likely CET-dependent"))
+                if containsPathComponents(lower, ["bin", "x64", "plugins", "cyber_engine_tweaks"]) {
+                    unsupportedFindings.append(ModScanFinding(path: path, reason: "Cyber Engine Tweaks Lua script detected"))
+                } else {
+                    untestedFindings.append(ModScanFinding(path: path, reason: "Lua script outside a known CET path"))
+                }
                 continue
             }
 
             if lower.hasSuffix(".yaml") || lower.hasSuffix(".yml") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "YAML tweak file detected, likely TweakXL-dependent"))
+                if containsPathComponents(lower, ["r6", "tweaks"]) {
+                    unsupportedFindings.append(ModScanFinding(path: path, reason: "TweakXL r6/tweaks file detected"))
+                } else {
+                    untestedFindings.append(ModScanFinding(path: path, reason: "YAML file outside a known TweakXL path"))
+                }
                 continue
             }
 
-            if lower.contains("bin/x64") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "bin/x64 marker detected"))
+            if containsPathComponents(lower, ["bin", "x64", "plugins"]) {
+                unsupportedFindings.append(ModScanFinding(path: path, reason: "bin/x64 plugin marker detected"))
                 continue
             }
 
@@ -73,7 +95,7 @@ public struct ModArchiveScanner: Sendable {
                 continue
             }
 
-            if lower.contains("cyber_engine_tweaks") || lower.contains("cet") {
+            if lower.contains("cyber_engine_tweaks") || pathComponents(lower).contains("cet") {
                 unsupportedFindings.append(ModScanFinding(path: path, reason: "Cyber Engine Tweaks marker detected"))
                 continue
             }
@@ -83,7 +105,7 @@ public struct ModArchiveScanner: Sendable {
                 continue
             }
 
-            if lower.contains("tweakxl") || lower.contains("tweak-xl") || lower.contains("r6/tweaks") {
+            if lower.contains("tweakxl") || lower.contains("tweak-xl") || containsPathComponents(lower, ["r6", "tweaks"]) {
                 unsupportedFindings.append(ModScanFinding(path: path, reason: "TweakXL marker detected"))
                 continue
             }
@@ -94,7 +116,6 @@ public struct ModArchiveScanner: Sendable {
             }
 
             if isDocumentationOrMetadata(lower) {
-                nonContentEntries.append(path)
                 continue
             }
 
@@ -104,30 +125,42 @@ public struct ModArchiveScanner: Sendable {
         let displayName = zipURL.deletingPathExtension().lastPathComponent
         let kind = determineKind(redscriptEntries: redscriptEntries, archiveEntries: archiveEntries, allEntries: allEntries)
         let status: CompatibilityStatus
+        let installable: Bool
+        let installBlockReason: String?
         var reasons: [String] = []
         var findings: [ModScanFinding] = []
 
         if !unsupportedFindings.isEmpty {
             status = .unsupported
+            installable = false
+            installBlockReason = "Known unsupported dependency or Windows modding marker detected"
             reasons.append("Known unsupported dependency or Windows modding marker detected")
             findings = unsupportedFindings + untestedFindings
         } else if !redscriptEntries.isEmpty && archiveEntries.isEmpty && untestedFindings.isEmpty {
+            status = .supported
             if launchWorkflowVerified {
-                status = .supported
+                installable = true
+                installBlockReason = nil
                 reasons.append("Found only .reds script files plus normal documentation or metadata")
                 reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, or ASI markers detected")
                 reasons.append("Launch workflow is verified")
             } else {
-                status = .untested
-                reasons.append("Found redscript-only files, but the CyberMac redscript launch workflow is not verified yet")
+                installable = false
+                installBlockReason = "CyberMac redscript launch workflow is not verified yet"
+                reasons.append("Found redscript-only files plus normal documentation or metadata")
+                reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, or ASI markers detected")
             }
             findings = []
         } else if redscriptEntries.isEmpty && !archiveEntries.isEmpty && unsupportedFindings.isEmpty {
             status = .untested
+            installable = false
+            installBlockReason = "Archive-based mods are not installed by CyberMac v0.1"
             reasons.append("Archive-based mods are not installed by CyberMac v0.1")
             findings = untestedFindings
         } else {
             status = .untested
+            installable = false
+            installBlockReason = "CyberMac v0.1 does not have a safe install rule for this archive layout"
             reasons.append("CyberMac v0.1 does not have a safe install rule for this archive layout")
             findings = untestedFindings
         }
@@ -136,6 +169,8 @@ public struct ModArchiveScanner: Sendable {
             archiveURL: zipURL,
             displayName: displayName,
             compatibilityStatus: status,
+            installable: installable,
+            installBlockReason: installBlockReason,
             kind: kind,
             reasons: reasons,
             findings: findings,
@@ -150,6 +185,23 @@ public struct ModArchiveScanner: Sendable {
         if redscriptEntries.isEmpty && !archiveEntries.isEmpty { return .archive }
         if !redscriptEntries.isEmpty && !archiveEntries.isEmpty { return .mixed }
         return allEntries.isEmpty ? .unknown : .unknown
+    }
+
+    private func pathComponents(_ lowerPath: String) -> [String] {
+        lowerPath
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+    }
+
+    private func containsPathComponents(_ lowerPath: String, _ wanted: [String]) -> Bool {
+        let components = pathComponents(lowerPath)
+        guard !wanted.isEmpty, components.count >= wanted.count else { return false }
+        for start in 0...(components.count - wanted.count) {
+            if Array(components[start..<(start + wanted.count)]) == wanted {
+                return true
+            }
+        }
+        return false
     }
 
     private func isDocumentationOrMetadata(_ lowerPath: String) -> Bool {

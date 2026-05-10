@@ -35,14 +35,16 @@ public struct RuntimeStatus: Codable, Sendable {
     public let rootURL: URL
     public let installed: Bool
     public let toolURL: URL?
+    public let version: String?
     public let quarantinedPaths: [URL]
     public let notes: [String]
 
-    public init(kind: RuntimeKind, rootURL: URL, installed: Bool, toolURL: URL?, quarantinedPaths: [URL], notes: [String]) {
+    public init(kind: RuntimeKind, rootURL: URL, installed: Bool, toolURL: URL?, version: String? = nil, quarantinedPaths: [URL], notes: [String]) {
         self.kind = kind
         self.rootURL = rootURL
         self.installed = installed
         self.toolURL = toolURL
+        self.version = version
         self.quarantinedPaths = quarantinedPaths
         self.notes = notes
     }
@@ -81,6 +83,8 @@ public struct ModScanResult: Codable, Sendable {
     public let archiveURL: URL
     public let displayName: String
     public let compatibilityStatus: CompatibilityStatus
+    public let installable: Bool
+    public let installBlockReason: String?
     public let kind: ModKind
     public let reasons: [String]
     public let findings: [ModScanFinding]
@@ -92,6 +96,8 @@ public struct ModScanResult: Codable, Sendable {
         archiveURL: URL,
         displayName: String,
         compatibilityStatus: CompatibilityStatus,
+        installable: Bool,
+        installBlockReason: String?,
         kind: ModKind,
         reasons: [String],
         findings: [ModScanFinding],
@@ -102,6 +108,8 @@ public struct ModScanResult: Codable, Sendable {
         self.archiveURL = archiveURL
         self.displayName = displayName
         self.compatibilityStatus = compatibilityStatus
+        self.installable = installable
+        self.installBlockReason = installBlockReason
         self.kind = kind
         self.reasons = reasons
         self.findings = findings

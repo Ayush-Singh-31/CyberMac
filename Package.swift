@@ -30,6 +30,13 @@ let package = Package(
         .executableTarget(
             name: "cybermac",
             dependencies: ["CyberMacCore"]
+        ),
+        .testTarget(
+            name: "CyberMacCoreTests",
+            dependencies: [
+                "CyberMacCore",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation")
+            ]
         )
     ]
 )

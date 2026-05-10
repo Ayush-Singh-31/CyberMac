@@ -18,6 +18,9 @@ public struct RedscriptModInstaller: Sendable {
         guard scanResult.compatibilityStatus == .supported else {
             throw CyberMacError.unsupported("Only supported redscript-only mods can be installed. Scan status: \(scanResult.compatibilityStatus.rawValue)")
         }
+        guard scanResult.installable else {
+            throw CyberMacError.unsupported(scanResult.installBlockReason ?? "Mod is not installable")
+        }
         guard scanResult.kind == .redscript else {
             throw CyberMacError.unsupported("Only redscript mods can be installed in v0.1")
         }
@@ -30,49 +33,58 @@ public struct RedscriptModInstaller: Sendable {
 
         let id = PathSafety.sanitizeModID(from: scanResult.displayName)
         let installRoot = home.overlayScriptsURL.appendingPathComponent(id, isDirectory: true)
-        try FileManager.default.createDirectory(at: installRoot, withIntermediateDirectories: true)
+        guard !FileManager.default.fileExists(atPath: installRoot.path) else {
+            throw CyberMacError.fileSystem("Install root already exists: \(installRoot.path)")
+        }
 
         var records: [InstalledFileRecord] = []
         let redscriptSet = Set(scanResult.redscriptEntries)
 
-        for entry in archive where redscriptSet.contains(entry.path) {
-            try PathSafety.validateArchivePath(entry.path)
-            guard entry.type == .file else { continue }
-            let relative = normalizedRedscriptRelativePath(entry.path)
-            let targetURL = installRoot.appendingPathComponent(relative)
-            try FileManager.default.createDirectory(at: targetURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            _ = try archive.extract(entry, to: targetURL)
+        do {
+            try FileManager.default.createDirectory(at: installRoot, withIntermediateDirectories: true)
 
-            let sha = try PathSafety.sha256(url: targetURL)
-            let size = try PathSafety.fileSize(url: targetURL)
-            records.append(InstalledFileRecord(
-                sourceInArchive: entry.path,
-                installedPath: PathSafety.redactUserPath(targetURL.path),
-                sizeBytes: size,
-                sha256: sha
-            ))
-        }
+            for entry in archive where redscriptSet.contains(entry.path) {
+                try PathSafety.validateArchivePath(entry.path)
+                guard entry.type == .file else { continue }
+                let relative = normalizedRedscriptRelativePath(entry.path)
+                let targetURL = installRoot.appendingPathComponent(relative)
+                try PathSafety.validateContainedPath(targetURL, in: installRoot)
+                try FileManager.default.createDirectory(at: targetURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                _ = try archive.extract(entry, to: targetURL)
 
-        guard !records.isEmpty else {
+                let sha = try PathSafety.sha256(url: targetURL)
+                let size = try PathSafety.fileSize(url: targetURL)
+                records.append(InstalledFileRecord(
+                    sourceInArchive: entry.path,
+                    installedPath: targetURL.path,
+                    sizeBytes: size,
+                    sha256: sha
+                ))
+            }
+
+            guard !records.isEmpty else {
+                throw CyberMacError.invalidInput("No .reds files were extracted")
+            }
+
+            let manifest = InstalledModManifest(
+                id: id,
+                displayName: scanResult.displayName,
+                type: .redscript,
+                status: .enabled,
+                sourceArchive: zipURL.path,
+                installedAt: Date(),
+                gameAppPath: gameInstall.appURL.path,
+                installMode: "sidecar_overlay",
+                installedFiles: records,
+                detectedDependencies: ["redscript"],
+                compatibilityStatus: .supported
+            )
+            try manifestStore.save(manifest)
+            return manifest
+        } catch {
             try? FileManager.default.removeItem(at: installRoot)
-            throw CyberMacError.invalidInput("No .reds files were extracted")
+            throw error
         }
-
-        let manifest = InstalledModManifest(
-            id: id,
-            displayName: scanResult.displayName,
-            type: .redscript,
-            status: .enabled,
-            sourceArchive: PathSafety.redactUserPath(zipURL.path),
-            installedAt: Date(),
-            gameAppPath: gameInstall.appURL.path,
-            installMode: "sidecar_overlay",
-            installedFiles: records,
-            detectedDependencies: ["redscript"],
-            compatibilityStatus: .supported
-        )
-        try manifestStore.save(manifest)
-        return manifest
     }
 
     private func normalizedRedscriptRelativePath(_ archivePath: String) -> String {

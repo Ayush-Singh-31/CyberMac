@@ -115,6 +115,9 @@ struct CyberMacCLI {
 
         let launch = LaunchWorkflowVerifier(home: home).currentStoredStatus()
         print("Launch workflow: \(launch.state.rawValue) - \(launch.message)")
+        if let stateWarning = StateStore(home: home).corruptionMessage() {
+            print("State warning: \(stateWarning)")
+        }
     }
 
     private func importRuntime(kind: RuntimeKind) throws {
@@ -263,6 +266,7 @@ struct CyberMacCLI {
         print("\(status.kind.rawValue): \(status.installed ? "installed" : "missing")")
         print("  root: \(PathSafety.redactUserPath(status.rootURL.path))")
         print("  tool: \(status.toolURL.map { PathSafety.redactUserPath($0.path) } ?? "missing")")
+        print("  version: \(status.version ?? "unknown")")
         print("  quarantined paths: \(status.quarantinedPaths.count)")
         for note in status.notes {
             print("  note: \(note)")
@@ -272,6 +276,10 @@ struct CyberMacCLI {
     private func printScanResult(_ result: ModScanResult) {
         print("Name: \(result.displayName)")
         print("Status: \(result.compatibilityStatus.rawValue)")
+        print("Installable: \(result.installable ? "yes" : "no")")
+        if let reason = result.installBlockReason {
+            print("Install block: \(reason)")
+        }
         print("Type: \(result.kind.rawValue)")
         print("Reasons:")
         for reason in result.reasons {

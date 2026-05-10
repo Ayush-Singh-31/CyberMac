@@ -54,15 +54,26 @@ public struct DiagnosticsExporter: Sendable {
 
     private func runtimeSummary(_ status: RuntimeStatus) -> String {
         if !status.installed { return "missing" }
-        if status.toolURL == nil { return "installed, required tool missing" }
-        if !status.quarantinedPaths.isEmpty { return "installed, quarantined" }
-        return "installed"
+        var parts = ["installed"]
+        if let version = status.version {
+            parts.append("version \(version)")
+        }
+        if status.toolURL == nil {
+            parts.append("required tool missing")
+        }
+        if !status.quarantinedPaths.isEmpty {
+            parts.append("quarantined")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private func buildNotes(redscript: RuntimeStatus, inputLoader: RuntimeStatus) -> [String] {
         var notes: [String] = []
         notes.append(contentsOf: redscript.notes.map { "redscript: \($0)" })
         notes.append(contentsOf: inputLoader.notes.map { "input-loader: \($0)" })
+        if let message = StateStore(home: home).corruptionMessage() {
+            notes.append(message)
+        }
         if !redscript.quarantinedPaths.isEmpty {
             notes.append("redscript has \(redscript.quarantinedPaths.count) quarantined path(s)")
         }

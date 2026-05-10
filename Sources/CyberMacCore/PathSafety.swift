@@ -2,6 +2,9 @@ import Foundation
 import CryptoKit
 
 public enum PathSafety {
+    public static let maxArchiveBytes: UInt64 = 500 * 1024 * 1024
+    public static let maxArchiveEntries = 50_000
+
     public static func expandedURL(from path: String) -> URL {
         let expanded = (path as NSString).expandingTildeInPath
         return URL(fileURLWithPath: expanded)
@@ -37,6 +40,32 @@ public enum PathSafety {
         if path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
             throw CyberMacError.unsafePath("Archive entry contains control characters: \(path)")
         }
+    }
+
+    public static func validateArchiveSize(_ url: URL, maxBytes: UInt64 = maxArchiveBytes) throws {
+        let size = try fileSize(url: url)
+        guard size <= maxBytes else {
+            throw CyberMacError.invalidInput("Archive is too large: \(size) bytes exceeds limit of \(maxBytes) bytes")
+        }
+    }
+
+    public static func validateContainedPath(_ url: URL, in rootURL: URL) throws {
+        let root = rootURL.standardizedFileURL.path
+        let target = url.standardizedFileURL.path
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        guard target.hasPrefix(prefix) else {
+            throw CyberMacError.unsafePath("Resolved path escapes destination root: \(target)")
+        }
+    }
+
+    public static func relativePath(of url: URL, in rootURL: URL) throws -> String {
+        let root = rootURL.standardizedFileURL.path
+        let target = url.standardizedFileURL.path
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        guard target.hasPrefix(prefix) else {
+            throw CyberMacError.unsafePath("Path is outside expected root: \(target)")
+        }
+        return String(target.dropFirst(prefix.count))
     }
 
     public static func redactUserPath(_ path: String) -> String {

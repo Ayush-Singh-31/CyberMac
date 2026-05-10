@@ -37,10 +37,16 @@ public struct ProcessRunner: Sendable {
         process.standardError = stderrPipe
 
         try process.run()
+
+        let stdoutReader = PipeReader(fileHandle: stdoutPipe.fileHandleForReading)
+        let stderrReader = PipeReader(fileHandle: stderrPipe.fileHandleForReading)
+        stdoutReader.start()
+        stderrReader.start()
+
         process.waitUntilExit()
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stdout = String(data: try stdoutReader.wait(), encoding: .utf8) ?? ""
+        let stderr = String(data: try stderrReader.wait(), encoding: .utf8) ?? ""
 
         let result = ProcessResult(
             executable: executableURL,
@@ -59,5 +65,44 @@ public struct ProcessRunner: Sendable {
         }
 
         return result
+    }
+}
+
+private final class PipeReader: @unchecked Sendable {
+    private let fileHandle: FileHandle
+    private let group = DispatchGroup()
+    private let lock = NSLock()
+    private var data = Data()
+    private var readError: Error?
+
+    init(fileHandle: FileHandle) {
+        self.fileHandle = fileHandle
+    }
+
+    func start() {
+        group.enter()
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                let output = try self.fileHandle.readToEnd() ?? Data()
+                self.lock.lock()
+                self.data = output
+                self.lock.unlock()
+            } catch {
+                self.lock.lock()
+                self.readError = error
+                self.lock.unlock()
+            }
+            self.group.leave()
+        }
+    }
+
+    func wait() throws -> Data {
+        group.wait()
+        lock.lock()
+        defer { lock.unlock() }
+        if let readError {
+            throw readError
+        }
+        return data
     }
 }
