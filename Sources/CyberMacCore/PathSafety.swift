@@ -14,6 +14,14 @@ public enum PathSafety {
         "'" + string.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    public static func shellDoubleQuoted(_ string: String) -> String {
+        "\"" + string
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "`", with: "\\`") + "\""
+    }
+
     public static func sanitizeModID(from rawName: String, date: Date = Date()) -> String {
         let base = rawName
             .lowercased()
@@ -82,12 +90,25 @@ public enum PathSafety {
 
     public static func sha256(url: URL) throws -> String {
         let data = try Data(contentsOf: url)
+        return sha256(data: data)
+    }
+
+    public static func sha256(data: Data) -> String {
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    public static func sha256(string: String) -> String {
+        sha256(data: Data(string.utf8))
+    }
+
     public static func fileSize(url: URL) throws -> UInt64 {
-        let values = try url.resourceValues(forKeys: [.fileSizeKey])
-        return UInt64(values.fileSize ?? 0)
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+    }
+
+    public static func modificationDate(url: URL) throws -> Date? {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return attributes[.modificationDate] as? Date
     }
 }

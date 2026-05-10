@@ -3,10 +3,12 @@ import Foundation
 public struct ModStateManager: Sendable {
     private let home: CyberMacHomeManager
     private let manifestStore: ManifestStore
+    private let stateStore: StateStore
 
     public init(home: CyberMacHomeManager) {
         self.home = home
         self.manifestStore = ManifestStore(home: home)
+        self.stateStore = StateStore(home: home)
     }
 
     public func list() throws -> [InstalledModManifest] {
@@ -21,6 +23,7 @@ public struct ModStateManager: Sendable {
         try move(files: files, from: \.enabledURL, to: \.disabledURL)
         manifest.status = .disabled
         try manifestStore.save(manifest)
+        try stateStore.markActivationOutOfSync()
         return manifest
     }
 
@@ -32,6 +35,7 @@ public struct ModStateManager: Sendable {
         try move(files: files, from: \.disabledURL, to: \.enabledURL)
         manifest.status = .enabled
         try manifestStore.save(manifest)
+        try stateStore.markActivationOutOfSync()
         return manifest
     }
 
@@ -61,6 +65,7 @@ public struct ModStateManager: Sendable {
             }
             manifest.status = .uninstalled
             try manifestStore.save(manifest)
+            try stateStore.markActivationOutOfSync()
             try? FileManager.default.removeItem(at: trashRoot)
         } catch {
             rollback(moved: moved)

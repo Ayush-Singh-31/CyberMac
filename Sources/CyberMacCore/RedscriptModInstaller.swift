@@ -12,13 +12,13 @@ public struct RedscriptModInstaller: Sendable {
         self.scanner = ModArchiveScanner()
     }
 
-    public func install(zipURL: URL, gameInstall: GameInstall, launchWorkflowVerified: Bool) throws -> InstalledModManifest {
+    public func install(zipURL: URL, gameInstall: GameInstall) throws -> InstalledModManifest {
         try home.bootstrap()
-        let scanResult = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: launchWorkflowVerified)
+        let scanResult = try scanner.scan(zipURL: zipURL)
         guard scanResult.compatibilityStatus == .supported else {
             throw CyberMacError.unsupported("Only supported redscript-only mods can be installed. Scan status: \(scanResult.compatibilityStatus.rawValue)")
         }
-        guard scanResult.installable else {
+        guard scanResult.sidecarInstallable else {
             throw CyberMacError.unsupported(scanResult.installBlockReason ?? "Mod is not installable")
         }
         guard scanResult.kind == .redscript else {
@@ -80,6 +80,7 @@ public struct RedscriptModInstaller: Sendable {
                 compatibilityStatus: .supported
             )
             try manifestStore.save(manifest)
+            try StateStore(home: home).markActivationOutOfSync()
             return manifest
         } catch {
             try? FileManager.default.removeItem(at: installRoot)

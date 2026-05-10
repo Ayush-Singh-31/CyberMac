@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public struct ProcessResult: Sendable {
     public let executable: URL
@@ -21,6 +22,7 @@ public struct ProcessRunner: Sendable {
         arguments: [String],
         currentDirectoryURL: URL? = nil,
         environment: [String: String]? = nil,
+        timeoutSeconds: TimeInterval? = nil,
         allowFailure: Bool = false
     ) throws -> ProcessResult {
         let process = Process()
@@ -43,7 +45,29 @@ public struct ProcessRunner: Sendable {
         stdoutReader.start()
         stderrReader.start()
 
-        process.waitUntilExit()
+        let waitGroup = DispatchGroup()
+        waitGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            waitGroup.leave()
+        }
+
+        if let timeoutSeconds {
+            let waitResult = waitGroup.wait(timeout: .now() + timeoutSeconds)
+            if waitResult == .timedOut {
+                process.terminate()
+                if waitGroup.wait(timeout: .now() + 2) == .timedOut {
+                    Darwin.kill(process.processIdentifier, SIGKILL)
+                }
+                waitGroup.wait()
+                _ = try stdoutReader.wait()
+                _ = try stderrReader.wait()
+                let command = ([executableURL.path] + arguments).joined(separator: " ")
+                throw CyberMacError.processTimedOut(command: command, timeoutSeconds: timeoutSeconds)
+            }
+        } else {
+            waitGroup.wait()
+        }
 
         let stdout = String(data: try stdoutReader.wait(), encoding: .utf8) ?? ""
         let stderr = String(data: try stderrReader.wait(), encoding: .utf8) ?? ""

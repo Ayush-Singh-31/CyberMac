@@ -17,6 +17,7 @@ public struct DiagnosticsExporter: Sendable {
         let redscript = runtimeImporter.redscriptStatus()
         let inputLoader = runtimeImporter.inputLoaderStatus()
         let launch = launchVerifier.currentStoredStatus()
+        let state = StateStore(home: home).load()
         let installedMods = (try? manifestStore.list()) ?? []
 
         let os = ProcessInfo.processInfo.operatingSystemVersion
@@ -37,6 +38,11 @@ public struct DiagnosticsExporter: Sendable {
             redscriptRuntime: runtimeSummary(redscript),
             inputLoaderRuntime: runtimeSummary(inputLoader),
             launchWorkflow: "\(launch.state.rawValue): \(launch.message)",
+            activationState: state.activationState.rawValue,
+            bundleChangedSinceLastActivation: state.bundleChangedSinceLastActivation,
+            activeModIDs: state.activeModIDs,
+            baseCacheSnapshotID: state.baseCacheSnapshotID,
+            lastBackupID: state.lastBackupID,
             installedManagedMods: installedMods.filter { $0.status != .uninstalled }.count,
             notes: buildNotes(redscript: redscript, inputLoader: inputLoader)
         )

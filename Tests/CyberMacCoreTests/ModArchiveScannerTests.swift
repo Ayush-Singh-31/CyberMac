@@ -17,31 +17,31 @@ final class ModArchiveScannerTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    func testRedscriptOnlyArchiveIsSupportedAndInstallableWhenWorkflowVerified() throws {
+    func testRedscriptOnlyArchiveIsSupportedAndSidecarInstallable() throws {
         let zipURL = try makeZip(named: "redscript-only.zip", entries: [
             .file("r6/scripts/example/main.reds"),
             .file("README.md")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .supported)
-        XCTAssertTrue(result.installable)
+        XCTAssertTrue(result.sidecarInstallable)
         XCTAssertNil(result.installBlockReason)
         XCTAssertEqual(result.kind, .redscript)
         XCTAssertEqual(result.redscriptEntries, ["r6/scripts/example/main.reds"])
     }
 
-    func testUnverifiedWorkflowBlocksInstallWithoutChangingModCompatibility() throws {
+    func testScanDoesNotCarryLaunchWorkflowState() throws {
         let zipURL = try makeZip(named: "redscript-unverified.zip", entries: [
             .file("r6/scripts/example/main.reds")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: false)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .supported)
-        XCTAssertFalse(result.installable)
-        XCTAssertEqual(result.installBlockReason, "CyberMac redscript launch workflow is not verified yet")
+        XCTAssertTrue(result.sidecarInstallable)
+        XCTAssertNil(result.installBlockReason)
     }
 
     func testCetSubstringInsideNormalWordsDoesNotFlagUnsupported() throws {
@@ -49,10 +49,10 @@ final class ModArchiveScannerTests: XCTestCase {
             .file("r6/scripts/facet/concrete_accept_secret_ricochet.reds")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .supported)
-        XCTAssertTrue(result.installable)
+        XCTAssertTrue(result.sidecarInstallable)
         XCTAssertTrue(result.findings.isEmpty)
     }
 
@@ -62,10 +62,10 @@ final class ModArchiveScannerTests: XCTestCase {
             .file("author-tools/build.lua")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .untested)
-        XCTAssertFalse(result.installable)
+        XCTAssertFalse(result.sidecarInstallable)
         XCTAssertEqual(result.findings.first?.path, "author-tools/build.lua")
     }
 
@@ -74,10 +74,10 @@ final class ModArchiveScannerTests: XCTestCase {
             .file("bin/x64/plugins/cyber_engine_tweaks/mods/example/init.lua")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .unsupported)
-        XCTAssertFalse(result.installable)
+        XCTAssertFalse(result.sidecarInstallable)
         XCTAssertEqual(result.findings.first?.path, "bin/x64/plugins/cyber_engine_tweaks/mods/example/init.lua")
     }
 
@@ -87,10 +87,10 @@ final class ModArchiveScannerTests: XCTestCase {
             .file("config/settings.yaml")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .untested)
-        XCTAssertFalse(result.installable)
+        XCTAssertFalse(result.sidecarInstallable)
         XCTAssertEqual(result.findings.first?.path, "config/settings.yaml")
     }
 
@@ -99,10 +99,10 @@ final class ModArchiveScannerTests: XCTestCase {
             .file("r6/tweaks/example.yaml")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .unsupported)
-        XCTAssertFalse(result.installable)
+        XCTAssertFalse(result.sidecarInstallable)
         XCTAssertEqual(result.findings.first?.path, "r6/tweaks/example.yaml")
     }
 
@@ -111,10 +111,10 @@ final class ModArchiveScannerTests: XCTestCase {
             .symlink("r6/scripts/link.reds", target: "../../game.reds")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .untested)
-        XCTAssertFalse(result.installable)
+        XCTAssertFalse(result.sidecarInstallable)
         XCTAssertEqual(result.findings.first?.path, "r6/scripts/link.reds")
         XCTAssertEqual(result.findings.first?.reason, "Symlink entries are not installed by CyberMac v0.1")
     }
@@ -124,10 +124,10 @@ final class ModArchiveScannerTests: XCTestCase {
             .file("archive/pc/mod/example.archive")
         ])
 
-        let result = try scanner.scan(zipURL: zipURL, launchWorkflowVerified: true)
+        let result = try scanner.scan(zipURL: zipURL)
 
         XCTAssertEqual(result.compatibilityStatus, .untested)
-        XCTAssertFalse(result.installable)
+        XCTAssertFalse(result.sidecarInstallable)
         XCTAssertEqual(result.kind, .archive)
     }
 

@@ -34,6 +34,7 @@ final class ModStateManagerTests: XCTestCase {
 
         let disabledURL = home.disabledURL.appendingPathComponent(id, isDirectory: true).appendingPathComponent("nested/main.reds")
         XCTAssertEqual(manifest.status, .disabled)
+        XCTAssertEqual(StateStore(home: home).load().activationState, .outOfSync)
         XCTAssertFalse(FileManager.default.fileExists(atPath: managedURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: disabledURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: untrackedURL.path))
@@ -41,6 +42,7 @@ final class ModStateManagerTests: XCTestCase {
         manifest = try manager.enable(id: id)
 
         XCTAssertEqual(manifest.status, .enabled)
+        XCTAssertEqual(StateStore(home: home).load().activationState, .outOfSync)
         XCTAssertTrue(FileManager.default.fileExists(atPath: managedURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: disabledURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: untrackedURL.path))
@@ -48,6 +50,7 @@ final class ModStateManagerTests: XCTestCase {
         manifest = try manager.uninstall(id: id)
 
         XCTAssertEqual(manifest.status, .uninstalled)
+        XCTAssertEqual(StateStore(home: home).load().activationState, .outOfSync)
         XCTAssertFalse(FileManager.default.fileExists(atPath: managedURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: untrackedURL.path))
     }
@@ -63,13 +66,45 @@ final class ModStateManagerTests: XCTestCase {
         XCTAssertEqual(try manifestStore.load(id: id).status, .enabled)
     }
 
+    func testDisableRollsBackPartialMoveWhenLaterFileFails() throws {
+        let id = "rollback-mod"
+        let enabledRoot = home.overlayScriptsURL.appendingPathComponent(id, isDirectory: true)
+        let first = enabledRoot.appendingPathComponent("first.reds")
+        let second = enabledRoot.appendingPathComponent("second.reds")
+        let disabledSecond = home.disabledURL
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("second.reds")
+        try write("first", to: first)
+        try write("second", to: second)
+        try write("conflict", to: disabledSecond)
+        try saveManifest(id: id, status: .enabled, installedPaths: [first.path, second.path])
+
+        XCTAssertThrowsError(try manager.disable(id: id))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
+        XCTAssertEqual(try manifestStore.load(id: id).status, .enabled)
+    }
+
     private func saveManifest(id: String, status: InstalledModStatus, installedPath: String) throws {
+        try saveManifest(id: id, status: status, installedPaths: [installedPath])
+    }
+
+    private func saveManifest(id: String, status: InstalledModStatus, installedPaths: [String]) throws {
         let record = InstalledFileRecord(
             sourceInArchive: "r6/scripts/main.reds",
-            installedPath: installedPath,
+            installedPath: installedPaths[0],
             sizeBytes: 0,
             sha256: ""
         )
+        let records = installedPaths.enumerated().map { index, path in
+            InstalledFileRecord(
+                sourceInArchive: "r6/scripts/file\(index).reds",
+                installedPath: path,
+                sizeBytes: 0,
+                sha256: ""
+            )
+        }
         let manifest = InstalledModManifest(
             id: id,
             displayName: id,
@@ -79,7 +114,7 @@ final class ModStateManagerTests: XCTestCase {
             installedAt: Date(),
             gameAppPath: "/Applications/Cyberpunk 2077.app",
             installMode: "sidecar_overlay",
-            installedFiles: [record],
+            installedFiles: installedPaths.count == 1 ? [record] : records,
             detectedDependencies: ["redscript"],
             compatibilityStatus: .supported
         )

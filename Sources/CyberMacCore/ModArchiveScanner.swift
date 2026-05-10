@@ -4,7 +4,7 @@ import ZIPFoundation
 public struct ModArchiveScanner: Sendable {
     public init() {}
 
-    public func scan(zipURL: URL, launchWorkflowVerified: Bool) throws -> ModScanResult {
+    public func scan(zipURL: URL) throws -> ModScanResult {
         guard FileManager.default.fileExists(atPath: zipURL.path) else {
             throw CyberMacError.notFound("Mod archive does not exist: \(zipURL.path)")
         }
@@ -125,41 +125,33 @@ public struct ModArchiveScanner: Sendable {
         let displayName = zipURL.deletingPathExtension().lastPathComponent
         let kind = determineKind(redscriptEntries: redscriptEntries, archiveEntries: archiveEntries, allEntries: allEntries)
         let status: CompatibilityStatus
-        let installable: Bool
+        let sidecarInstallable: Bool
         let installBlockReason: String?
         var reasons: [String] = []
         var findings: [ModScanFinding] = []
 
         if !unsupportedFindings.isEmpty {
             status = .unsupported
-            installable = false
+            sidecarInstallable = false
             installBlockReason = "Known unsupported dependency or Windows modding marker detected"
             reasons.append("Known unsupported dependency or Windows modding marker detected")
             findings = unsupportedFindings + untestedFindings
         } else if !redscriptEntries.isEmpty && archiveEntries.isEmpty && untestedFindings.isEmpty {
             status = .supported
-            if launchWorkflowVerified {
-                installable = true
-                installBlockReason = nil
-                reasons.append("Found only .reds script files plus normal documentation or metadata")
-                reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, or ASI markers detected")
-                reasons.append("Launch workflow is verified")
-            } else {
-                installable = false
-                installBlockReason = "CyberMac redscript launch workflow is not verified yet"
-                reasons.append("Found redscript-only files plus normal documentation or metadata")
-                reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, or ASI markers detected")
-            }
+            sidecarInstallable = true
+            installBlockReason = nil
+            reasons.append("Found redscript-only files plus normal documentation or metadata")
+            reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, ASI, or symlink markers detected")
             findings = []
         } else if redscriptEntries.isEmpty && !archiveEntries.isEmpty && unsupportedFindings.isEmpty {
             status = .untested
-            installable = false
+            sidecarInstallable = false
             installBlockReason = "Archive-based mods are not installed by CyberMac v0.1"
             reasons.append("Archive-based mods are not installed by CyberMac v0.1")
             findings = untestedFindings
         } else {
             status = .untested
-            installable = false
+            sidecarInstallable = false
             installBlockReason = "CyberMac v0.1 does not have a safe install rule for this archive layout"
             reasons.append("CyberMac v0.1 does not have a safe install rule for this archive layout")
             findings = untestedFindings
@@ -169,7 +161,7 @@ public struct ModArchiveScanner: Sendable {
             archiveURL: zipURL,
             displayName: displayName,
             compatibilityStatus: status,
-            installable: installable,
+            sidecarInstallable: sidecarInstallable,
             installBlockReason: installBlockReason,
             kind: kind,
             reasons: reasons,

@@ -46,6 +46,16 @@ struct CyberMacCLI {
             try scan()
         case "install":
             try install()
+        case "cache-status":
+            try cacheStatus()
+        case "refresh-base-cache":
+            try refreshBaseCache()
+        case "activate":
+            try activate()
+        case "list-backups":
+            try listBackups()
+        case "restore":
+            try restore()
         case "list-mods":
             try listMods()
         case "disable":
@@ -76,13 +86,20 @@ struct CyberMacCLI {
           cybermac launch-test [--run]
           cybermac scan /path/to/mod.zip
           cybermac install /path/to/mod.zip [--game-app /path/to/Cyberpunk.app]
+          cybermac cache-status [--game-app /path/to/Cyberpunk.app]
+          cybermac refresh-base-cache [--dry-run] [--game-app /path/to/Cyberpunk.app]
+          cybermac activate --dry-run [--game-app /path/to/Cyberpunk.app]
+          cybermac activate --bundle-mode [--game-app /path/to/Cyberpunk.app]
+          cybermac activate --verify [--game-app /path/to/Cyberpunk.app]
+          cybermac list-backups
+          cybermac restore [--dry-run|--verify] <backup-id> [--game-app /path/to/Cyberpunk.app]
           cybermac list-mods
           cybermac disable <mod-id>
           cybermac enable <mod-id>
           cybermac uninstall <mod-id>
           cybermac diagnostics [--game-app /path/to/Cyberpunk.app]
 
-        v0.1 is strict sidecar mode. It never writes into the Cyberpunk .app bundle.
+        v0.1 keeps installs in the CyberMac sidecar. Bundle activation is experimental and prints sudo commands for the user to run manually.
         """)
     }
 
@@ -200,8 +217,7 @@ struct CyberMacCLI {
         }
         try home.bootstrap()
         let zipURL = PathSafety.expandedURL(from: arguments[1])
-        let launchStatus = LaunchWorkflowVerifier(home: home).currentStoredStatus()
-        let result = try ModArchiveScanner().scan(zipURL: zipURL, launchWorkflowVerified: launchStatus.state == .verified)
+        let result = try ModArchiveScanner().scan(zipURL: zipURL)
         printScanResult(result)
     }
 
@@ -212,15 +228,125 @@ struct CyberMacCLI {
         try home.bootstrap()
         let zipURL = PathSafety.expandedURL(from: arguments[1])
         let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
-        let launchStatus = LaunchWorkflowVerifier(home: home).currentStoredStatus()
-        let manifest = try RedscriptModInstaller(home: home).install(
-            zipURL: zipURL,
-            gameInstall: game,
-            launchWorkflowVerified: launchStatus.state == .verified
-        )
+        let manifest = try RedscriptModInstaller(home: home).install(zipURL: zipURL, gameInstall: game)
+        print("Mod installed into CyberMac sidecar.")
         print("Installed: \(manifest.displayName)")
         print("ID: \(manifest.id)")
-        print("Status: \(manifest.status.rawValue)")
+        print("Status: \(manifest.status.rawValue), inactive")
+        print("Reason: bundle activation has not been run.")
+        print("Next: cybermac activate --dry-run")
+    }
+
+    private func cacheStatus() throws {
+        try home.bootstrap()
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let activation = ActivationManager(home: home)
+        let state = try activation.updateBundleChangedFlag(gameInstall: game)
+        let status = try BaseCacheManager(home: home).status(gameInstall: game)
+        print("Game app: \(status.fingerprint.appPath)")
+        print("Bundle target: \(status.bundleCacheURL.path)")
+        print("Game fingerprint: \(status.fingerprint.id)")
+        print("Bundle cache SHA-256: \(status.bundleCacheSHA256)")
+        print("Base snapshot: \(status.snapshot == nil ? "missing" : "present")")
+        if let snapshot = status.snapshot {
+            print("Base snapshot SHA-256: \(snapshot.bundleCacheSHA256)")
+        }
+        print("Overlay mirror: \(status.mirrorExists ? "present" : "missing")")
+        print("Activation state: \(state.activationState.rawValue)")
+        print("Bundle changed since last activation: \(state.bundleChangedSinceLastActivation ? "yes" : "no")")
+        if let reason = status.refusedRefreshReason {
+            print("Refresh warning: \(reason)")
+        }
+    }
+
+    private func refreshBaseCache() throws {
+        try home.bootstrap()
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let dryRun = hasFlag("--dry-run")
+        let result = try BaseCacheManager(home: home).refreshBaseCache(gameInstall: game, dryRun: dryRun)
+        print(dryRun ? "Base cache refresh dry run." : "Base cache snapshot refreshed.")
+        print("Snapshot ID: \(result.snapshotID)")
+        print("Snapshot path: \(result.snapshotURL.path)")
+        print("Bundle cache SHA-256: \(result.metadata.bundleCacheSHA256)")
+        print("Size: \(result.metadata.sizeBytes) bytes")
+        print("Written: \(result.didWrite ? "yes" : "no")")
+    }
+
+    private func activate() throws {
+        try home.bootstrap()
+        let modes = ["--dry-run", "--bundle-mode", "--verify"].filter(hasFlag)
+        guard modes.count == 1 else {
+            throw CyberMacError.invalidInput("Use exactly one activation mode: --dry-run, --bundle-mode, or --verify")
+        }
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let manager = ActivationManager(home: home)
+        if hasFlag("--dry-run") {
+            let result = try manager.dryRun(gameInstall: game)
+            print("Game app: \(result.gameAppPath)")
+            print("Bundle target: \(result.bundleTarget)")
+            print("Base cache snapshot: \(result.baseSnapshotID)")
+            print("Enabled mod ids: \(result.enabledModIDs.isEmpty ? "(none)" : result.enabledModIDs.joined(separator: ", "))")
+            print("Compile command: \(result.compileCommand)")
+            print("Temp output path: \(result.tempOutputPath)")
+            print("Backup destination: \(result.backupDestination)")
+            print("Sudo command shape: \(result.sudoCommandShape)")
+        } else if hasFlag("--bundle-mode") {
+            let result = try manager.activateBundleMode(gameInstall: game)
+            print("Activation output generated.")
+            print("Bundle target: \(result.bundleTarget)")
+            print("Temp output path: \(result.tempOutputPath)")
+            print("Generated SHA-256: \(result.generatedSHA256)")
+            print("Backup ID: \(result.backup.id)")
+            print("Backup prior state: \(result.backup.priorState.rawValue)")
+            print("Run this command manually:")
+            print(result.sudoCommand)
+            print("Then verify:")
+            print(result.verifyCommand)
+        } else {
+            let result = try manager.verify(gameInstall: game)
+            if result.matched {
+                print("Activation verified: active")
+                print("Bundle target: \(result.bundleTarget)")
+                print("SHA-256: \(result.actualSHA256 ?? "")")
+            } else {
+                print("Activation verify failed: outOfSync")
+                print("Bundle target: \(result.bundleTarget)")
+                print("Expected SHA-256: \(result.expectedSHA256 ?? "missing")")
+                print("Actual SHA-256: \(result.actualSHA256 ?? "missing")")
+            }
+        }
+    }
+
+    private func listBackups() throws {
+        try home.bootstrap()
+        let backups = try BundleBackupManager(home: home).list()
+        if backups.isEmpty {
+            print("No CyberMac bundle backups found.")
+            return
+        }
+        for backup in backups {
+            print("\(backup.id) | \(backup.createdAt) | \(backup.priorState.rawValue) | \(backup.sha256 ?? "absent") | \(backup.gameFingerprintID)")
+        }
+    }
+
+    private func restore() throws {
+        try home.bootstrap()
+        let ids = positionalArguments(after: "restore", excludingFlags: ["--dry-run", "--verify"])
+        guard let id = ids.first else {
+            throw CyberMacError.invalidInput("Missing backup id")
+        }
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let manager = BundleBackupManager(home: home)
+        if hasFlag("--verify") {
+            let matched = try manager.verifyRestore(id: id, gameInstall: game)
+            print(matched ? "Restore verified." : "Restore verify failed.")
+        } else {
+            let command = try manager.restoreCommand(id: id, gameInstall: game)
+            print(hasFlag("--dry-run") ? "Restore dry run." : "Run this restore command manually:")
+            print(command)
+            print("Then verify:")
+            print("swift run cybermac restore --verify \(id)")
+        }
     }
 
     private func listMods() throws {
@@ -276,7 +402,7 @@ struct CyberMacCLI {
     private func printScanResult(_ result: ModScanResult) {
         print("Name: \(result.displayName)")
         print("Status: \(result.compatibilityStatus.rawValue)")
-        print("Installable: \(result.installable ? "yes" : "no")")
+        print("Sidecar installable: \(result.sidecarInstallable ? "yes" : "no")")
         if let reason = result.installBlockReason {
             print("Install block: \(reason)")
         }
@@ -314,5 +440,28 @@ struct CyberMacCLI {
 
     private func hasFlag(_ name: String) -> Bool {
         arguments.contains(name)
+    }
+
+    private func positionalArguments(after command: String, excludingFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst() {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if argument == "--game-app" {
+                skipNext = true
+                continue
+            }
+            if excludingFlags.contains(argument) || argument == command {
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
     }
 }
