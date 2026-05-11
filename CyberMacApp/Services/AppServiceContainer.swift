@@ -7,6 +7,8 @@ struct AppSnapshot: Sendable {
     let cache: BundleCacheClassification?
     let mods: [InstalledModManifest]
     let backups: [BundleBackupManifest]
+    let inputStatus: InputPatchStatus?
+    let inputBackups: [InputConfigBackupManifest]
 }
 
 struct AppServiceContainer: Sendable {
@@ -23,12 +25,16 @@ struct AppServiceContainer: Sendable {
         let cache = try game.map { try BundleStateResolver(home: home).classify(gameInstall: $0) }
         let mods = (try? ModStateManager(home: home).list()) ?? []
         let backups = (try? BundleBackupManager(home: home).list()) ?? []
+        let inputStatus = try? InputMappingManager(home: home).status(gameInstall: game)
+        let inputBackups = (try? InputConfigBackupManager(home: home).list()) ?? []
 
         return AppSnapshot(
             doctor: report,
             cache: cache,
             mods: mods,
-            backups: backups
+            backups: backups,
+            inputStatus: inputStatus,
+            inputBackups: inputBackups
         )
     }
 
@@ -70,8 +76,41 @@ struct AppServiceContainer: Sendable {
         return try BundleBackupManager(home: home).verifyRestore(id: id, gameInstall: game)
     }
 
+    func inputStatus() throws -> InputPatchStatus {
+        let game = try? GameInstallDetector().detect()
+        return try InputMappingManager(home: home).status(gameInstall: game)
+    }
+
+    func prepareInputPatch(modID: String?) throws -> InputPatchPrepareResult {
+        let game = try GameInstallDetector().detect()
+        return try InputMappingManager(home: home).preparePatch(gameInstall: game, modIDs: modID.map { [$0] })
+    }
+
+    func verifyInputPatch() throws -> InputPatchVerifyResult {
+        let game = try GameInstallDetector().detect()
+        return try InputMappingManager(home: home).verifyPatch(gameInstall: game)
+    }
+
+    func listInputBackups() throws -> [InputConfigBackupManifest] {
+        try InputConfigBackupManager(home: home).list()
+    }
+
+    func restoreInputConfigCommand(id: String) throws -> [String] {
+        let game = try GameInstallDetector().detect()
+        return try InputConfigBackupManager(home: home).restoreCommands(id: id, gameInstall: game)
+    }
+
+    func verifyInputConfigRestore(id: String) throws -> InputConfigRestoreVerificationResult {
+        let game = try GameInstallDetector().detect()
+        return try InputConfigBackupManager(home: home).verifyRestore(id: id, gameInstall: game)
+    }
+
     func backupDirectoryPath(id: String) -> String {
         BundleBackupManager(home: home).backupDirectory(id: id).path
+    }
+
+    func inputBackupDirectoryPath(id: String) -> String {
+        InputConfigBackupManager(home: home).backupDirectory(id: id).path
     }
 
     func setMod(_ id: String, enabled: Bool) throws -> InstalledModManifest {

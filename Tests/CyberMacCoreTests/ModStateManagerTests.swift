@@ -32,7 +32,10 @@ final class ModStateManagerTests: XCTestCase {
 
         var manifest = try manager.disable(id: id)
 
-        let disabledURL = home.disabledURL.appendingPathComponent(id, isDirectory: true).appendingPathComponent("nested/main.reds")
+        let disabledURL = home.disabledURL
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("scripts", isDirectory: true)
+            .appendingPathComponent("nested/main.reds")
         XCTAssertEqual(manifest.status, .disabled)
         XCTAssertEqual(StateStore(home: home).load().activationState, .outOfSync)
         XCTAssertFalse(FileManager.default.fileExists(atPath: managedURL.path))
@@ -73,6 +76,7 @@ final class ModStateManagerTests: XCTestCase {
         let second = enabledRoot.appendingPathComponent("second.reds")
         let disabledSecond = home.disabledURL
             .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("scripts", isDirectory: true)
             .appendingPathComponent("second.reds")
         try write("first", to: first)
         try write("second", to: second)
@@ -84,6 +88,49 @@ final class ModStateManagerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: first.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
         XCTAssertEqual(try manifestStore.load(id: id).status, .enabled)
+    }
+
+    func testInputMappingFilesMoveWithModAndMarkInputOutOfSync() throws {
+        let id = "input-mod"
+        let scriptRoot = home.overlayScriptsURL.appendingPathComponent(id, isDirectory: true)
+        let inputRoot = home.overlayInputURL.appendingPathComponent(id, isDirectory: true)
+        let script = scriptRoot.appendingPathComponent("main.reds")
+        let input = inputRoot.appendingPathComponent("insanecyberdeck_input.xml")
+        try write("script", to: script)
+        try write("<bindings />", to: input)
+        let manifest = InstalledModManifest(
+            id: id,
+            displayName: id,
+            type: .redscriptInput,
+            status: .enabled,
+            sourceArchive: "/tmp/\(id).zip",
+            installedAt: Date(),
+            gameAppPath: "/Applications/Cyberpunk 2077.app",
+            installMode: "sidecar_overlay",
+            installedFiles: [
+                InstalledFileRecord(sourceInArchive: "r6/scripts/main.reds", installedPath: script.path, sizeBytes: 0, sha256: "")
+            ],
+            inputMappingFiles: [
+                InstalledFileRecord(sourceInArchive: "r6/input/insanecyberdeck_input.xml", installedPath: input.path, sizeBytes: 0, sha256: "")
+            ],
+            inputPatchState: .active,
+            requiresInputMappingPatch: true,
+            detectedDependencies: ["redscript", "input-mapping"],
+            compatibilityStatus: .supported
+        )
+        try manifestStore.save(manifest)
+        try StateStore(home: home).save(CyberMacState(activeInputPatchModIDs: [id], activeInputTargetHashes: ["/tmp/inputContexts_mac.xml": "hash"]))
+
+        let disabled = try manager.disable(id: id)
+
+        let disabledInput = home.disabledURL
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("input", isDirectory: true)
+            .appendingPathComponent("insanecyberdeck_input.xml")
+        XCTAssertEqual(disabled.inputPatchState, .outOfSync)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: input.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: disabledInput.path))
+        XCTAssertTrue(StateStore(home: home).load().activeInputPatchModIDs.isEmpty)
     }
 
     private func saveManifest(id: String, status: InstalledModStatus, installedPath: String) throws {

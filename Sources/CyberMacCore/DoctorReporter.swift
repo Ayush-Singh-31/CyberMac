@@ -35,6 +35,7 @@ public struct DoctorReporter: Sendable {
             game = try detector.detect(preferredAppPath: preferredAppPath)
         } catch {
             warnings.append(DoctorWarning(code: "game-missing", message: String(describing: error)))
+            let inputStatus = try? InputMappingManager(home: home).status(gameInstall: nil)
             return DoctorReport(
                 game: GameInstallSummary(
                     found: false,
@@ -64,12 +65,14 @@ public struct DoctorReporter: Sendable {
                     safeToProceedToActivation: false,
                     nextStep: "Choose a supported Cyberpunk 2077 app."
                 ),
+                inputMappings: inputStatus,
                 warnings: warnings,
                 legacyProbe: developerMode ? legacyProbe() : nil
             )
         }
 
         let bundleSnapshot = try resolver.snapshot(gameInstall: game)
+        let inputStatus = try? InputMappingManager(home: home).status(gameInstall: game)
         if !bundleSnapshot.bundle.overlayMirrorPresent {
             warnings.append(DoctorWarning(code: "overlay-mirror-missing", message: "Overlay cache mirror is missing. Activation will recreate it from the base snapshot."))
         }
@@ -111,6 +114,7 @@ public struct DoctorReporter: Sendable {
                 safeToProceedToActivation: !bundleSnapshot.activationBlocked && bundleSnapshot.bundle.baseSnapshotSHA256 != nil,
                 nextStep: bundleSnapshot.nextStep
             ),
+            inputMappings: inputStatus,
             warnings: warnings,
             legacyProbe: developerMode ? legacyProbe() : nil
         )
@@ -206,6 +210,16 @@ public enum DoctorReportFormatter {
         lines.append("  Manual privileged write: \(report.activation.manualPrivilegedWriteRequired ? "required for future activations" : "not required")")
         lines.append("  Safe to proceed to activation: \(yesNo(report.activation.safeToProceedToActivation))")
         lines.append("  Next step: \(report.activation.nextStep)")
+        if let input = report.inputMappings {
+            lines.append("")
+            lines.append("Input mappings")
+            lines.append("  Required mods: \(input.requiredModCount)")
+            lines.append("  Pending input patch: \(input.pendingInputPatch?.id ?? "none")")
+            lines.append("  Active input patch mods: \(input.activeInputPatchModIDs.isEmpty ? "none" : input.activeInputPatchModIDs.joined(separator: ", "))")
+            lines.append("  Target inputContexts: \(input.targetInputContextsPath ?? "unknown")")
+            lines.append("  Target inputUserMappings: \(input.targetInputUserMappingsPath ?? "unknown")")
+            lines.append("  Next step: \(input.nextStep)")
+        }
 
         if !report.warnings.isEmpty {
             lines.append("")

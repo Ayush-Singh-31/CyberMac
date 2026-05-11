@@ -56,6 +56,16 @@ struct CyberMacCLI {
             try refreshBaseCache()
         case "activate":
             try activate()
+        case "input-status":
+            try inputStatus()
+        case "prepare-input-patch":
+            try prepareInputPatch()
+        case "verify-input-patch":
+            try verifyInputPatch()
+        case "list-input-backups":
+            try listInputBackups()
+        case "restore-input-config":
+            try restoreInputConfig()
         case "list-backups":
             try listBackups()
         case "restore":
@@ -98,6 +108,11 @@ struct CyberMacCLI {
           cybermac activate --dry-run [--game-app /path/to/Cyberpunk.app]
           cybermac activate --bundle-mode [--game-app /path/to/Cyberpunk.app]
           cybermac activate --verify [--game-app /path/to/Cyberpunk.app]
+          cybermac input-status [--game-app /path/to/Cyberpunk.app]
+          cybermac prepare-input-patch [<mod-id>] [--game-app /path/to/Cyberpunk.app]
+          cybermac verify-input-patch [--game-app /path/to/Cyberpunk.app]
+          cybermac list-input-backups
+          cybermac restore-input-config [--dry-run|--verify] <backup-id> [--game-app /path/to/Cyberpunk.app]
           cybermac list-backups
           cybermac restore [--dry-run|--verify] <backup-id> [--game-app /path/to/Cyberpunk.app]
           cybermac restore-vanilla [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
@@ -255,7 +270,12 @@ struct CyberMacCLI {
         print("ID: \(manifest.id)")
         print("Status: \(manifest.status.rawValue), inactive")
         print("Reason: bundle activation has not been run.")
-        print("Next: cybermac activate --dry-run")
+        if manifest.requiresInputMappingPatch {
+            print("Input patch required: yes")
+            print("Next: cybermac activate --dry-run, then cybermac prepare-input-patch \(manifest.id)")
+        } else {
+            print("Next: cybermac activate --dry-run")
+        }
     }
 
     private func cacheStatus() throws {
@@ -343,6 +363,114 @@ struct CyberMacCLI {
         }
     }
 
+    private func inputStatus() throws {
+        try home.bootstrap()
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let status = try InputMappingManager(home: home).status(gameInstall: game)
+        print("Input mappings")
+        print("  Required mods: \(status.requiredModCount)")
+        print("  Active input patch mods: \(status.activeInputPatchModIDs.count)")
+        print("  Pending input patch: \(status.pendingInputPatch?.id ?? "none")")
+        print("  Target inputContexts: \(status.targetInputContextsPath ?? "unknown")")
+        print("  Target inputUserMappings: \(status.targetInputUserMappingsPath ?? "unknown")")
+        print("  Next step: \(status.nextStep)")
+        if !status.requiredMods.isEmpty {
+            print("Required mod IDs:")
+            for mod in status.requiredMods {
+                print("- \(mod.id)")
+            }
+        }
+    }
+
+    private func prepareInputPatch() throws {
+        try home.bootstrap()
+        let ids = positionalArguments(after: "prepare-input-patch", excludingFlags: [])
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let result = try InputMappingManager(home: home).preparePatch(gameInstall: game, modIDs: ids.isEmpty ? nil : [ids[0]])
+        print("Input patch prepared.")
+        print("Mods:")
+        for id in result.modIDs {
+            print("- \(id)")
+        }
+        print("")
+        print("Generated files:")
+        print("- \(result.generatedContextPath)")
+        print("- \(result.generatedUserMappingsPath)")
+        print("")
+        print("Backup ID:")
+        print(result.backupID)
+        print("")
+        print("Run these commands manually:")
+        for command in result.sudoCommands {
+            print(command)
+        }
+        print("")
+        print("Then verify:")
+        print(result.verifyCommand)
+    }
+
+    private func verifyInputPatch() throws {
+        try home.bootstrap()
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let result = try InputMappingManager(home: home).verifyPatch(gameInstall: game)
+        if result.matched {
+            print("Input patch verified: active")
+            print("Patched files:")
+            for target in result.expectedHashes.keys.sorted() {
+                print("- \(URL(fileURLWithPath: target).lastPathComponent)")
+            }
+        } else {
+            print("Input patch verify failed.")
+            print("")
+            for target in result.mismatches {
+                print("Target:")
+                print(target)
+                print("Expected:")
+                print(result.expectedHashes[target] ?? "missing")
+                print("Actual:")
+                print(result.actualHashes[target] ?? "missing")
+                print("")
+            }
+            print("Likely cause:")
+            print("The printed sudo copy command has not been run yet, or a different file was copied.")
+        }
+    }
+
+    private func listInputBackups() throws {
+        try home.bootstrap()
+        let backups = try InputConfigBackupManager(home: home).list()
+        if backups.isEmpty {
+            print("No CyberMac input config backups found.")
+            return
+        }
+        for backup in backups {
+            let files = backup.files.map { URL(fileURLWithPath: $0.bundlePath).lastPathComponent }.joined(separator: ", ")
+            print("\(backup.id) | \(backup.createdAt) | \(files) | \(backup.gameFingerprintID)")
+        }
+    }
+
+    private func restoreInputConfig() throws {
+        try home.bootstrap()
+        let ids = positionalArguments(after: "restore-input-config", excludingFlags: ["--dry-run", "--verify"])
+        guard let id = ids.first else {
+            throw CyberMacError.invalidInput("Missing input config backup id")
+        }
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let manager = InputConfigBackupManager(home: home)
+        if hasFlag("--verify") {
+            let result = try manager.verifyRestore(id: id, gameInstall: game)
+            print(formatInputConfigRestore(result))
+        } else {
+            let commands = try manager.restoreCommands(id: id, gameInstall: game)
+            print(hasFlag("--dry-run") ? "Input config restore dry run." : "Run these input config restore commands manually:")
+            for command in commands {
+                print(command)
+            }
+            print("Then verify:")
+            print("swift run cybermac restore-input-config --verify \(id)")
+        }
+    }
+
     private func listBackups() throws {
         try home.bootstrap()
         let backups = try BundleBackupManager(home: home).list()
@@ -410,7 +538,11 @@ struct CyberMacCLI {
             return
         }
         for mod in mods {
-            print("\(mod.id) | \(mod.displayName) | \(mod.status.rawValue) | \(mod.type.rawValue)")
+            var parts = ["\(mod.id)", mod.displayName, mod.status.rawValue, mod.type.displayName]
+            if mod.requiresInputMappingPatch {
+                parts.append("input: \(mod.inputPatchState.rawValue)")
+            }
+            print(parts.joined(separator: " | "))
         }
     }
 
@@ -454,12 +586,13 @@ struct CyberMacCLI {
 
     private func printScanResult(_ result: ModScanResult) {
         print("Name: \(result.displayName)")
-        print("Status: \(result.compatibilityStatus.rawValue)")
+        print("Status: \(result.displayStatusLabel)")
         print("Sidecar installable: \(result.sidecarInstallable ? "yes" : "no")")
         if let reason = result.installBlockReason {
             print("Install block: \(reason)")
         }
-        print("Type: \(result.kind.rawValue)")
+        print("Type: \(result.kind.displayName)")
+        print("Input patch required: \(result.requiresInputMappingPatch ? "yes" : "no")")
         print("Reasons:")
         for reason in result.reasons {
             print("- \(reason)")
@@ -482,6 +615,48 @@ struct CyberMacCLI {
                 print("- \(entry)")
             }
         }
+        if !result.inputMappingEntries.isEmpty {
+            print("Input mapping files:")
+            for entry in result.inputMappingEntries {
+                print("- \(entry)")
+            }
+        }
+    }
+
+    private func formatInputConfigRestore(_ result: InputConfigRestoreVerificationResult) -> String {
+        var lines: [String] = []
+        lines.append(result.matched ? "Input config restore verified." : "Input config restore verify failed.")
+        lines.append("Backup ID: \(result.backupID)")
+        for file in result.fileResults {
+            lines.append("")
+            lines.append(file.role.rawValue)
+            switch file.status {
+            case .verified(let target):
+                lines.append("  Verified: \(target)")
+            case .hashMismatch(let expected, let actual, let target):
+                lines.append("  Target: \(target)")
+                lines.append("  Expected: \(expected)")
+                lines.append("  Actual: \(actual)")
+            case .expectedAbsentButFileExists(let target, let actualHash):
+                lines.append("  Expected absent but file exists: \(target)")
+                lines.append("  Actual SHA-256: \(actualHash)")
+            case .expectedPresentButFileMissing(let target):
+                lines.append("  Expected present but file is missing: \(target)")
+            case .staleBackup(let expectedFingerprint, let actualFingerprint):
+                lines.append("  Stale backup")
+                lines.append("  Expected fingerprint: \(expectedFingerprint)")
+                lines.append("  Actual fingerprint: \(actualFingerprint)")
+            }
+        }
+        if !result.matched {
+            lines.append("")
+            lines.append("Likely cause:")
+            lines.append("The printed sudo restore command has not been run yet, or a different file was copied.")
+        }
+        lines.append("")
+        lines.append("Verify command:")
+        lines.append(result.verifyCommand)
+        return lines.joined(separator: "\n")
     }
 
     private func printLaunchRefusal(_ plan: LaunchGamePlan) {

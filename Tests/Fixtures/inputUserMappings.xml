@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<bindings>
+    <mapping name="PhotoMode" type="Button">
+        <button id="IK_P" />
+    </mapping>
+    <mapping name="Inventory" type="Button">
+        <button id="IK_I" />
+    </mapping>
+</bindings>

@@ -62,8 +62,30 @@ public enum InstalledModStatus: String, Codable, Sendable {
     case uninstalled
 }
 
+public enum InputPatchState: String, Codable, Sendable {
+    case notRequired
+    case required
+    case prepared
+    case active
+    case outOfSync
+    case failed
+}
+
+public enum InputConfigRole: String, Codable, Sendable {
+    case inputContexts
+    case inputUserMappings
+}
+
+public enum InputPatchVerificationStatus: Codable, Equatable, Sendable {
+    case verified
+    case hashMismatch(expected: String, actual: String, target: String)
+    case expectedPresentButFileMissing(target: String)
+    case staleBackup(expectedFingerprint: String, actualFingerprint: String)
+}
+
 public enum ModKind: String, Codable, Sendable {
     case redscript
+    case redscriptInput
     case archive
     case mixed
     case unknown
@@ -90,6 +112,8 @@ public struct ModScanResult: Codable, Sendable {
     public let findings: [ModScanFinding]
     public let redscriptEntries: [String]
     public let archiveEntries: [String]
+    public let inputMappingEntries: [String]
+    public let requiresInputMappingPatch: Bool
     public let allEntries: [String]
 
     public init(
@@ -103,6 +127,8 @@ public struct ModScanResult: Codable, Sendable {
         findings: [ModScanFinding],
         redscriptEntries: [String],
         archiveEntries: [String],
+        inputMappingEntries: [String] = [],
+        requiresInputMappingPatch: Bool = false,
         allEntries: [String]
     ) {
         self.archiveURL = archiveURL
@@ -115,6 +141,8 @@ public struct ModScanResult: Codable, Sendable {
         self.findings = findings
         self.redscriptEntries = redscriptEntries
         self.archiveEntries = archiveEntries
+        self.inputMappingEntries = inputMappingEntries
+        self.requiresInputMappingPatch = requiresInputMappingPatch
         self.allEntries = allEntries
     }
 }
@@ -284,6 +312,28 @@ public struct PendingActivation: Codable, Equatable, Sendable {
     }
 }
 
+public struct PendingInputPatch: Codable, Equatable, Sendable {
+    public let id: String
+    public let createdAt: Date
+    public let gameAppPath: String
+    public let modIDs: [String]
+    public let targetHashes: [String: String]
+    public let generatedFiles: [String: String]
+    public let backupID: String
+    public let sudoCommands: [String]
+
+    public init(id: String, createdAt: Date, gameAppPath: String, modIDs: [String], targetHashes: [String: String], generatedFiles: [String: String], backupID: String, sudoCommands: [String]) {
+        self.id = id
+        self.createdAt = createdAt
+        self.gameAppPath = gameAppPath
+        self.modIDs = modIDs
+        self.targetHashes = targetHashes
+        self.generatedFiles = generatedFiles
+        self.backupID = backupID
+        self.sudoCommands = sudoCommands
+    }
+}
+
 public struct InstalledFileRecord: Codable, Sendable {
     public let sourceInArchive: String
     public let installedPath: String
@@ -309,6 +359,9 @@ public struct InstalledModManifest: Codable, Sendable {
     public let gameAppPath: String
     public let installMode: String
     public var installedFiles: [InstalledFileRecord]
+    public let inputMappingFiles: [InstalledFileRecord]
+    public var inputPatchState: InputPatchState
+    public let requiresInputMappingPatch: Bool
     public let detectedDependencies: [String]
     public let compatibilityStatus: CompatibilityStatus
 
@@ -323,6 +376,9 @@ public struct InstalledModManifest: Codable, Sendable {
         gameAppPath: String,
         installMode: String,
         installedFiles: [InstalledFileRecord],
+        inputMappingFiles: [InstalledFileRecord] = [],
+        inputPatchState: InputPatchState = .notRequired,
+        requiresInputMappingPatch: Bool = false,
         detectedDependencies: [String],
         compatibilityStatus: CompatibilityStatus
     ) {
@@ -336,8 +392,196 @@ public struct InstalledModManifest: Codable, Sendable {
         self.gameAppPath = gameAppPath
         self.installMode = installMode
         self.installedFiles = installedFiles
+        self.inputMappingFiles = inputMappingFiles
+        self.inputPatchState = inputPatchState
+        self.requiresInputMappingPatch = requiresInputMappingPatch
         self.detectedDependencies = detectedDependencies
         self.compatibilityStatus = compatibilityStatus
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case id
+        case displayName
+        case type
+        case status
+        case sourceArchive
+        case installedAt
+        case gameAppPath
+        case installMode
+        case installedFiles
+        case inputMappingFiles
+        case inputPatchState
+        case requiresInputMappingPatch
+        case detectedDependencies
+        case compatibilityStatus
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        self.id = try container.decode(String.self, forKey: .id)
+        self.displayName = try container.decode(String.self, forKey: .displayName)
+        self.type = try container.decodeIfPresent(ModKind.self, forKey: .type) ?? .unknown
+        self.status = try container.decodeIfPresent(InstalledModStatus.self, forKey: .status) ?? .enabled
+        self.sourceArchive = try container.decode(String.self, forKey: .sourceArchive)
+        self.installedAt = try container.decodeIfPresent(Date.self, forKey: .installedAt) ?? Date(timeIntervalSince1970: 0)
+        self.gameAppPath = try container.decodeIfPresent(String.self, forKey: .gameAppPath) ?? ""
+        self.installMode = try container.decodeIfPresent(String.self, forKey: .installMode) ?? "sidecar_overlay"
+        self.installedFiles = try container.decodeIfPresent([InstalledFileRecord].self, forKey: .installedFiles) ?? []
+        self.inputMappingFiles = try container.decodeIfPresent([InstalledFileRecord].self, forKey: .inputMappingFiles) ?? []
+        self.inputPatchState = try container.decodeIfPresent(InputPatchState.self, forKey: .inputPatchState) ?? .notRequired
+        self.requiresInputMappingPatch = try container.decodeIfPresent(Bool.self, forKey: .requiresInputMappingPatch) ?? false
+        self.detectedDependencies = try container.decodeIfPresent([String].self, forKey: .detectedDependencies) ?? []
+        self.compatibilityStatus = try container.decodeIfPresent(CompatibilityStatus.self, forKey: .compatibilityStatus) ?? .untested
+    }
+}
+
+public struct ExtractedInputMapping: Codable, Sendable {
+    public let modID: String
+    public let sourcePath: String
+    public let actionNames: [String]
+    public let mappingNames: [String]
+    public let actionMappingsXML: String
+    public let holdTimeoutsXML: String
+    public let acceptedEventsXML: String
+    public let keyMappingsXML: String
+
+    public init(modID: String, sourcePath: String, actionNames: [String], mappingNames: [String], actionMappingsXML: String, holdTimeoutsXML: String, acceptedEventsXML: String, keyMappingsXML: String) {
+        self.modID = modID
+        self.sourcePath = sourcePath
+        self.actionNames = actionNames
+        self.mappingNames = mappingNames
+        self.actionMappingsXML = actionMappingsXML
+        self.holdTimeoutsXML = holdTimeoutsXML
+        self.acceptedEventsXML = acceptedEventsXML
+        self.keyMappingsXML = keyMappingsXML
+    }
+}
+
+public struct InputPatchPrepareResult: Codable, Sendable {
+    public let patchID: String
+    public let modIDs: [String]
+    public let generatedContextPath: String
+    public let generatedUserMappingsPath: String
+    public let backupID: String
+    public let expectedHashes: [String: String]
+    public let sudoCommands: [String]
+    public let verifyCommand: String
+
+    public init(patchID: String, modIDs: [String], generatedContextPath: String, generatedUserMappingsPath: String, backupID: String, expectedHashes: [String: String], sudoCommands: [String], verifyCommand: String) {
+        self.patchID = patchID
+        self.modIDs = modIDs
+        self.generatedContextPath = generatedContextPath
+        self.generatedUserMappingsPath = generatedUserMappingsPath
+        self.backupID = backupID
+        self.expectedHashes = expectedHashes
+        self.sudoCommands = sudoCommands
+        self.verifyCommand = verifyCommand
+    }
+}
+
+public struct InputPatchVerifyResult: Codable, Sendable {
+    public let patchID: String
+    public let matched: Bool
+    public let expectedHashes: [String: String]
+    public let actualHashes: [String: String]
+    public let mismatches: [String]
+
+    public init(patchID: String, matched: Bool, expectedHashes: [String: String], actualHashes: [String: String], mismatches: [String]) {
+        self.patchID = patchID
+        self.matched = matched
+        self.expectedHashes = expectedHashes
+        self.actualHashes = actualHashes
+        self.mismatches = mismatches
+    }
+}
+
+public struct InputPatchStatus: Codable, Sendable {
+    public let requiredMods: [InstalledModManifest]
+    public let pendingInputPatch: PendingInputPatch?
+    public let activeInputPatchModIDs: [String]
+    public let activeInputTargetHashes: [String: String]
+    public let targetInputContextsPath: String?
+    public let targetInputUserMappingsPath: String?
+    public let nextStep: String
+
+    public var requiredModCount: Int { requiredMods.count }
+
+    public init(requiredMods: [InstalledModManifest], pendingInputPatch: PendingInputPatch?, activeInputPatchModIDs: [String], activeInputTargetHashes: [String: String], targetInputContextsPath: String?, targetInputUserMappingsPath: String?, nextStep: String) {
+        self.requiredMods = requiredMods
+        self.pendingInputPatch = pendingInputPatch
+        self.activeInputPatchModIDs = activeInputPatchModIDs
+        self.activeInputTargetHashes = activeInputTargetHashes
+        self.targetInputContextsPath = targetInputContextsPath
+        self.targetInputUserMappingsPath = targetInputUserMappingsPath
+        self.nextStep = nextStep
+    }
+}
+
+public struct InputConfigBackupManifest: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let id: String
+    public let createdAt: Date
+    public let gameAppPath: String
+    public let gameFingerprintID: String
+    public let files: [InputConfigBackupFile]
+    public let modIDs: [String]
+
+    public init(schemaVersion: Int = 1, id: String, createdAt: Date, gameAppPath: String, gameFingerprintID: String, files: [InputConfigBackupFile], modIDs: [String]) {
+        self.schemaVersion = schemaVersion
+        self.id = id
+        self.createdAt = createdAt
+        self.gameAppPath = gameAppPath
+        self.gameFingerprintID = gameFingerprintID
+        self.files = files
+        self.modIDs = modIDs
+    }
+}
+
+public struct InputConfigBackupFile: Codable, Equatable, Sendable {
+    public let role: InputConfigRole
+    public let bundlePath: String
+    public let backupPath: String?
+    public let priorState: PriorFileState
+    public let sha256: String?
+    public let sizeBytes: UInt64?
+
+    public init(role: InputConfigRole, bundlePath: String, backupPath: String?, priorState: PriorFileState, sha256: String?, sizeBytes: UInt64?) {
+        self.role = role
+        self.bundlePath = bundlePath
+        self.backupPath = backupPath
+        self.priorState = priorState
+        self.sha256 = sha256
+        self.sizeBytes = sizeBytes
+    }
+}
+
+public struct InputConfigRestoreVerificationResult: Codable, Equatable, Sendable {
+    public let backupID: String
+    public let matched: Bool
+    public let fileResults: [InputConfigRestoreFileVerification]
+    public let restoreCommands: [String]
+    public let verifyCommand: String
+
+    public init(backupID: String, matched: Bool, fileResults: [InputConfigRestoreFileVerification], restoreCommands: [String], verifyCommand: String) {
+        self.backupID = backupID
+        self.matched = matched
+        self.fileResults = fileResults
+        self.restoreCommands = restoreCommands
+        self.verifyCommand = verifyCommand
+    }
+}
+
+public struct InputConfigRestoreFileVerification: Codable, Equatable, Sendable {
+    public let role: InputConfigRole
+    public let target: String
+    public let status: RestoreVerificationStatus
+
+    public init(role: InputConfigRole, target: String, status: RestoreVerificationStatus) {
+        self.role = role
+        self.target = target
+        self.status = status
     }
 }
 
@@ -484,14 +728,16 @@ public struct DoctorReport: Codable, Sendable {
     public let runtime: RuntimeSummary
     public let cache: CacheSummary
     public let activation: ActivationSummary
+    public let inputMappings: InputPatchStatus?
     public let warnings: [DoctorWarning]
     public let legacyProbe: LegacyProbeSummary?
 
-    public init(game: GameInstallSummary, runtime: RuntimeSummary, cache: CacheSummary, activation: ActivationSummary, warnings: [DoctorWarning], legacyProbe: LegacyProbeSummary?) {
+    public init(game: GameInstallSummary, runtime: RuntimeSummary, cache: CacheSummary, activation: ActivationSummary, inputMappings: InputPatchStatus? = nil, warnings: [DoctorWarning], legacyProbe: LegacyProbeSummary?) {
         self.game = game
         self.runtime = runtime
         self.cache = cache
         self.activation = activation
+        self.inputMappings = inputMappings
         self.warnings = warnings
         self.legacyProbe = legacyProbe
     }
@@ -566,6 +812,10 @@ public struct DiagnosticReport: Codable, Sendable {
     public let activeModIDs: [String]
     public let baseCacheSnapshotID: String?
     public let lastBackupID: String?
+    public let inputPatchRequiredMods: Int
+    public let pendingInputPatchID: String?
+    public let activeInputPatchModIDs: [String]
+    public let lastInputBackupID: String?
     public let installedManagedMods: Int
     public let notes: [String]
 
@@ -588,6 +838,10 @@ public struct DiagnosticReport: Codable, Sendable {
         activeModIDs: [String],
         baseCacheSnapshotID: String?,
         lastBackupID: String?,
+        inputPatchRequiredMods: Int = 0,
+        pendingInputPatchID: String? = nil,
+        activeInputPatchModIDs: [String] = [],
+        lastInputBackupID: String? = nil,
         installedManagedMods: Int,
         notes: [String]
     ) {
@@ -609,6 +863,10 @@ public struct DiagnosticReport: Codable, Sendable {
         self.activeModIDs = activeModIDs
         self.baseCacheSnapshotID = baseCacheSnapshotID
         self.lastBackupID = lastBackupID
+        self.inputPatchRequiredMods = inputPatchRequiredMods
+        self.pendingInputPatchID = pendingInputPatchID
+        self.activeInputPatchModIDs = activeInputPatchModIDs
+        self.lastInputBackupID = lastInputBackupID
         self.installedManagedMods = installedManagedMods
         self.notes = notes
     }

@@ -36,6 +36,7 @@ struct ActivationView: View {
                         DetailRow(label: "Base snapshot", value: appState.doctor?.cache.baseSnapshotPresent == true ? "present" : "missing")
                     }
                 }
+                inputMappingsPanel
                 CyberPanel {
                     HStack(spacing: 12) {
                         PrimaryButton(title: "Verify activation", systemImage: "checkmark.seal", disabled: false, variant: .secondary, accent: .blue) {
@@ -66,6 +67,50 @@ struct ActivationView: View {
     private var activationBlocked: Bool {
         guard let report = appState.doctor else { return true }
         return report.cache.currentBundle == .externallyChanged || report.cache.currentBundle == .missing || !report.cache.baseSnapshotPresent
+    }
+
+    private var inputMappingsPanel: some View {
+        CyberPanel(accent: inputAccent) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Input mappings")
+                            .font(.title3.weight(.semibold))
+                        Text(inputDetail)
+                            .foregroundStyle(.secondary)
+                        Text("Status: \(inputStateText)")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(inputAccent.color.opacity(0.14), in: Capsule())
+                    }
+                    Spacer()
+                    PrimaryButton(
+                        title: "Prepare input patch",
+                        systemImage: "keyboard",
+                        disabled: appState.inputStatus?.requiredModCount ?? 0 == 0,
+                        variant: .secondary,
+                        accent: .amber
+                    ) {
+                        Task { await appState.prepareInputPatch() }
+                    }
+                    PrimaryButton(
+                        title: "Verify input patch",
+                        systemImage: "checkmark.seal",
+                        disabled: appState.inputStatus?.pendingInputPatch == nil,
+                        variant: .secondary,
+                        accent: .green
+                    ) {
+                        Task { await appState.verifyInputPatch() }
+                    }
+                }
+                if appState.inputStatus?.pendingInputPatch != nil {
+                    Text("Manual input patch required. Copy and run the prepared commands in Terminal, then verify input patch.")
+                        .font(.callout)
+                        .foregroundStyle(CyberAccent.amber.color)
+                }
+            }
+        }
     }
 
     private var heroTitle: String {
@@ -117,6 +162,34 @@ struct ActivationView: View {
         guard let report = appState.doctor else { return true }
         if report.activation.state == .active { return false }
         return activationBlocked || report.activation.enabledMods == 0
+    }
+
+    private var inputDetail: String {
+        let count = appState.inputStatus?.requiredModCount ?? 0
+        if count == 0 { return "No enabled mods require keybind XML." }
+        if count == 1 { return "1 enabled mod requires keybind XML." }
+        return "\(count) enabled mods require keybind XML."
+    }
+
+    private var inputStateText: String {
+        guard let status = appState.inputStatus else { return "unknown" }
+        if status.requiredModCount == 0 { return "Not required" }
+        if status.pendingInputPatch != nil { return "Manual copy pending" }
+        if Set(status.activeInputPatchModIDs) == Set(status.requiredMods.map(\.id)) { return "Active" }
+        return "Patch required"
+    }
+
+    private var inputAccent: CyberAccent {
+        switch inputStateText {
+        case "Active":
+            return .green
+        case "Not required":
+            return .neutral
+        case "Manual copy pending":
+            return .blue
+        default:
+            return .amber
+        }
     }
 
     private func runPrimaryAction() async {

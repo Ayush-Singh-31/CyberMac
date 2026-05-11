@@ -66,7 +66,9 @@ public struct BundleBackupManager: Sendable {
             guard FileManager.default.fileExists(atPath: metadataURL.path) else { return nil }
             return try JSONDecoder.cybermac.decode(BundleBackupManifest.self, from: Data(contentsOf: metadataURL))
         }
-        .sorted { $0.createdAt > $1.createdAt }
+        .sorted { lhs, rhs in
+            lhs.createdAt == rhs.createdAt ? lhs.id > rhs.id : lhs.createdAt > rhs.createdAt
+        }
     }
 
     public func load(id: String) throws -> BundleBackupManifest {
@@ -86,7 +88,9 @@ public struct BundleBackupManager: Sendable {
                     manifest.gameFingerprintID == fingerprint.id &&
                     manifest.sha256 == baseHash
             }
-            .sorted { $0.createdAt > $1.createdAt }
+            .sorted { lhs, rhs in
+                lhs.createdAt == rhs.createdAt ? lhs.id > rhs.id : lhs.createdAt > rhs.createdAt
+            }
             .first
     }
 

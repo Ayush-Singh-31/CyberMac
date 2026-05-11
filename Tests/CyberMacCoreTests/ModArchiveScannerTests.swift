@@ -32,6 +32,48 @@ final class ModArchiveScannerTests: XCTestCase {
         XCTAssertEqual(result.redscriptEntries, ["r6/scripts/example/main.reds"])
     }
 
+    func testRedscriptWithInputXmlIsSupportedWithInputPatch() throws {
+        let zipURL = try makeZip(named: "InsaneCyberdeck-26690-2-1-1768948688.zip", entries: [
+            .file("r6/scripts/InsaneCyberdeck.reds"),
+            .file("r6/input/insanecyberdeck_input.xml", contents: "<bindings />"),
+            .file("README.md")
+        ])
+
+        let result = try scanner.scan(zipURL: zipURL)
+
+        XCTAssertEqual(result.compatibilityStatus, .supported)
+        XCTAssertTrue(result.sidecarInstallable)
+        XCTAssertEqual(result.kind, .redscriptInput)
+        XCTAssertTrue(result.requiresInputMappingPatch)
+        XCTAssertEqual(result.inputMappingEntries, ["r6/input/insanecyberdeck_input.xml"])
+    }
+
+    func testGenericXmlIsNotTreatedAsHarmlessDocumentation() throws {
+        let zipURL = try makeZip(named: "redscript-generic-xml.zip", entries: [
+            .file("r6/scripts/example/main.reds"),
+            .file("config/settings.xml", contents: "<settings />")
+        ])
+
+        let result = try scanner.scan(zipURL: zipURL)
+
+        XCTAssertEqual(result.compatibilityStatus, .untested)
+        XCTAssertFalse(result.sidecarInstallable)
+        XCTAssertEqual(result.findings.first?.path, "config/settings.xml")
+    }
+
+    func testInputXmlWithoutRedscriptIsUntested() throws {
+        let zipURL = try makeZip(named: "input-only.zip", entries: [
+            .file("r6/input/insanecyberdeck_input.xml", contents: "<bindings />")
+        ])
+
+        let result = try scanner.scan(zipURL: zipURL)
+
+        XCTAssertEqual(result.compatibilityStatus, .untested)
+        XCTAssertFalse(result.sidecarInstallable)
+        XCTAssertFalse(result.requiresInputMappingPatch)
+        XCTAssertEqual(result.inputMappingEntries, ["r6/input/insanecyberdeck_input.xml"])
+    }
+
     func testScanDoesNotCarryLaunchWorkflowState() throws {
         let zipURL = try makeZip(named: "redscript-unverified.zip", entries: [
             .file("r6/scripts/example/main.reds")

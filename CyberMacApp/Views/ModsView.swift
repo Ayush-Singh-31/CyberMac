@@ -11,7 +11,7 @@ struct ModsView: View {
                     .font(.largeTitle.weight(.semibold))
                 InteractiveDropZone(
                     title: "Drop a mod archive",
-                    subtitle: ".zip only. CyberMac v0.1 supports redscript-only mods."
+                    subtitle: ".zip only. CyberMac supports redscript mods and input mapping support."
                 ) { urls in
                     if let url = urls.first {
                         Task { await appState.scanMod(url: url) }
@@ -25,15 +25,25 @@ struct ModsView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(scan.displayName)
                                         .font(.headline)
-                                    Text(scan.kind.rawValue)
+                                    Text(scan.kind.displayName)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Text(scan.compatibilityStatus.rawValue)
+                                Text(scan.displayStatusLabel)
                                     .font(.caption.weight(.semibold))
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
                                     .background((scan.sidecarInstallable ? CyberAccent.green.color : CyberAccent.amber.color).opacity(0.14), in: Capsule())
+                            }
+                            if scan.requiresInputMappingPatch {
+                                Text("CyberMac can install the redscript file and prepare the required input XML patch. Manual copy and verification are required before the keybinds work.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                Text("Input patch required")
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(CyberAccent.amber.color.opacity(0.14), in: Capsule())
                             }
                             ForEach(scan.reasons, id: \.self) { reason in
                                 Text(reason)
@@ -88,8 +98,15 @@ private struct ModRow: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(ModDisplayFormatter.displayName(for: mod))
                         .font(.headline)
-                    Text(mod.type.rawValue)
+                    Text(mod.type.displayName)
                         .foregroundStyle(.secondary)
+                    if mod.requiresInputMappingPatch {
+                        Text("Input patch required")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(CyberAccent.amber.color.opacity(0.14), in: Capsule())
+                    }
                 }
                 Spacer()
                 Text(mod.status.rawValue)
@@ -97,11 +114,18 @@ private struct ModRow: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(.thinMaterial, in: Capsule())
-                Text(bundleStatus)
+                Text("Script: \(bundleStatus)")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(statusAccent.color.opacity(0.14), in: Capsule())
+                if mod.requiresInputMappingPatch {
+                    Text("Input: \(inputStatus)")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(inputAccent.color.opacity(0.14), in: Capsule())
+                }
                 Button {
                     Task { await appState.setMod(mod, enabled: mod.status != .enabled) }
                 } label: {
@@ -126,19 +150,50 @@ private struct ModRow: View {
         guard mod.status == .enabled else { return "Disabled" }
         if appState.doctor?.activation.state == .active,
            appState.doctor?.activation.activeModIDs.contains(mod.id) == true {
-            return "Active in game"
+            return "Active"
         }
         return "Needs activation"
     }
 
+    private var inputStatus: String {
+        guard mod.status == .enabled else { return "Disabled" }
+        switch mod.inputPatchState {
+        case .active:
+            return "Active"
+        case .prepared:
+            return "Prepared"
+        case .failed:
+            return "Verify failed"
+        case .outOfSync:
+            return "Out of sync"
+        case .required:
+            return "Patch required"
+        case .notRequired:
+            return "Not required"
+        }
+    }
+
     private var statusAccent: CyberAccent {
         switch bundleStatus {
-        case "Active in game":
+        case "Active":
             return .green
         case "Needs activation":
             return .amber
         default:
             return .neutral
+        }
+    }
+
+    private var inputAccent: CyberAccent {
+        switch inputStatus {
+        case "Active":
+            return .green
+        case "Disabled", "Not required":
+            return .neutral
+        case "Verify failed":
+            return .red
+        default:
+            return .amber
         }
     }
 }

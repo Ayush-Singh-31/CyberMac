@@ -101,6 +101,13 @@ struct HomeView: View {
                 }
             }
         }
+        if inputNeedsPatch {
+            WarningBanner(
+                message: "One or more enabled mods require keybind XML before they are fully active.",
+                title: "Mods need input patch",
+                kind: .warning
+            )
+        }
     }
 
     @ViewBuilder
@@ -162,6 +169,9 @@ struct HomeView: View {
             return "Activation blocked"
         }
         if report.activation.state == .active {
+            if inputNeedsPatch {
+                return "Mods need input patch"
+            }
             return "Mods active"
         }
         return report.activation.enabledMods > 0 ? "Activation required" : "Ready for mods"
@@ -171,20 +181,37 @@ struct HomeView: View {
         guard let report = appState.doctor else { return "Loading the local health report." }
         if report.activation.enabledMods == 1 {
             let activeText = report.activation.state == .active ? "One mod is active." : "One mod is enabled."
-            return "\(activeText)\nCurrent bundle: \(report.cache.currentBundle.displayName)."
+            let inputText = inputNeedsPatch ? "\nInput mapping patch is required." : ""
+            return "\(activeText)\nCurrent bundle: \(report.cache.currentBundle.displayName).\(inputText)"
         }
-        return "\(report.activation.enabledMods) enabled mods.\nCurrent bundle: \(report.cache.currentBundle.displayName)."
+        let inputText = inputNeedsPatch ? "\nInput mapping patch is required." : ""
+        return "\(report.activation.enabledMods) enabled mods.\nCurrent bundle: \(report.cache.currentBundle.displayName).\(inputText)"
     }
 
     private var primaryButtonTitle: String {
         guard let report = appState.doctor else { return "Refresh" }
-        if report.activation.state == .active { return "Launch game" }
+        if report.activation.state == .active {
+            if appState.inputStatus?.pendingInputPatch != nil { return "Verify input patch" }
+            if inputNeedsPatch { return "Prepare input patch" }
+            return "Launch game"
+        }
         if report.activation.enabledMods > 0 && report.cache.currentBundle == .vanilla { return "Activate mods" }
         return "Refresh"
     }
 
     private var primaryButtonImage: String {
-        primaryButtonTitle == "Launch game" ? "play.fill" : "arrow.clockwise"
+        switch primaryButtonTitle {
+        case "Launch game":
+            return "play.fill"
+        case "Activate mods":
+            return "bolt.fill"
+        case "Prepare input patch":
+            return "keyboard"
+        case "Verify input patch":
+            return "checkmark.seal"
+        default:
+            return "arrow.clockwise"
+        }
     }
 
     private var primaryButtonDisabled: Bool {
@@ -196,13 +223,22 @@ struct HomeView: View {
     }
 
     private func runPrimaryAction() async {
-        if appState.doctor?.activation.state == .active {
+        if primaryButtonTitle == "Verify input patch" {
+            await appState.verifyInputPatch()
+        } else if primaryButtonTitle == "Prepare input patch" {
+            await appState.prepareInputPatch()
+        } else if appState.doctor?.activation.state == .active {
             await appState.launchGame()
         } else if primaryButtonTitle == "Activate mods" {
             await appState.generateActivation()
         } else {
             await appState.refresh()
         }
+    }
+
+    private var inputNeedsPatch: Bool {
+        guard let status = appState.inputStatus, status.requiredModCount > 0 else { return false }
+        return Set(status.activeInputPatchModIDs) != Set(status.requiredMods.map(\.id))
     }
 
     private func visibleWarnings(_ report: DoctorReport) -> [DoctorWarning] {

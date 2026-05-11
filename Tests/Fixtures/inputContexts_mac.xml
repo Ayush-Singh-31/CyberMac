@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<bindings>
+    <context name="Gameplay">
+        <action name="Jump" map="Jump" priority="0" />
+    </context>
+    <context name="UIToggles">
+        <action name="PhotoMode_Hold" map="PhotoMode" priority="0" />
+    </context>
+
+    <hold action="PhotoMode_Hold" timeout="0.2" />
+    <hold action="Inventory_Hold" timeout="0.1" />
+
+    <acceptedEvents action="PhotoMode_Hold">
+        <event name="ButtonHold" />
+    </acceptedEvents>
+    <acceptedEvents action="Inventory_Hold">
+        <event name="ButtonHold" />
+    </acceptedEvents>
+</bindings>

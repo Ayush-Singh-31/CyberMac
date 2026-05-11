@@ -22,6 +22,7 @@ public struct ModArchiveScanner: Sendable {
         var allEntries: [String] = []
         var redscriptEntries: [String] = []
         var archiveEntries: [String] = []
+        var inputMappingEntries: [String] = []
         var unsupportedFindings: [ModScanFinding] = []
         var untestedFindings: [ModScanFinding] = []
         var entryCount = 0
@@ -115,6 +116,11 @@ public struct ModArchiveScanner: Sendable {
                 continue
             }
 
+            if isInputMappingXML(lower) {
+                inputMappingEntries.append(path)
+                continue
+            }
+
             if isDocumentationOrMetadata(lower) {
                 continue
             }
@@ -123,10 +129,11 @@ public struct ModArchiveScanner: Sendable {
         }
 
         let displayName = zipURL.deletingPathExtension().lastPathComponent
-        let kind = determineKind(redscriptEntries: redscriptEntries, archiveEntries: archiveEntries, allEntries: allEntries)
+        let kind = determineKind(redscriptEntries: redscriptEntries, archiveEntries: archiveEntries, inputMappingEntries: inputMappingEntries, allEntries: allEntries)
         let status: CompatibilityStatus
         let sidecarInstallable: Bool
         let installBlockReason: String?
+        let requiresInputMappingPatch: Bool
         var reasons: [String] = []
         var findings: [ModScanFinding] = []
 
@@ -134,12 +141,23 @@ public struct ModArchiveScanner: Sendable {
             status = .unsupported
             sidecarInstallable = false
             installBlockReason = "Known unsupported dependency or Windows modding marker detected"
+            requiresInputMappingPatch = false
             reasons.append("Known unsupported dependency or Windows modding marker detected")
             findings = unsupportedFindings + untestedFindings
-        } else if !redscriptEntries.isEmpty && archiveEntries.isEmpty && untestedFindings.isEmpty {
+        } else if !redscriptEntries.isEmpty && !inputMappingEntries.isEmpty && archiveEntries.isEmpty && untestedFindings.isEmpty {
             status = .supported
             sidecarInstallable = true
             installBlockReason = nil
+            requiresInputMappingPatch = true
+            reasons.append("Found redscript files plus Cyberpunk input mapping XML")
+            reasons.append("Input config patch is required before keybinds will work")
+            reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, ASI, or symlink markers detected")
+            findings = []
+        } else if !redscriptEntries.isEmpty && inputMappingEntries.isEmpty && archiveEntries.isEmpty && untestedFindings.isEmpty {
+            status = .supported
+            sidecarInstallable = true
+            installBlockReason = nil
+            requiresInputMappingPatch = false
             reasons.append("Found redscript-only files plus normal documentation or metadata")
             reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, ASI, or symlink markers detected")
             findings = []
@@ -147,12 +165,14 @@ public struct ModArchiveScanner: Sendable {
             status = .untested
             sidecarInstallable = false
             installBlockReason = "Archive-based mods are not installed by CyberMac v0.1"
+            requiresInputMappingPatch = false
             reasons.append("Archive-based mods are not installed by CyberMac v0.1")
             findings = untestedFindings
         } else {
             status = .untested
             sidecarInstallable = false
             installBlockReason = "CyberMac v0.1 does not have a safe install rule for this archive layout"
+            requiresInputMappingPatch = false
             reasons.append("CyberMac v0.1 does not have a safe install rule for this archive layout")
             findings = untestedFindings
         }
@@ -168,11 +188,14 @@ public struct ModArchiveScanner: Sendable {
             findings: findings,
             redscriptEntries: redscriptEntries.sorted(),
             archiveEntries: archiveEntries.sorted(),
+            inputMappingEntries: inputMappingEntries.sorted(),
+            requiresInputMappingPatch: requiresInputMappingPatch,
             allEntries: allEntries.sorted()
         )
     }
 
-    private func determineKind(redscriptEntries: [String], archiveEntries: [String], allEntries: [String]) -> ModKind {
+    private func determineKind(redscriptEntries: [String], archiveEntries: [String], inputMappingEntries: [String], allEntries: [String]) -> ModKind {
+        if !redscriptEntries.isEmpty && !inputMappingEntries.isEmpty && archiveEntries.isEmpty { return .redscriptInput }
         if !redscriptEntries.isEmpty && archiveEntries.isEmpty { return .redscript }
         if redscriptEntries.isEmpty && !archiveEntries.isEmpty { return .archive }
         if !redscriptEntries.isEmpty && !archiveEntries.isEmpty { return .mixed }
@@ -196,10 +219,24 @@ public struct ModArchiveScanner: Sendable {
         return false
     }
 
+    private func isInputMappingXML(_ lowerPath: String) -> Bool {
+        if containsPathComponents(lowerPath, ["r6", "input"]) && lowerPath.hasSuffix(".xml") {
+            return true
+        }
+        if lowerPath.hasSuffix("_input.xml") {
+            return true
+        }
+        let fileName = URL(fileURLWithPath: lowerPath).lastPathComponent
+        if fileName == "inputcontexts.xml" || fileName == "inputcontexts_mac.xml" || fileName == "inputusermappings.xml" {
+            return true
+        }
+        return false
+    }
+
     private func isDocumentationOrMetadata(_ lowerPath: String) -> Bool {
         let allowedSuffixes = [
             ".txt", ".md", ".rtf", ".pdf", ".png", ".jpg", ".jpeg", ".webp",
-            ".json", ".ini", ".url", ".webloc", ".nfo", ".xml"
+            ".json", ".ini", ".url", ".webloc", ".nfo"
         ]
         let fileName = URL(fileURLWithPath: lowerPath).lastPathComponent
         if fileName == "manifest.json" || fileName == "readme" || fileName == "license" { return true }

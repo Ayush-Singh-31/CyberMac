@@ -20,6 +20,8 @@ public struct DiagnosticsExporter: Sendable {
         let snapshot = gameInstall.flatMap { try? BundleStateResolver(home: home).snapshot(gameInstall: $0) }
         let state = StateStore(home: home).load()
         let installedMods = (try? manifestStore.list()) ?? []
+        let inputStatus = try? InputMappingManager(home: home).status(gameInstall: gameInstall)
+        let lastInputBackupID = try? InputConfigBackupManager(home: home).list().first?.id
 
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let osString = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
@@ -44,6 +46,10 @@ public struct DiagnosticsExporter: Sendable {
             activeModIDs: state.activeModIDs,
             baseCacheSnapshotID: state.baseCacheSnapshotID,
             lastBackupID: state.lastBackupID,
+            inputPatchRequiredMods: inputStatus?.requiredModCount ?? 0,
+            pendingInputPatchID: state.pendingInputPatch?.id,
+            activeInputPatchModIDs: state.activeInputPatchModIDs,
+            lastInputBackupID: lastInputBackupID ?? nil,
             installedManagedMods: installedMods.filter { $0.status != .uninstalled }.count,
             notes: buildNotes(redscript: redscript, inputLoader: inputLoader)
         )

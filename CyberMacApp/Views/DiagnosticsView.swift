@@ -43,6 +43,9 @@ struct DiagnosticsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if let status = appState.inputStatus {
+                    diagnosticsBox(inputDiagnosticsText(status))
+                }
                 if let command = appState.commandToRun {
                     CommandBox(command: command.command)
                 }
@@ -68,10 +71,23 @@ struct DiagnosticsView: View {
     private func copyDiagnostics() {
         guard let report = appState.doctor else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(DoctorReportFormatter.format(report, developerMode: true), forType: .string)
+        let input = appState.inputStatus.map(inputDiagnosticsText) ?? ""
+        NSPasteboard.general.setString([DoctorReportFormatter.format(report, developerMode: true), input].filter { !$0.isEmpty }.joined(separator: "\n\n"), forType: .string)
         copied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             copied = false
         }
+    }
+
+    private func inputDiagnosticsText(_ status: InputPatchStatus) -> String {
+        var lines: [String] = []
+        lines.append("Input mappings")
+        lines.append("  Required mods: \(status.requiredModCount)")
+        lines.append("  Pending input patch: \(status.pendingInputPatch?.id ?? "none")")
+        lines.append("  Active input patch mods: \(status.activeInputPatchModIDs.joined(separator: ", "))")
+        lines.append("  Target inputContexts: \(status.targetInputContextsPath ?? "unknown")")
+        lines.append("  Target inputUserMappings: \(status.targetInputUserMappingsPath ?? "unknown")")
+        lines.append("  Next step: \(status.nextStep)")
+        return lines.joined(separator: "\n")
     }
 }

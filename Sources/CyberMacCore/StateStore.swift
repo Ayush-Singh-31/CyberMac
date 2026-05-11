@@ -10,6 +10,9 @@ public struct CyberMacState: Codable, Sendable {
     public var baseCacheSnapshotID: String?
     public var lastBackupID: String?
     public var pendingActivation: PendingActivation?
+    public var pendingInputPatch: PendingInputPatch?
+    public var activeInputPatchModIDs: [String]
+    public var activeInputTargetHashes: [String: String]
 
     public init(
         launchWorkflow: LaunchWorkflowStatus? = nil,
@@ -20,7 +23,10 @@ public struct CyberMacState: Codable, Sendable {
         activeBundleTargetHashes: [String: String] = [:],
         baseCacheSnapshotID: String? = nil,
         lastBackupID: String? = nil,
-        pendingActivation: PendingActivation? = nil
+        pendingActivation: PendingActivation? = nil,
+        pendingInputPatch: PendingInputPatch? = nil,
+        activeInputPatchModIDs: [String] = [],
+        activeInputTargetHashes: [String: String] = [:]
     ) {
         self.launchWorkflow = launchWorkflow
         self.activationState = activationState
@@ -31,6 +37,9 @@ public struct CyberMacState: Codable, Sendable {
         self.baseCacheSnapshotID = baseCacheSnapshotID
         self.lastBackupID = lastBackupID
         self.pendingActivation = pendingActivation
+        self.pendingInputPatch = pendingInputPatch
+        self.activeInputPatchModIDs = activeInputPatchModIDs
+        self.activeInputTargetHashes = activeInputTargetHashes
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -43,6 +52,9 @@ public struct CyberMacState: Codable, Sendable {
         case baseCacheSnapshotID
         case lastBackupID
         case pendingActivation
+        case pendingInputPatch
+        case activeInputPatchModIDs
+        case activeInputTargetHashes
     }
 
     public init(from decoder: Decoder) throws {
@@ -56,6 +68,9 @@ public struct CyberMacState: Codable, Sendable {
         self.baseCacheSnapshotID = try container.decodeIfPresent(String.self, forKey: .baseCacheSnapshotID)
         self.lastBackupID = try container.decodeIfPresent(String.self, forKey: .lastBackupID)
         self.pendingActivation = try container.decodeIfPresent(PendingActivation.self, forKey: .pendingActivation)
+        self.pendingInputPatch = try container.decodeIfPresent(PendingInputPatch.self, forKey: .pendingInputPatch)
+        self.activeInputPatchModIDs = try container.decodeIfPresent([String].self, forKey: .activeInputPatchModIDs) ?? []
+        self.activeInputTargetHashes = try container.decodeIfPresent([String: String].self, forKey: .activeInputTargetHashes) ?? [:]
     }
 }
 
@@ -109,6 +124,14 @@ public struct StateStore: Sendable {
         state.activationState = .outOfSync
         state.pendingExpectedHashes = [:]
         state.pendingActivation = nil
+        try save(state)
+    }
+
+    public func markInputPatchOutOfSync() throws {
+        var state = load()
+        state.pendingInputPatch = nil
+        state.activeInputPatchModIDs = []
+        state.activeInputTargetHashes = [:]
         try save(state)
     }
 

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<bindings>
+    <context name="UIToggles" append="true">
+        <action name="CyberdeckBoost_Hold" map="CyberdeckBoost" priority="-1" />
+        <action name="CyberdeckInterruptTrace_Hold" map="CyberdeckInterruptTrace" priority="-1" />
+    </context>
+
+    <hold action="CyberdeckBoost_Hold" timeout="4.0" />
+    <hold action="CyberdeckInterruptTrace_Hold" timeout="0.3" />
+
+    <acceptedEvents action="CyberdeckBoost_Hold">
+        <event name="ButtonHold" />
+    </acceptedEvents>
+    <acceptedEvents action="CyberdeckInterruptTrace_Hold">
+        <event name="ButtonHold" />
+    </acceptedEvents>
+
+    <mapping name="CyberdeckBoost" type="Button">
+        <button id="IK_L" />
+    </mapping>
+    <mapping name="CyberdeckInterruptTrace" type="Button">
+        <button id="IK_L" />
+    </mapping>
+</bindings>

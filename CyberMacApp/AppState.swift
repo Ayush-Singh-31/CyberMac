@@ -19,8 +19,12 @@ enum AppTask: Equatable, Sendable {
     case launching
     case preparingActivation
     case verifyingActivation
+    case preparingInputPatch
+    case verifyingInputPatch
     case preparingRestore
     case verifyingRestore
+    case preparingInputRestore
+    case verifyingInputRestore
     case changingModState
     case exportingDiagnostics
     case scanningMod
@@ -36,10 +40,18 @@ enum AppTask: Equatable, Sendable {
             return "Preparing activation output..."
         case .verifyingActivation:
             return "Verifying activation..."
+        case .preparingInputPatch:
+            return "Preparing input patch..."
+        case .verifyingInputPatch:
+            return "Verifying input patch..."
         case .preparingRestore:
             return "Preparing restore command..."
         case .verifyingRestore:
             return "Verifying restore..."
+        case .preparingInputRestore:
+            return "Preparing input restore command..."
+        case .verifyingInputRestore:
+            return "Verifying input restore..."
         case .changingModState:
             return "Updating mod state..."
         case .exportingDiagnostics:
@@ -58,12 +70,15 @@ final class CyberMacAppState: ObservableObject {
     @Published var cache: BundleCacheClassification?
     @Published var mods: [InstalledModManifest] = []
     @Published var backups: [BundleBackupManifest] = []
+    @Published var inputStatus: InputPatchStatus?
+    @Published var inputBackups: [InputConfigBackupManifest] = []
     @Published var scanResult: ModScanResult?
     @Published var scannedArchiveURL: URL?
     @Published var currentTask: AppTask?
     @Published var lastError: UserFacingError?
     @Published var commandToRun: ManualCommand?
     @Published var pendingRestoreBackupID: String?
+    @Published var pendingInputConfigBackupID: String?
     @Published var developerMode: Bool {
         didSet {
             UserDefaults.standard.set(developerMode, forKey: Self.developerModeKey)
@@ -218,6 +233,67 @@ final class CyberMacAppState: ObservableObject {
         }
     }
 
+    func prepareInputPatch(modID: String? = nil) async {
+        do {
+            try await withCurrentTask(.preparingInputPatch) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.prepareInputPatch(modID: modID)
+                }
+                try Task.checkCancellation()
+                commandToRun = ManualCommand(
+                    title: "Manual input patch required",
+                    command: """
+                    Input patch prepared.
+
+                    Generated files:
+                    \(result.generatedContextPath)
+                    \(result.generatedUserMappingsPath)
+
+                    Backup:
+                    \(result.backupID)
+
+                    Manual copy commands:
+                    \(result.sudoCommands.joined(separator: "\n"))
+
+                    Verify after copying:
+                    \(result.verifyCommand)
+                    """
+                )
+                lastError = nil
+                await refreshAfterStateChange()
+            }
+        } catch is CancellationError {
+        } catch {
+            lastError = UserFacingError(title: "Input patch failed", message: String(describing: error))
+        }
+    }
+
+    func verifyInputPatch() async {
+        do {
+            try await withCurrentTask(.verifyingInputPatch) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.verifyInputPatch()
+                }
+                try Task.checkCancellation()
+                if result.matched {
+                    commandToRun = ManualCommand(title: "Input patch verified", command: "Input patch verified: active")
+                    lastError = nil
+                } else {
+                    commandToRun = ManualCommand(
+                        title: "Input patch not verified",
+                        command: inputPatchMismatchText(result)
+                    )
+                }
+                await refreshAfterStateChange()
+            }
+        } catch is CancellationError {
+        } catch {
+            lastError = UserFacingError(title: "Verify input patch failed", message: String(describing: error))
+        }
+    }
+
     func prepareRestore(backupID: String) async {
         do {
             try await withCurrentTask(.preparingRestore) {
@@ -273,6 +349,46 @@ final class CyberMacAppState: ObservableObject {
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Verify restore failed", message: String(describing: error))
+        }
+    }
+
+    func prepareInputConfigRestore(backupID: String) async {
+        do {
+            try await withCurrentTask(.preparingInputRestore) {
+                let container = self.container
+                let commands = try await BackgroundTaskRunner.run {
+                    try container.restoreInputConfigCommand(id: backupID)
+                }
+                try Task.checkCancellation()
+                pendingInputConfigBackupID = backupID
+                commandToRun = ManualCommand(title: "Manual input config restore required", command: commands.joined(separator: "\n"))
+                lastError = nil
+            }
+        } catch is CancellationError {
+        } catch {
+            lastError = UserFacingError(title: "Input restore command failed", message: String(describing: error))
+        }
+    }
+
+    func verifyInputConfigRestore() async {
+        guard let pendingInputConfigBackupID else {
+            lastError = UserFacingError(title: "No input restore pending", message: "Choose an input config backup and prepare its restore command first.")
+            return
+        }
+        do {
+            try await withCurrentTask(.verifyingInputRestore) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.verifyInputConfigRestore(id: pendingInputConfigBackupID)
+                }
+                try Task.checkCancellation()
+                commandToRun = ManualCommand(title: "Input restore verification", command: inputRestoreVerificationText(result))
+                lastError = nil
+                await refreshAfterStateChange()
+            }
+        } catch is CancellationError {
+        } catch {
+            lastError = UserFacingError(title: "Verify input restore failed", message: String(describing: error))
         }
     }
 
@@ -418,6 +534,8 @@ final class CyberMacAppState: ObservableObject {
         cache = snapshot.cache
         mods = snapshot.mods
         backups = snapshot.backups
+        inputStatus = snapshot.inputStatus
+        inputBackups = snapshot.inputBackups
         lastError = nil
     }
 
@@ -501,5 +619,49 @@ final class CyberMacAppState: ObservableObject {
             """
         )
         lastError = UserFacingError(title: title, message: message)
+    }
+
+    private func inputPatchMismatchText(_ result: InputPatchVerifyResult) -> String {
+        var lines: [String] = ["Input patch verify failed.", ""]
+        for target in result.mismatches {
+            lines.append("Target:")
+            lines.append(target)
+            lines.append("Expected:")
+            lines.append(result.expectedHashes[target] ?? "missing")
+            lines.append("Actual:")
+            lines.append(result.actualHashes[target] ?? "missing")
+            lines.append("")
+        }
+        lines.append("Likely cause:")
+        lines.append("The printed sudo copy command has not been run yet, or a different file was copied.")
+        return lines.joined(separator: "\n")
+    }
+
+    private func inputRestoreVerificationText(_ result: InputConfigRestoreVerificationResult) -> String {
+        var lines: [String] = []
+        lines.append(result.matched ? "Input config restore verified." : "Input config restore verify failed.")
+        lines.append("Backup ID: \(result.backupID)")
+        for file in result.fileResults {
+            lines.append("")
+            lines.append(file.role.rawValue)
+            switch file.status {
+            case .verified(let target):
+                lines.append("Verified: \(target)")
+            case .hashMismatch(let expected, let actual, let target):
+                lines.append("Target: \(target)")
+                lines.append("Expected: \(expected)")
+                lines.append("Actual: \(actual)")
+            case .expectedAbsentButFileExists(let target, let actualHash):
+                lines.append("Expected absent but file exists: \(target)")
+                lines.append("Actual SHA-256: \(actualHash)")
+            case .expectedPresentButFileMissing(let target):
+                lines.append("Expected present but file is missing: \(target)")
+            case .staleBackup(let expectedFingerprint, let actualFingerprint):
+                lines.append("Stale backup")
+                lines.append("Expected fingerprint: \(expectedFingerprint)")
+                lines.append("Actual fingerprint: \(actualFingerprint)")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 }

@@ -1,5 +1,28 @@
 import Foundation
 
+public extension ModKind {
+    var displayName: String {
+        switch self {
+        case .redscript:
+            return "redscript"
+        case .redscriptInput:
+            return "redscript + input mapping"
+        case .archive:
+            return "archive"
+        case .mixed:
+            return "mixed"
+        case .unknown:
+            return "unknown"
+        }
+    }
+}
+
+public extension ModScanResult {
+    var displayStatusLabel: String {
+        requiresInputMappingPatch ? "Supported with input patch" : compatibilityStatus.rawValue
+    }
+}
+
 public struct BackupDisplaySummary: Sendable {
     public let title: String
     public let subtitle: String
