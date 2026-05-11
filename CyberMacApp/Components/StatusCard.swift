@@ -5,9 +5,11 @@ struct StatusCard: View {
     let status: String
     let systemImage: String
     let tint: Color
+    var accent: CyberAccent = .neutral
+    var highlighted: Bool = false
 
     var body: some View {
-        GlassPanel {
+        CyberPanel(accent: highlighted ? accent : nil, interactive: false) {
             VStack(alignment: .leading, spacing: 14) {
                 Image(systemName: systemImage)
                     .font(.title2)

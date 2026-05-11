@@ -1,3 +1,4 @@
+import AppKit
 import CyberMacCore
 import Foundation
 
@@ -59,9 +60,18 @@ struct AppServiceContainer: Sendable {
         return try BundleBackupManager(home: home).restoreCommand(id: id, gameInstall: game)
     }
 
+    func prepareLatestVanillaRestoreCommand() throws -> (backup: BundleBackupManifest, command: String) {
+        let game = try GameInstallDetector().detect()
+        return try BundleBackupManager(home: home).latestVanillaRestoreCommand(gameInstall: game)
+    }
+
     func verifyRestore(id: String) throws -> RestoreVerificationResult {
         let game = try GameInstallDetector().detect()
         return try BundleBackupManager(home: home).verifyRestore(id: id, gameInstall: game)
+    }
+
+    func backupDirectoryPath(id: String) -> String {
+        BundleBackupManager(home: home).backupDirectory(id: id).path
     }
 
     func setMod(_ id: String, enabled: Bool) throws -> InstalledModManifest {
@@ -73,8 +83,36 @@ struct AppServiceContainer: Sendable {
         try ModStateManager(home: home).uninstall(id: id)
     }
 
+    func scanMod(url: URL) throws -> ModScanResult {
+        try ModArchiveScanner().scan(zipURL: url)
+    }
+
+    func installMod(url: URL) throws -> InstalledModManifest {
+        let game = try GameInstallDetector().detect()
+        return try RedscriptModInstaller(home: home).install(zipURL: url, gameInstall: game)
+    }
+
     func exportDiagnostics() throws -> URL {
         let game = try? GameInstallDetector().detect()
         return try DiagnosticsExporter(home: home).export(gameInstall: game)
+    }
+
+    func revealCyberMacFolder() throws {
+        try home.bootstrap()
+        NSWorkspace.shared.activateFileViewerSelecting([home.homeURL])
+    }
+
+    func revealGameApp() throws {
+        let game = try GameInstallDetector().detect()
+        NSWorkspace.shared.activateFileViewerSelecting([game.appURL])
+    }
+
+    func clearTemporaryActivationOutputs() throws {
+        try home.bootstrap()
+        guard FileManager.default.fileExists(atPath: home.tmpURL.path) else { return }
+        let urls = try FileManager.default.contentsOfDirectory(at: home.tmpURL, includingPropertiesForKeys: nil)
+        for url in urls {
+            try FileManager.default.removeItem(at: url)
+        }
     }
 }

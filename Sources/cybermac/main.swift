@@ -60,6 +60,8 @@ struct CyberMacCLI {
             try listBackups()
         case "restore":
             try restore()
+        case "restore-vanilla":
+            try restoreVanilla()
         case "list-mods":
             try listMods()
         case "disable":
@@ -98,6 +100,7 @@ struct CyberMacCLI {
           cybermac activate --verify [--game-app /path/to/Cyberpunk.app]
           cybermac list-backups
           cybermac restore [--dry-run|--verify] <backup-id> [--game-app /path/to/Cyberpunk.app]
+          cybermac restore-vanilla [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
           cybermac list-mods
           cybermac disable <mod-id>
           cybermac enable <mod-id>
@@ -369,6 +372,33 @@ struct CyberMacCLI {
             print(command)
             print("Then verify:")
             print("swift run cybermac restore --verify \(id)")
+        }
+    }
+
+    private func restoreVanilla() throws {
+        try home.bootstrap()
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let manager = BundleBackupManager(home: home)
+        guard let backup = try manager.latestVanillaBackup(for: game) else {
+            throw CyberMacError.notFound("No vanilla backup found for the current game fingerprint and base cache snapshot.")
+        }
+
+        if hasFlag("--verify") {
+            let result = try manager.verifyRestore(id: backup.id, gameInstall: game)
+            let vanillaResult = RestoreVerificationResult(
+                backupID: result.backupID,
+                status: result.status,
+                restoreCommand: result.restoreCommand,
+                verifyCommand: "swift run cybermac restore-vanilla --verify"
+            )
+            print(RestoreVerificationFormatter.format(vanillaResult))
+        } else {
+            let command = try manager.restoreCommand(id: backup.id, gameInstall: game)
+            print(hasFlag("--dry-run") ? "Restore vanilla dry run." : "Run this restore command manually:")
+            print("Backup ID: \(backup.id)")
+            print(command)
+            print("Then verify:")
+            print("swift run cybermac restore-vanilla --verify")
         }
     }
 

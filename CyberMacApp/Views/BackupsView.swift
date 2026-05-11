@@ -8,6 +8,47 @@ struct BackupsView: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Backups")
                     .font(.largeTitle.weight(.semibold))
+                CyberPanel(accent: .green, interactive: true) {
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Restore vanilla state")
+                                .font(.title3.weight(.semibold))
+                            Text("Reverts Cyberpunk's script cache to the latest clean backup. Active CyberMac script changes stay inactive until you activate again.")
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        PrimaryButton(
+                            title: "Prepare restore command",
+                            systemImage: "arrow.uturn.backward",
+                            disabled: appState.backups.isEmpty,
+                            variant: .primary,
+                            accent: .green
+                        ) {
+                            Task { await appState.prepareLatestVanillaRestore() }
+                        }
+                        .help("Prepare restore command for the newest vanilla backup")
+                    }
+                }
+
+                if let command = appState.commandToRun, appState.pendingRestoreBackupID != nil {
+                    VStack(alignment: .leading, spacing: 12) {
+                        CommandBox(command: command.command, title: "Manual restore required", collapsedByDefault: true)
+                        HStack {
+                            PrimaryButton(
+                                title: "I ran it, verify restore",
+                                systemImage: "checkmark.seal",
+                                disabled: false,
+                                variant: .primary,
+                                accent: .green
+                            ) {
+                                Task { await appState.verifyRestore() }
+                            }
+                            .help("Verify that the restore command was applied")
+                            Spacer()
+                        }
+                    }
+                }
+
                 if appState.backups.isEmpty {
                     GlassPanel {
                         Text("No CyberMac bundle backups found.")
@@ -15,29 +56,14 @@ struct BackupsView: View {
                     }
                 } else {
                     ForEach(appState.backups, id: \.id) { backup in
-                        GlassPanel {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Backup \(backup.id)")
-                                    .font(.headline)
-                                DetailRow(label: "Created", value: backup.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                DetailRow(label: "State", value: backup.priorState.rawValue)
-                                DetailRow(label: "SHA", value: backup.sha256 ?? "absent")
-                                DetailRow(label: "Game fingerprint", value: backup.gameFingerprintID)
-                                HStack {
-                                    PrimaryButton(title: "Restore", systemImage: "arrow.uturn.backward", disabled: false) {
-                                        Task { await appState.prepareRestore(backupID: backup.id) }
-                                    }
-                                    PrimaryButton(title: "Verify Restore", systemImage: "checkmark.seal", disabled: appState.pendingRestoreBackupID != backup.id) {
-                                        Task { await appState.verifyRestore() }
-                                    }
-                                }
-                                .padding(.top, 6)
-                            }
+                        BackupCard(
+                            backup: backup,
+                            developerMode: appState.developerMode,
+                            backupPath: appState.backupDirectoryPath(id: backup.id)
+                        ) {
+                            Task { await appState.prepareRestore(backupID: backup.id) }
                         }
                     }
-                }
-                if let command = appState.commandToRun {
-                    CommandBox(command: command.command)
                 }
             }
             .frame(maxWidth: 900, alignment: .leading)

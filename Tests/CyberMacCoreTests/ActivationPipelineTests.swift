@@ -96,6 +96,77 @@ final class ActivationPipelineTests: XCTestCase {
         XCTAssertEqual(absentResult.status, .verified(target: baseManager.bundleCacheURL(gameInstall: game).path))
     }
 
+    func testLatestVanillaBackupSelectsNewestMatchingBaseSnapshot() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        let base = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        let backupManager = BundleBackupManager(home: home)
+
+        let first = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+        Thread.sleep(forTimeInterval: 0.02)
+        try write("generated-cache", to: baseManager.bundleCacheURL(gameInstall: game))
+        _ = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+        Thread.sleep(forTimeInterval: 0.02)
+        try write("vanilla-cache", to: baseManager.bundleCacheURL(gameInstall: game))
+        let newest = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+
+        let selected = try backupManager.latestVanillaBackup(for: game)
+        XCTAssertEqual(selected?.id, newest.id)
+        XCTAssertNotEqual(selected?.id, first.id)
+    }
+
+    func testLatestVanillaBackupReturnsNilWhenNoMatchingBaseSnapshotBackupExists() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        let base = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        let backupManager = BundleBackupManager(home: home)
+
+        try write("generated-cache", to: baseManager.bundleCacheURL(gameInstall: game))
+        _ = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+
+        XCTAssertNil(try backupManager.latestVanillaBackup(for: game))
+    }
+
+    func testRestoreVanillaVerificationUsesLatestVanillaBackup() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        let base = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        let backupManager = BundleBackupManager(home: home)
+        let vanilla = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+        try write("generated-cache", to: baseManager.bundleCacheURL(gameInstall: game))
+
+        let selected = try XCTUnwrap(backupManager.latestVanillaBackup(for: game))
+        XCTAssertEqual(selected.id, vanilla.id)
+
+        try FileManager.default.removeItem(at: baseManager.bundleCacheURL(gameInstall: game))
+        try FileManager.default.copyItem(
+            at: backupManager.backupDirectory(id: selected.id).appendingPathComponent("final.redscripts"),
+            to: baseManager.bundleCacheURL(gameInstall: game)
+        )
+
+        let result = try backupManager.verifyRestore(id: selected.id, gameInstall: game)
+        XCTAssertEqual(result.status, .verified(target: baseManager.bundleCacheURL(gameInstall: game).path))
+    }
+
+    func testUIDisplayHelpersHideBackupDetailsUnlessDeveloperModeAndCleanModNames() throws {
+        let backup = BundleBackupManifest(
+            id: "backup-1",
+            createdAt: Date(),
+            gameAppPath: "/Applications/Cyberpunk 2077.app",
+            bundleTarget: "/Applications/Cyberpunk 2077.app/Contents/Data/r6/cache/final.redscripts",
+            priorState: .present,
+            sha256: "abc123",
+            sizeBytes: 10,
+            gameFingerprintID: "fingerprint"
+        )
+
+        XCTAssertTrue(BackupDisplayFormatter.summary(for: backup, developerMode: false).technicalDetails.isEmpty)
+        let developerSummary = BackupDisplayFormatter.summary(for: backup, developerMode: true)
+        XCTAssertTrue(developerSummary.technicalDetails.contains { $0.label == "SHA" && $0.value == "abc123" })
+        XCTAssertTrue(developerSummary.technicalDetails.contains { $0.label == "Game fingerprint" && $0.value == "fingerprint" })
+        XCTAssertEqual(ModDisplayFormatter.cleanup("reset attributes-9240-1-0-0-4-1728625012"), "Reset Attributes")
+    }
+
     func testRestoreVerifyClearsStateWhenBackupMatchesBaseSnapshot() throws {
         let game = try makeGameApp(cacheContents: "vanilla-cache")
         let baseManager = BaseCacheManager(home: home)

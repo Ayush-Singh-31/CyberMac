@@ -29,8 +29,17 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("CyberMac")
                     .font(.largeTitle.weight(.semibold))
-                Text(subtitle)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Text(subtitle)
+                        .foregroundStyle(.secondary)
+                    if let storefront = appState.doctor?.game.storefront, appState.doctor?.game.found == true {
+                        Text(storefront)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+                }
             }
             Spacer()
             Button {
@@ -38,16 +47,24 @@ struct HomeView: View {
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(CyberButtonStyle(.secondary, accent: .cyan))
+            .help("Refresh CyberMac state")
         }
     }
 
     private var statusCards: some View {
         LazyVGrid(columns: columns, spacing: 14) {
-            StatusCard(title: "Game", status: gameStatus.text, systemImage: "gamecontroller", tint: gameStatus.color)
-            StatusCard(title: "redscript", status: runtimeStatus.text, systemImage: "terminal", tint: runtimeStatus.color)
-            StatusCard(title: "Cache", status: cacheStatus.text, systemImage: "archivebox", tint: cacheStatus.color)
-            StatusCard(title: "Activation", status: activationStatus.text, systemImage: "bolt.circle", tint: activationStatus.color)
+            StatusCard(title: "Game", status: gameStatus.text, systemImage: "gamecontroller", tint: gameStatus.color, accent: .green)
+            StatusCard(title: "redscript", status: runtimeStatus.text, systemImage: "terminal", tint: runtimeStatus.color, accent: .cyan)
+            StatusCard(title: "Cache", status: cacheStatus.text, systemImage: "archivebox", tint: cacheStatus.color, accent: .green)
+            StatusCard(
+                title: "Activation",
+                status: activationStatus.text,
+                systemImage: "bolt.circle",
+                tint: activationStatus.color,
+                accent: .blue,
+                highlighted: appState.doctor?.activation.state == .active
+            )
         }
     }
 
@@ -61,9 +78,10 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                PrimaryButton(title: primaryButtonTitle, systemImage: primaryButtonImage, disabled: primaryButtonDisabled) {
+                PrimaryButton(title: primaryButtonTitle, systemImage: primaryButtonImage, disabled: primaryButtonDisabled, accent: .blue) {
                     Task { await runPrimaryAction() }
                 }
+                .help(primaryButtonTitle)
             }
         }
     }
@@ -72,8 +90,14 @@ struct HomeView: View {
     private var warnings: some View {
         if let report = appState.doctor, !report.warnings.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(report.warnings.indices, id: \.self) { index in
-                    WarningBanner(message: report.warnings[index].message)
+                ForEach(visibleWarnings(report).indices, id: \.self) { index in
+                    let warning = visibleWarnings(report)[index]
+                    WarningBanner(
+                        message: warning.message,
+                        title: warning.code.contains("input-loader") ? "Known input-loader issue detected" : "CyberMac warning",
+                        kind: warning.code.contains("bundle") ? .blocked : .warning,
+                        onDismiss: warning.code.contains("input-loader") ? { appState.dismissInputLoaderWarning() } : nil
+                    )
                 }
             }
         }
@@ -146,9 +170,10 @@ struct HomeView: View {
     private var primaryDetail: String {
         guard let report = appState.doctor else { return "Loading the local health report." }
         if report.activation.enabledMods == 1 {
-            return "1 enabled mod. Current bundle: \(report.cache.currentBundle.displayName)."
+            let activeText = report.activation.state == .active ? "One mod is active." : "One mod is enabled."
+            return "\(activeText)\nCurrent bundle: \(report.cache.currentBundle.displayName)."
         }
-        return "\(report.activation.enabledMods) enabled mods. Current bundle: \(report.cache.currentBundle.displayName)."
+        return "\(report.activation.enabledMods) enabled mods.\nCurrent bundle: \(report.cache.currentBundle.displayName)."
     }
 
     private var primaryButtonTitle: String {
@@ -165,6 +190,7 @@ struct HomeView: View {
     private var primaryButtonDisabled: Bool {
         guard let report = appState.doctor else { return true }
         if report.activation.state == .active { return false }
+        if primaryButtonTitle == "Activate mods" { return !report.activation.safeToProceedToActivation }
         if primaryButtonTitle == "Refresh" { return false }
         return true
     }
@@ -172,8 +198,19 @@ struct HomeView: View {
     private func runPrimaryAction() async {
         if appState.doctor?.activation.state == .active {
             await appState.launchGame()
+        } else if primaryButtonTitle == "Activate mods" {
+            await appState.generateActivation()
         } else {
             await appState.refresh()
+        }
+    }
+
+    private func visibleWarnings(_ report: DoctorReport) -> [DoctorWarning] {
+        report.warnings.filter { warning in
+            if warning.code.contains("input-loader"), appState.inputLoaderWarningDismissed {
+                return false
+            }
+            return true
         }
     }
 }

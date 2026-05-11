@@ -23,6 +23,8 @@ enum AppTask: Equatable, Sendable {
     case verifyingRestore
     case changingModState
     case exportingDiagnostics
+    case scanningMod
+    case installingMod
 
     var title: String {
         switch self {
@@ -42,6 +44,10 @@ enum AppTask: Equatable, Sendable {
             return "Updating mod state..."
         case .exportingDiagnostics:
             return "Exporting diagnostics..."
+        case .scanningMod:
+            return "Scanning mod archive..."
+        case .installingMod:
+            return "Installing mod..."
         }
     }
 }
@@ -52,15 +58,38 @@ final class CyberMacAppState: ObservableObject {
     @Published var cache: BundleCacheClassification?
     @Published var mods: [InstalledModManifest] = []
     @Published var backups: [BundleBackupManifest] = []
+    @Published var scanResult: ModScanResult?
+    @Published var scannedArchiveURL: URL?
     @Published var currentTask: AppTask?
     @Published var lastError: UserFacingError?
     @Published var commandToRun: ManualCommand?
     @Published var pendingRestoreBackupID: String?
+    @Published var developerMode: Bool {
+        didSet {
+            UserDefaults.standard.set(developerMode, forKey: Self.developerModeKey)
+        }
+    }
+    @Published var inputLoaderWarningDismissed: Bool {
+        didSet {
+            UserDefaults.standard.set(inputLoaderWarningDismissed, forKey: Self.inputLoaderWarningDismissedKey)
+        }
+    }
+    @Published var showRawHashes: Bool {
+        didSet {
+            UserDefaults.standard.set(showRawHashes, forKey: Self.showRawHashesKey)
+        }
+    }
 
     private let container: AppServiceContainer
+    private static let developerModeKey = "CyberMacDeveloperMode"
+    private static let inputLoaderWarningDismissedKey = "CyberMacInputLoaderWarningDismissed"
+    private static let showRawHashesKey = "CyberMacShowRawHashes"
 
     init(container: AppServiceContainer = AppServiceContainer()) {
         self.container = container
+        self.developerMode = UserDefaults.standard.bool(forKey: Self.developerModeKey)
+        self.inputLoaderWarningDismissed = UserDefaults.standard.bool(forKey: Self.inputLoaderWarningDismissedKey)
+        self.showRawHashes = UserDefaults.standard.bool(forKey: Self.showRawHashesKey)
     }
 
     func refresh() async {
@@ -207,6 +236,23 @@ final class CyberMacAppState: ObservableObject {
         }
     }
 
+    func prepareLatestVanillaRestore() async {
+        currentTask = .preparingRestore
+        defer { currentTask = nil }
+
+        do {
+            let container = self.container
+            let prepared = try await BackgroundTaskRunner.run {
+                try container.prepareLatestVanillaRestoreCommand()
+            }
+            pendingRestoreBackupID = prepared.backup.id
+            commandToRun = ManualCommand(title: "Manual restore required", command: prepared.command)
+            lastError = nil
+        } catch {
+            lastError = UserFacingError(title: "No vanilla backup found", message: String(describing: error))
+        }
+    }
+
     func verifyRestore() async {
         guard let pendingRestoreBackupID else {
             lastError = UserFacingError(title: "No restore pending", message: "Choose a backup and prepare its restore command first.")
@@ -244,6 +290,45 @@ final class CyberMacAppState: ObservableObject {
         }
     }
 
+    func scanMod(url: URL) async {
+        currentTask = .scanningMod
+        defer { currentTask = nil }
+
+        do {
+            let container = self.container
+            let result = try await BackgroundTaskRunner.run {
+                try container.scanMod(url: url)
+            }
+            scannedArchiveURL = url
+            scanResult = result
+            lastError = nil
+        } catch {
+            lastError = UserFacingError(title: "Scan failed", message: String(describing: error))
+        }
+    }
+
+    func installScannedMod() async {
+        guard let scannedArchiveURL else {
+            lastError = UserFacingError(title: "No mod selected", message: "Drop a supported redscript mod archive first.")
+            return
+        }
+        currentTask = .installingMod
+        defer { currentTask = nil }
+
+        do {
+            let container = self.container
+            _ = try await BackgroundTaskRunner.run {
+                try container.installMod(url: scannedArchiveURL)
+            }
+            scanResult = nil
+            self.scannedArchiveURL = nil
+            lastError = nil
+            await refresh()
+        } catch {
+            lastError = UserFacingError(title: "Install failed", message: String(describing: error))
+        }
+    }
+
     func uninstallMod(_ mod: InstalledModManifest) async {
         currentTask = .changingModState
         defer { currentTask = nil }
@@ -273,6 +358,45 @@ final class CyberMacAppState: ObservableObject {
             lastError = nil
         } catch {
             lastError = UserFacingError(title: "Export failed", message: String(describing: error))
+        }
+    }
+
+    func dismissInputLoaderWarning() {
+        inputLoaderWarningDismissed = true
+    }
+
+    func backupDirectoryPath(id: String) -> String {
+        container.backupDirectoryPath(id: id)
+    }
+
+    func revealCyberMacFolder() {
+        do {
+            try container.revealCyberMacFolder()
+        } catch {
+            lastError = UserFacingError(title: "Reveal failed", message: String(describing: error))
+        }
+    }
+
+    func revealGameApp() {
+        do {
+            try container.revealGameApp()
+        } catch {
+            lastError = UserFacingError(title: "Reveal failed", message: String(describing: error))
+        }
+    }
+
+    func clearTemporaryActivationOutputs() async {
+        currentTask = .refreshing
+        defer { currentTask = nil }
+
+        do {
+            let container = self.container
+            try await BackgroundTaskRunner.run {
+                try container.clearTemporaryActivationOutputs()
+            }
+            lastError = nil
+        } catch {
+            lastError = UserFacingError(title: "Clear temporary files failed", message: String(describing: error))
         }
     }
 }

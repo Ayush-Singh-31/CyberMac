@@ -40,7 +40,10 @@ struct RootView: View {
                 background
                 selectedView
                     .padding(28)
+                    .id(selection ?? .home)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
             }
+            .animation(.easeOut(duration: 0.18), value: selection)
         }
         .alert(item: $appState.lastError) { error in
             Alert(

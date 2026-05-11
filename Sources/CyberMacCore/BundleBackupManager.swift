@@ -77,6 +77,19 @@ public struct BundleBackupManager: Sendable {
         return try JSONDecoder.cybermac.decode(BundleBackupManifest.self, from: Data(contentsOf: url))
     }
 
+    public func latestVanillaBackup(for gameInstall: GameInstall) throws -> BundleBackupManifest? {
+        let fingerprint = try baseCacheManager.fingerprint(gameInstall: gameInstall)
+        let baseHash = try baseCacheManager.currentSnapshotHash(for: gameInstall)
+        return try list()
+            .filter { manifest in
+                manifest.priorState == .present &&
+                    manifest.gameFingerprintID == fingerprint.id &&
+                    manifest.sha256 == baseHash
+            }
+            .sorted { $0.createdAt > $1.createdAt }
+            .first
+    }
+
     public func restoreCommand(id: String) throws -> String {
         try restoreCommand(id: id, gameInstall: nil)
     }
@@ -85,6 +98,13 @@ public struct BundleBackupManager: Sendable {
         let manifest = try load(id: id)
         try validateCurrentFingerprintIfNeeded(manifest: manifest, gameInstall: gameInstall)
         return try restoreCommand(manifest: manifest)
+    }
+
+    public func latestVanillaRestoreCommand(gameInstall: GameInstall) throws -> (backup: BundleBackupManifest, command: String) {
+        guard let backup = try latestVanillaBackup(for: gameInstall) else {
+            throw CyberMacError.notFound("No vanilla backup found for the current game fingerprint and base cache snapshot.")
+        }
+        return (backup, try restoreCommand(id: backup.id, gameInstall: gameInstall))
     }
 
     private func restoreCommand(manifest: BundleBackupManifest) throws -> String {
