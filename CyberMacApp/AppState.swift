@@ -81,6 +81,7 @@ final class CyberMacAppState: ObservableObject {
     }
 
     private let container: AppServiceContainer
+    private var activeTasks: [(id: UUID, task: AppTask)] = []
     private static let developerModeKey = "CyberMacDeveloperMode"
     private static let inputLoaderWarningDismissedKey = "CyberMacInputLoaderWarningDismissed"
     private static let showRawHashesKey = "CyberMacShowRawHashes"
@@ -93,161 +94,161 @@ final class CyberMacAppState: ObservableObject {
     }
 
     func refresh() async {
-        currentTask = .refreshing
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let snapshot = try await BackgroundTaskRunner.run {
-                try container.loadSnapshot()
+            clearStaleCurrentTaskIfNeeded()
+            try await withCurrentTask(.refreshing) {
+                try await loadSnapshot()
             }
-            doctor = snapshot.doctor
-            cache = snapshot.cache
-            mods = snapshot.mods
-            backups = snapshot.backups
-            lastError = nil
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Refresh failed", message: String(describing: error))
         }
     }
 
     func launchGame() async {
-        currentTask = .launching
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let plan = try await BackgroundTaskRunner.run {
-                try container.makeLaunchPlan()
+            try await withCurrentTask(.launching) {
+                let container = self.container
+                let plan = try await BackgroundTaskRunner.run {
+                    try container.makeLaunchPlan()
+                }
+                try Task.checkCancellation()
+                guard plan.canLaunch else {
+                    lastError = UserFacingError(
+                        title: "Launch blocked",
+                        message: plan.refusalReason ?? "CyberMac does not consider this bundle state safe to launch."
+                    )
+                    return
+                }
+                try await BackgroundTaskRunner.run {
+                    try container.launchGame(plan: plan)
+                }
+                try Task.checkCancellation()
+                lastError = nil
             }
-            guard plan.canLaunch else {
-                lastError = UserFacingError(
-                    title: "Launch blocked",
-                    message: plan.refusalReason ?? "CyberMac does not consider this bundle state safe to launch."
-                )
-                return
-            }
-            try await BackgroundTaskRunner.run {
-                try container.launchGame(plan: plan)
-            }
-            lastError = nil
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Launch failed", message: String(describing: error))
         }
     }
 
     func showActivationDryRun() async {
-        currentTask = .preparingActivation
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let result = try await BackgroundTaskRunner.run {
-                try container.activationDryRun()
+            try await withCurrentTask(.preparingActivation) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.activationDryRun()
+                }
+                try Task.checkCancellation()
+                commandToRun = ManualCommand(
+                    title: "Activation dry run",
+                    command: """
+                    Base cache snapshot:
+                    \(result.baseSnapshotID)
+
+                    Enabled mod ids:
+                    \(result.enabledModIDs.isEmpty ? "(none)" : result.enabledModIDs.joined(separator: ", "))
+
+                    Compile command:
+                    \(result.compileCommand)
+
+                    Manual copy shape:
+                    \(result.sudoCommandShape)
+                    """
+                )
+                lastError = nil
             }
-            commandToRun = ManualCommand(
-                title: "Activation dry run",
-                command: """
-                Base cache snapshot:
-                \(result.baseSnapshotID)
-
-                Enabled mod ids:
-                \(result.enabledModIDs.isEmpty ? "(none)" : result.enabledModIDs.joined(separator: ", "))
-
-                Compile command:
-                \(result.compileCommand)
-
-                Manual copy shape:
-                \(result.sudoCommandShape)
-                """
-            )
-            lastError = nil
+        } catch is CancellationError {
         } catch {
-            lastError = UserFacingError(title: "Dry run failed", message: String(describing: error))
+            showActivationError(title: "Dry run failed", error: error)
         }
     }
 
     func generateActivation() async {
-        currentTask = .preparingActivation
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let result = try await BackgroundTaskRunner.run {
-                try container.generateActivation()
+            try await withCurrentTask(.preparingActivation) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.generateActivation()
+                }
+                try Task.checkCancellation()
+                commandToRun = activationCommandPanel(for: result)
+                lastError = nil
+                await refreshAfterStateChange()
             }
-            commandToRun = ManualCommand(title: "Run this in Terminal", command: result.sudoCommand)
-            lastError = nil
-            await refresh()
+        } catch is CancellationError {
         } catch {
-            lastError = UserFacingError(title: "Activation failed", message: String(describing: error))
+            showActivationError(title: "Activation failed", error: error)
         }
     }
 
     func verifyActivation() async {
-        currentTask = .verifyingActivation
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let result = try await BackgroundTaskRunner.run {
-                try container.verifyActivation()
+            try await withCurrentTask(.verifyingActivation) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.verifyActivation()
+                }
+                try Task.checkCancellation()
+                if result.matched {
+                    commandToRun = ManualCommand(title: "Activation verified", command: "Activation verified.\nSHA-256: \(result.actualSHA256 ?? "")")
+                    lastError = nil
+                } else {
+                    commandToRun = ManualCommand(
+                        title: "Activation not verified",
+                        command: """
+                        Activation verify failed.
+
+                        Bundle target:
+                        \(result.bundleTarget)
+
+                        Expected SHA-256:
+                        \(result.expectedSHA256 ?? "missing")
+
+                        Actual SHA-256:
+                        \(result.actualSHA256 ?? "missing")
+                        """
+                    )
+                }
+                await refreshAfterStateChange()
             }
-            if result.matched {
-                commandToRun = ManualCommand(title: "Activation verified", command: "Activation verified.\nSHA-256: \(result.actualSHA256 ?? "")")
-                lastError = nil
-            } else {
-                commandToRun = ManualCommand(
-                    title: "Activation not verified",
-                    command: """
-                    Activation verify failed.
-
-                    Bundle target:
-                    \(result.bundleTarget)
-
-                    Expected SHA-256:
-                    \(result.expectedSHA256 ?? "missing")
-
-                    Actual SHA-256:
-                    \(result.actualSHA256 ?? "missing")
-                    """
-                )
-            }
-            await refresh()
+        } catch is CancellationError {
         } catch {
-            lastError = UserFacingError(title: "Verify activation failed", message: String(describing: error))
+            showActivationError(title: "Verify activation failed", error: error)
         }
     }
 
     func prepareRestore(backupID: String) async {
-        currentTask = .preparingRestore
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let command = try await BackgroundTaskRunner.run {
-                try container.restoreCommand(id: backupID)
+            try await withCurrentTask(.preparingRestore) {
+                let container = self.container
+                let command = try await BackgroundTaskRunner.run {
+                    try container.restoreCommand(id: backupID)
+                }
+                try Task.checkCancellation()
+                pendingRestoreBackupID = backupID
+                commandToRun = ManualCommand(title: "Run this in Terminal", command: command)
+                lastError = nil
             }
-            pendingRestoreBackupID = backupID
-            commandToRun = ManualCommand(title: "Run this in Terminal", command: command)
-            lastError = nil
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Restore command failed", message: String(describing: error))
         }
     }
 
     func prepareLatestVanillaRestore() async {
-        currentTask = .preparingRestore
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let prepared = try await BackgroundTaskRunner.run {
-                try container.prepareLatestVanillaRestoreCommand()
+            try await withCurrentTask(.preparingRestore) {
+                let container = self.container
+                let prepared = try await BackgroundTaskRunner.run {
+                    try container.prepareLatestVanillaRestoreCommand()
+                }
+                try Task.checkCancellation()
+                pendingRestoreBackupID = prepared.backup.id
+                commandToRun = ManualCommand(title: "Manual restore required", command: prepared.command)
+                lastError = nil
             }
-            pendingRestoreBackupID = prepared.backup.id
-            commandToRun = ManualCommand(title: "Manual restore required", command: prepared.command)
-            lastError = nil
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "No vanilla backup found", message: String(describing: error))
         }
@@ -258,50 +259,53 @@ final class CyberMacAppState: ObservableObject {
             lastError = UserFacingError(title: "No restore pending", message: "Choose a backup and prepare its restore command first.")
             return
         }
-        currentTask = .verifyingRestore
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let result = try await BackgroundTaskRunner.run {
-                try container.verifyRestore(id: pendingRestoreBackupID)
+            try await withCurrentTask(.verifyingRestore) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.verifyRestore(id: pendingRestoreBackupID)
+                }
+                try Task.checkCancellation()
+                commandToRun = ManualCommand(title: "Restore verification", command: RestoreVerificationFormatter.format(result))
+                lastError = nil
+                await refreshAfterStateChange()
             }
-            commandToRun = ManualCommand(title: "Restore verification", command: RestoreVerificationFormatter.format(result))
-            lastError = nil
-            await refresh()
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Verify restore failed", message: String(describing: error))
         }
     }
 
     func setMod(_ mod: InstalledModManifest, enabled: Bool) async {
-        currentTask = .changingModState
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            _ = try await BackgroundTaskRunner.run {
-                try container.setMod(mod.id, enabled: enabled)
+            try await withCurrentTask(.changingModState) {
+                let container = self.container
+                _ = try await BackgroundTaskRunner.run {
+                    try container.setMod(mod.id, enabled: enabled)
+                }
+                try Task.checkCancellation()
+                lastError = nil
+                await refreshAfterStateChange()
             }
-            lastError = nil
-            await refresh()
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Mod update failed", message: String(describing: error))
         }
     }
 
     func scanMod(url: URL) async {
-        currentTask = .scanningMod
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let result = try await BackgroundTaskRunner.run {
-                try container.scanMod(url: url)
+            try await withCurrentTask(.scanningMod) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.scanMod(url: url)
+                }
+                try Task.checkCancellation()
+                scannedArchiveURL = url
+                scanResult = result
+                lastError = nil
             }
-            scannedArchiveURL = url
-            scanResult = result
-            lastError = nil
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Scan failed", message: String(describing: error))
         }
@@ -312,50 +316,53 @@ final class CyberMacAppState: ObservableObject {
             lastError = UserFacingError(title: "No mod selected", message: "Drop a supported redscript mod archive first.")
             return
         }
-        currentTask = .installingMod
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            _ = try await BackgroundTaskRunner.run {
-                try container.installMod(url: scannedArchiveURL)
+            try await withCurrentTask(.installingMod) {
+                let container = self.container
+                _ = try await BackgroundTaskRunner.run {
+                    try container.installMod(url: scannedArchiveURL)
+                }
+                try Task.checkCancellation()
+                scanResult = nil
+                self.scannedArchiveURL = nil
+                lastError = nil
+                await refreshAfterStateChange()
             }
-            scanResult = nil
-            self.scannedArchiveURL = nil
-            lastError = nil
-            await refresh()
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Install failed", message: String(describing: error))
         }
     }
 
     func uninstallMod(_ mod: InstalledModManifest) async {
-        currentTask = .changingModState
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            _ = try await BackgroundTaskRunner.run {
-                try container.uninstallMod(mod.id)
+            try await withCurrentTask(.changingModState) {
+                let container = self.container
+                _ = try await BackgroundTaskRunner.run {
+                    try container.uninstallMod(mod.id)
+                }
+                try Task.checkCancellation()
+                lastError = nil
+                await refreshAfterStateChange()
             }
-            lastError = nil
-            await refresh()
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Uninstall failed", message: String(describing: error))
         }
     }
 
     func exportDiagnostics() async {
-        currentTask = .exportingDiagnostics
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            let url = try await BackgroundTaskRunner.run {
-                try container.exportDiagnostics()
+            try await withCurrentTask(.exportingDiagnostics) {
+                let container = self.container
+                let url = try await BackgroundTaskRunner.run {
+                    try container.exportDiagnostics()
+                }
+                try Task.checkCancellation()
+                commandToRun = ManualCommand(title: "Diagnostic report exported", command: url.path)
+                lastError = nil
             }
-            commandToRun = ManualCommand(title: "Diagnostic report exported", command: url.path)
-            lastError = nil
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Export failed", message: String(describing: error))
         }
@@ -386,17 +393,113 @@ final class CyberMacAppState: ObservableObject {
     }
 
     func clearTemporaryActivationOutputs() async {
-        currentTask = .refreshing
-        defer { currentTask = nil }
-
         do {
-            let container = self.container
-            try await BackgroundTaskRunner.run {
-                try container.clearTemporaryActivationOutputs()
+            try await withCurrentTask(.refreshing) {
+                let container = self.container
+                try await BackgroundTaskRunner.run {
+                    try container.clearTemporaryActivationOutputs()
+                }
+                try Task.checkCancellation()
+                lastError = nil
             }
-            lastError = nil
+        } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Clear temporary files failed", message: String(describing: error))
         }
+    }
+
+    private func loadSnapshot() async throws {
+        let container = self.container
+        let snapshot = try await BackgroundTaskRunner.run {
+            try container.loadSnapshot()
+        }
+        try Task.checkCancellation()
+        doctor = snapshot.doctor
+        cache = snapshot.cache
+        mods = snapshot.mods
+        backups = snapshot.backups
+        lastError = nil
+    }
+
+    private func refreshAfterStateChange() async {
+        do {
+            try await loadSnapshot()
+        } catch is CancellationError {
+        } catch {
+            lastError = UserFacingError(title: "Refresh failed", message: String(describing: error))
+        }
+    }
+
+    private func withCurrentTask<Value>(
+        _ task: AppTask,
+        operation: () async throws -> Value
+    ) async throws -> Value {
+        let taskID = beginCurrentTask(task)
+        return try await withTaskCancellationHandler {
+            defer { finishCurrentTask(taskID) }
+            return try await operation()
+        } onCancel: {
+            Task { @MainActor in
+                self.finishCurrentTask(taskID)
+            }
+        }
+    }
+
+    private func beginCurrentTask(_ task: AppTask) -> UUID {
+        clearStaleCurrentTaskIfNeeded()
+        let taskID = UUID()
+        activeTasks.append((id: taskID, task: task))
+        currentTask = task
+        return taskID
+    }
+
+    private func finishCurrentTask(_ taskID: UUID) {
+        activeTasks.removeAll { $0.id == taskID }
+        currentTask = activeTasks.last?.task
+    }
+
+    private func clearStaleCurrentTaskIfNeeded() {
+        guard currentTask != nil, activeTasks.isEmpty else { return }
+        currentTask = nil
+    }
+
+    private func activationCommandPanel(for result: ActivationBundleModeResult) -> ManualCommand {
+        ManualCommand(
+            title: "Activation generated",
+            command: """
+            Activation output generated.
+
+            Temporary output:
+            \(result.tempOutputPath)
+
+            Generated SHA-256:
+            \(result.generatedSHA256)
+
+            Backup:
+            \(result.backup.id)
+
+            Bundle target:
+            \(result.bundleTarget)
+
+            Manual copy command:
+            \(result.sudoCommand)
+
+            Verify after copying:
+            \(result.verifyCommand)
+            """
+        )
+    }
+
+    private func showActivationError(title: String, error: Error) {
+        let message = String(describing: error)
+        commandToRun = ManualCommand(
+            title: title,
+            command: """
+            \(title)
+
+            \(message)
+            """
+        )
+        lastError = UserFacingError(title: title, message: message)
     }
 }
