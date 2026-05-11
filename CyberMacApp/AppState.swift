@@ -11,7 +11,12 @@ struct UserFacingError: Identifiable, Sendable {
 struct ManualCommand: Identifiable, Sendable {
     let id = UUID()
     let title: String
-    let command: String
+    let displayCommand: String
+
+    init(title: String, command: String) {
+        self.title = title
+        self.displayCommand = command
+    }
 }
 
 enum AppTask: Equatable, Sendable {
@@ -180,17 +185,23 @@ final class CyberMacAppState: ObservableObject {
     }
 
     func generateActivation() async {
+        activationDebugLog("[ActivationUI] start generate")
         do {
-            try await withCurrentTask(.preparingActivation) {
+            let result = try await withCurrentTask(.preparingActivation) {
                 let container = self.container
                 let result = try await BackgroundTaskRunner.run {
                     try container.generateActivation()
                 }
                 try Task.checkCancellation()
-                commandToRun = activationCommandPanel(for: result)
-                lastError = nil
-                await refreshAfterStateChange()
+                activationDebugLog("[ActivationUI] core activation returned")
+                return result
             }
+            commandToRun = activationCommandPanel(for: result)
+            activationDebugLog("[ActivationUI] command stored")
+            lastError = nil
+            activationDebugLog("[ActivationUI] currentTask cleared")
+            await refreshPreservingCommand()
+            activationDebugLog("[ActivationUI] refresh complete")
         } catch is CancellationError {
         } catch {
             showActivationError(title: "Activation failed", error: error)
@@ -548,6 +559,10 @@ final class CyberMacAppState: ObservableObject {
         }
     }
 
+    private func refreshPreservingCommand() async {
+        await refreshAfterStateChange()
+    }
+
     private func withCurrentTask<Value>(
         _ task: AppTask,
         operation: () async throws -> Value
@@ -619,6 +634,12 @@ final class CyberMacAppState: ObservableObject {
             """
         )
         lastError = UserFacingError(title: title, message: message)
+    }
+
+    private func activationDebugLog(_ message: String) {
+        #if DEBUG
+        NSLog("%@", message)
+        #endif
     }
 
     private func inputPatchMismatchText(_ result: InputPatchVerifyResult) -> String {

@@ -100,13 +100,6 @@ private struct ModRow: View {
                         .font(.headline)
                     Text(mod.type.displayName)
                         .foregroundStyle(.secondary)
-                    if mod.requiresInputMappingPatch {
-                        Text("Input patch required")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(CyberAccent.amber.color.opacity(0.14), in: Capsule())
-                    }
                 }
                 Spacer()
                 Text(mod.status.rawValue)
@@ -157,20 +150,30 @@ private struct ModRow: View {
 
     private var inputStatus: String {
         guard mod.status == .enabled else { return "Disabled" }
+        if inputActive { return "Active" }
+        if inputPending { return "Pending" }
         switch mod.inputPatchState {
         case .active:
-            return "Active"
+            return "Needs patch"
         case .prepared:
             return "Prepared"
         case .failed:
             return "Verify failed"
         case .outOfSync:
-            return "Out of sync"
+            return "Needs patch"
         case .required:
-            return "Patch required"
+            return "Needs patch"
         case .notRequired:
             return "Not required"
         }
+    }
+
+    private var inputActive: Bool {
+        appState.inputStatus?.activeInputPatchModIDs.contains(mod.id) == true
+    }
+
+    private var inputPending: Bool {
+        appState.inputStatus?.pendingInputPatch?.modIDs.contains(mod.id) == true
     }
 
     private var statusAccent: CyberAccent {

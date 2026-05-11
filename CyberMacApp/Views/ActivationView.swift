@@ -52,7 +52,7 @@ struct ActivationView: View {
                     }
                 }
                 if let command = appState.commandToRun {
-                    CommandBox(command: command.command, title: command.title, collapsedByDefault: false)
+                    CommandBox(command: command.displayCommand, title: command.title, collapsedByDefault: false)
                 } else {
                     GlassPanel {
                         Text("Activation and restore commands will appear here after CyberMac prepares them. Privileged copy and restore remain manual.")
@@ -86,11 +86,11 @@ struct ActivationView: View {
                     }
                     Spacer()
                     PrimaryButton(
-                        title: "Prepare input patch",
+                        title: inputPrepareTitle,
                         systemImage: "keyboard",
                         disabled: appState.inputStatus?.requiredModCount ?? 0 == 0,
                         variant: .secondary,
-                        accent: .amber
+                        accent: inputStateText == "Active" ? .blue : .amber
                     ) {
                         Task { await appState.prepareInputPatch() }
                     }
@@ -165,10 +165,17 @@ struct ActivationView: View {
     }
 
     private var inputDetail: String {
+        if inputStateText == "Active" {
+            return "Input mappings are active."
+        }
         let count = appState.inputStatus?.requiredModCount ?? 0
         if count == 0 { return "No enabled mods require keybind XML." }
         if count == 1 { return "1 enabled mod requires keybind XML." }
         return "\(count) enabled mods require keybind XML."
+    }
+
+    private var inputPrepareTitle: String {
+        inputStateText == "Active" ? "Rebuild input patch" : "Prepare input patch"
     }
 
     private var inputStateText: String {

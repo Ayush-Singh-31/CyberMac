@@ -47,7 +47,7 @@ struct DiagnosticsView: View {
                     diagnosticsBox(inputDiagnosticsText(status))
                 }
                 if let command = appState.commandToRun {
-                    CommandBox(command: command.command)
+                    CommandBox(command: command.displayCommand)
                 }
             }
             .frame(maxWidth: 900, alignment: .leading)

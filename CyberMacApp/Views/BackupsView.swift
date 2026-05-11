@@ -33,7 +33,7 @@ struct BackupsView: View {
 
                 if let command = appState.commandToRun, appState.pendingRestoreBackupID != nil {
                     VStack(alignment: .leading, spacing: 12) {
-                        CommandBox(command: command.command, title: "Manual restore required", collapsedByDefault: true)
+                        CommandBox(command: command.displayCommand, title: "Manual restore required", collapsedByDefault: true)
                         HStack {
                             PrimaryButton(
                                 title: "I ran it, verify restore",
@@ -72,7 +72,7 @@ struct BackupsView: View {
                         .font(.title2.weight(.semibold))
                     if let command = appState.commandToRun, appState.pendingInputConfigBackupID != nil {
                         VStack(alignment: .leading, spacing: 12) {
-                            CommandBox(command: command.command, title: "Manual input config restore required", collapsedByDefault: true)
+                            CommandBox(command: command.displayCommand, title: "Manual input config restore required", collapsedByDefault: true)
                             HStack {
                                 PrimaryButton(
                                     title: "I ran it, verify input restore",
