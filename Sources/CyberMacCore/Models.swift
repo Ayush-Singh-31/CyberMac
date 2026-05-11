@@ -125,6 +125,72 @@ public enum ActivationState: String, Codable, Sendable {
     case active
 }
 
+public enum BundleCacheKind: String, Codable, Sendable {
+    case vanilla
+    case cyberMacActive
+    case externallyChanged
+    case missing
+}
+
+public struct BundleCacheClassification: Codable, Sendable {
+    public let kind: BundleCacheKind
+    public let targetPath: String
+    public let currentSHA256: String?
+    public let baseSnapshotSHA256: String?
+    public let activeSHA256: String?
+    public let pendingSHA256: String?
+    public let baseSnapshotID: String?
+    public let overlayMirrorPresent: Bool
+
+    public init(
+        kind: BundleCacheKind,
+        targetPath: String,
+        currentSHA256: String?,
+        baseSnapshotSHA256: String?,
+        activeSHA256: String?,
+        pendingSHA256: String?,
+        baseSnapshotID: String?,
+        overlayMirrorPresent: Bool
+    ) {
+        self.kind = kind
+        self.targetPath = targetPath
+        self.currentSHA256 = currentSHA256
+        self.baseSnapshotSHA256 = baseSnapshotSHA256
+        self.activeSHA256 = activeSHA256
+        self.pendingSHA256 = pendingSHA256
+        self.baseSnapshotID = baseSnapshotID
+        self.overlayMirrorPresent = overlayMirrorPresent
+    }
+}
+
+public struct BundleStateSnapshot: Codable, Sendable {
+    public let bundle: BundleCacheClassification
+    public let activationState: ActivationState
+    public let bundleChangedSinceLastActivation: Bool
+    public let enabledMods: [InstalledModManifest]
+    public let activeModIDs: [String]
+    public let activationBlocked: Bool
+    public let nextStep: String
+
+    public init(
+        bundle: BundleCacheClassification,
+        activationState: ActivationState,
+        bundleChangedSinceLastActivation: Bool,
+        enabledMods: [InstalledModManifest],
+        activeModIDs: [String],
+        activationBlocked: Bool,
+        nextStep: String
+    ) {
+        self.bundle = bundle
+        self.activationState = activationState
+        self.bundleChangedSinceLastActivation = bundleChangedSinceLastActivation
+        self.enabledMods = enabledMods
+        self.activeModIDs = activeModIDs
+        self.activationBlocked = activationBlocked
+        self.nextStep = nextStep
+    }
+}
+
 public enum PriorFileState: String, Codable, Sendable {
     case present
     case absent
@@ -290,6 +356,194 @@ public struct LaunchWorkflowStatus: Codable, Sendable {
         self.state = state
         self.checkedAt = checkedAt
         self.message = message
+    }
+}
+
+public struct GameInstallSummary: Codable, Sendable {
+    public let found: Bool
+    public let edition: String?
+    public let storefront: String
+    public let appPath: String?
+    public let dataPath: String?
+    public let bundleTarget: String?
+    public let executableFound: Bool
+    public let dataPathFound: Bool
+
+    public init(found: Bool, edition: String?, storefront: String, appPath: String?, dataPath: String?, bundleTarget: String?, executableFound: Bool, dataPathFound: Bool) {
+        self.found = found
+        self.edition = edition
+        self.storefront = storefront
+        self.appPath = appPath
+        self.dataPath = dataPath
+        self.bundleTarget = bundleTarget
+        self.executableFound = executableFound
+        self.dataPathFound = dataPathFound
+    }
+}
+
+public struct RuntimeToolSummary: Codable, Sendable {
+    public let installed: Bool
+    public let toolFound: Bool
+    public let version: String?
+    public let rootPath: String
+    public let toolPath: String?
+    public let quarantinedPathCount: Int
+    public let notes: [String]
+
+    public init(installed: Bool, toolFound: Bool, version: String?, rootPath: String, toolPath: String?, quarantinedPathCount: Int, notes: [String]) {
+        self.installed = installed
+        self.toolFound = toolFound
+        self.version = version
+        self.rootPath = rootPath
+        self.toolPath = toolPath
+        self.quarantinedPathCount = quarantinedPathCount
+        self.notes = notes
+    }
+}
+
+public struct RuntimeSummary: Codable, Sendable {
+    public let redscript: RuntimeToolSummary
+    public let inputLoader: RuntimeToolSummary
+
+    public var ready: Bool {
+        redscript.installed && inputLoader.installed &&
+            redscript.quarantinedPathCount == 0 &&
+            inputLoader.quarantinedPathCount == 0
+    }
+
+    public init(redscript: RuntimeToolSummary, inputLoader: RuntimeToolSummary) {
+        self.redscript = redscript
+        self.inputLoader = inputLoader
+    }
+}
+
+public struct CacheSummary: Codable, Sendable {
+    public let baseSnapshotPresent: Bool
+    public let currentBundle: BundleCacheKind
+    public let bundleTarget: String?
+    public let bundleCacheSHA256: String?
+    public let baseSnapshotSHA256: String?
+    public let overlayMirrorPresent: Bool
+
+    public init(baseSnapshotPresent: Bool, currentBundle: BundleCacheKind, bundleTarget: String?, bundleCacheSHA256: String?, baseSnapshotSHA256: String?, overlayMirrorPresent: Bool) {
+        self.baseSnapshotPresent = baseSnapshotPresent
+        self.currentBundle = currentBundle
+        self.bundleTarget = bundleTarget
+        self.bundleCacheSHA256 = bundleCacheSHA256
+        self.baseSnapshotSHA256 = baseSnapshotSHA256
+        self.overlayMirrorPresent = overlayMirrorPresent
+    }
+}
+
+public struct ActivationSummary: Codable, Sendable {
+    public let state: ActivationState
+    public let enabledMods: Int
+    public let activeModIDs: [String]
+    public let bundleChangedSinceLastActivation: Bool
+    public let manualPrivilegedWriteRequired: Bool
+    public let safeToProceedToActivation: Bool
+    public let nextStep: String
+
+    public init(state: ActivationState, enabledMods: Int, activeModIDs: [String], bundleChangedSinceLastActivation: Bool, manualPrivilegedWriteRequired: Bool, safeToProceedToActivation: Bool, nextStep: String) {
+        self.state = state
+        self.enabledMods = enabledMods
+        self.activeModIDs = activeModIDs
+        self.bundleChangedSinceLastActivation = bundleChangedSinceLastActivation
+        self.manualPrivilegedWriteRequired = manualPrivilegedWriteRequired
+        self.safeToProceedToActivation = safeToProceedToActivation
+        self.nextStep = nextStep
+    }
+}
+
+public struct DoctorWarning: Codable, Sendable {
+    public let code: String
+    public let message: String
+
+    public init(code: String, message: String) {
+        self.code = code
+        self.message = message
+    }
+}
+
+public struct LegacyProbeSummary: Codable, Sendable {
+    public let sidecarOnlyLaunchProbeEnabled: Bool
+    public let state: String
+    public let message: String
+    public let reason: String
+
+    public init(sidecarOnlyLaunchProbeEnabled: Bool, state: String, message: String, reason: String) {
+        self.sidecarOnlyLaunchProbeEnabled = sidecarOnlyLaunchProbeEnabled
+        self.state = state
+        self.message = message
+        self.reason = reason
+    }
+}
+
+public struct DoctorReport: Codable, Sendable {
+    public let game: GameInstallSummary
+    public let runtime: RuntimeSummary
+    public let cache: CacheSummary
+    public let activation: ActivationSummary
+    public let warnings: [DoctorWarning]
+    public let legacyProbe: LegacyProbeSummary?
+
+    public init(game: GameInstallSummary, runtime: RuntimeSummary, cache: CacheSummary, activation: ActivationSummary, warnings: [DoctorWarning], legacyProbe: LegacyProbeSummary?) {
+        self.game = game
+        self.runtime = runtime
+        self.cache = cache
+        self.activation = activation
+        self.warnings = warnings
+        self.legacyProbe = legacyProbe
+    }
+}
+
+public enum RestoreVerificationStatus: Codable, Equatable, Sendable {
+    case verified(target: String)
+    case hashMismatch(expected: String, actual: String, target: String)
+    case expectedAbsentButFileExists(target: String, actualHash: String)
+    case expectedPresentButFileMissing(target: String)
+    case staleBackup(expectedFingerprint: String, actualFingerprint: String)
+}
+
+public struct RestoreVerificationResult: Codable, Equatable, Sendable {
+    public let backupID: String
+    public let status: RestoreVerificationStatus
+    public let restoreCommand: String
+    public let verifyCommand: String
+
+    public init(backupID: String, status: RestoreVerificationStatus, restoreCommand: String, verifyCommand: String) {
+        self.backupID = backupID
+        self.status = status
+        self.restoreCommand = restoreCommand
+        self.verifyCommand = verifyCommand
+    }
+}
+
+public enum LaunchPolicy: String, Codable, Sendable {
+    case `default`
+    case vanillaOK
+    case requireActive
+}
+
+public struct LaunchGamePlan: Codable, Sendable {
+    public let appURL: URL
+    public let bundleKind: BundleCacheKind
+    public let activationState: ActivationState
+    public let enabledMods: [InstalledModManifest]
+    public let commandPreview: String
+    public let warnings: [String]
+    public let canLaunch: Bool
+    public let refusalReason: String?
+
+    public init(appURL: URL, bundleKind: BundleCacheKind, activationState: ActivationState, enabledMods: [InstalledModManifest], commandPreview: String, warnings: [String], canLaunch: Bool, refusalReason: String?) {
+        self.appURL = appURL
+        self.bundleKind = bundleKind
+        self.activationState = activationState
+        self.enabledMods = enabledMods
+        self.commandPreview = commandPreview
+        self.warnings = warnings
+        self.canLaunch = canLaunch
+        self.refusalReason = refusalReason
     }
 }
 

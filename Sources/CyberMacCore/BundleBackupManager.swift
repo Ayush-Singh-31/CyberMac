@@ -3,11 +3,13 @@ import Foundation
 public struct BundleBackupManager: Sendable {
     private let home: CyberMacHomeManager
     private let baseCacheManager: BaseCacheManager
+    private let manifestStore: ManifestStore
     private let stateStore: StateStore
 
     public init(home: CyberMacHomeManager) {
         self.home = home
         self.baseCacheManager = BaseCacheManager(home: home)
+        self.manifestStore = ManifestStore(home: home)
         self.stateStore = StateStore(home: home)
     }
 
@@ -82,44 +84,96 @@ public struct BundleBackupManager: Sendable {
     public func restoreCommand(id: String, gameInstall: GameInstall?) throws -> String {
         let manifest = try load(id: id)
         try validateCurrentFingerprintIfNeeded(manifest: manifest, gameInstall: gameInstall)
+        return try restoreCommand(manifest: manifest)
+    }
+
+    private func restoreCommand(manifest: BundleBackupManifest) throws -> String {
         switch manifest.priorState {
         case .present:
-            let backupURL = backupDirectory(id: id).appendingPathComponent("final.redscripts")
+            let backupURL = backupDirectory(id: manifest.id).appendingPathComponent("final.redscripts")
             return "sudo cp \(PathSafety.shellDoubleQuoted(backupURL.path)) \(PathSafety.shellDoubleQuoted(manifest.bundleTarget))"
         case .absent:
             return "sudo rm -f \(PathSafety.shellDoubleQuoted(manifest.bundleTarget))"
         }
     }
 
-    public func verifyRestore(id: String) throws -> Bool {
+    public func verifyRestore(id: String) throws -> RestoreVerificationResult {
         try verifyRestore(id: id, gameInstall: nil)
     }
 
-    public func verifyRestore(id: String, gameInstall: GameInstall?) throws -> Bool {
+    public func verifyRestore(id: String, gameInstall: GameInstall?) throws -> RestoreVerificationResult {
         let manifest = try load(id: id)
-        try validateCurrentFingerprintIfNeeded(manifest: manifest, gameInstall: gameInstall)
+        let command = try restoreCommand(manifest: manifest)
+        let verifyCommand = "swift run cybermac restore --verify \(id)"
+
+        if let gameInstall {
+            let current = try baseCacheManager.fingerprint(gameInstall: gameInstall)
+            if current.id != manifest.gameFingerprintID {
+                return RestoreVerificationResult(
+                    backupID: id,
+                    status: .staleBackup(expectedFingerprint: manifest.gameFingerprintID, actualFingerprint: current.id),
+                    restoreCommand: command,
+                    verifyCommand: verifyCommand
+                )
+            }
+        }
+
         let targetURL = URL(fileURLWithPath: manifest.bundleTarget)
         switch manifest.priorState {
         case .absent:
-            return !FileManager.default.fileExists(atPath: targetURL.path)
+            if FileManager.default.fileExists(atPath: targetURL.path) {
+                return RestoreVerificationResult(
+                    backupID: id,
+                    status: .expectedAbsentButFileExists(target: targetURL.path, actualHash: try PathSafety.sha256(url: targetURL)),
+                    restoreCommand: command,
+                    verifyCommand: verifyCommand
+                )
+            }
+            return RestoreVerificationResult(
+                backupID: id,
+                status: .verified(target: targetURL.path),
+                restoreCommand: command,
+                verifyCommand: verifyCommand
+            )
         case .present:
-            guard let expected = manifest.sha256,
-                  FileManager.default.fileExists(atPath: targetURL.path)
-            else { return false }
+            guard FileManager.default.fileExists(atPath: targetURL.path) else {
+                return RestoreVerificationResult(
+                    backupID: id,
+                    status: .expectedPresentButFileMissing(target: targetURL.path),
+                    restoreCommand: command,
+                    verifyCommand: verifyCommand
+                )
+            }
+            guard let expected = manifest.sha256 else {
+                throw CyberMacError.fileSystem("Backup \(id) prior state is present but no expected hash was recorded.")
+            }
             let actual = try PathSafety.sha256(url: targetURL)
-            guard actual == expected else { return false }
+            guard actual == expected else {
+                return RestoreVerificationResult(
+                    backupID: id,
+                    status: .hashMismatch(expected: expected, actual: actual, target: targetURL.path),
+                    restoreCommand: command,
+                    verifyCommand: verifyCommand
+                )
+            }
             if let gameInstall,
                let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall),
                actual == baseSnapshotHash {
                 var state = stateStore.load()
-                state.activationState = .requiresBundleActivation
+                let enabledMods = (try? manifestStore.list().filter { $0.status == .enabled }) ?? []
+                state.activationState = enabledMods.isEmpty ? .requiresBundleActivation : .outOfSync
                 state.bundleChangedSinceLastActivation = false
                 state.activeBundleTargetHashes = [:]
                 state.pendingExpectedHashes = [:]
                 state.pendingActivation = nil
                 try stateStore.save(state)
             }
-            return true
+            return RestoreVerificationResult(
+                backupID: id,
+                status: .verified(target: targetURL.path),
+                restoreCommand: command,
+                verifyCommand: verifyCommand
+            )
         }
     }
 

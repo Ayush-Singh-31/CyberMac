@@ -36,6 +36,7 @@ public struct ActivationManager: Sendable {
     private let manifestStore: ManifestStore
     private let stateStore: StateStore
     private let fingerprintCache: FingerprintCacheStore
+    private let bundleStateResolver: BundleStateResolver
 
     public init(home: CyberMacHomeManager) {
         self.home = home
@@ -45,6 +46,7 @@ public struct ActivationManager: Sendable {
         self.manifestStore = ManifestStore(home: home)
         self.stateStore = StateStore(home: home)
         self.fingerprintCache = FingerprintCacheStore(home: home)
+        self.bundleStateResolver = BundleStateResolver(home: home)
     }
 
     public func dryRun(gameInstall: GameInstall) throws -> ActivationDryRunResult {
@@ -157,44 +159,8 @@ public struct ActivationManager: Sendable {
     }
 
     public func reconcileBundleState(gameInstall: GameInstall) throws -> CyberMacState {
-        var state = stateStore.load()
-        let target = baseCacheManager.bundleCacheURL(gameInstall: gameInstall)
-        guard FileManager.default.fileExists(atPath: target.path) else {
-            if state.activationState == .active || state.bundleChangedSinceLastActivation {
-                state.activationState = .outOfSync
-                state.bundleChangedSinceLastActivation = true
-                try stateStore.save(state)
-            }
-            return state
-        }
-
-        let currentBundleHash = try fingerprintCache.sha256(url: target)
-        let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall)
-        let activeHash = state.activeBundleTargetHashes[target.path]
-
-        if state.bundleChangedSinceLastActivation ||
-            (state.activationState == .active && activeHash != nil && currentBundleHash != activeHash) {
-            if let baseSnapshotHash, currentBundleHash == baseSnapshotHash {
-                state.activationState = .requiresBundleActivation
-                state.bundleChangedSinceLastActivation = false
-                state.activeBundleTargetHashes = [:]
-                state.pendingExpectedHashes = [:]
-                state.pendingActivation = nil
-                try stateStore.save(state)
-            } else if let activeHash, currentBundleHash == activeHash {
-                state.activationState = .active
-                state.bundleChangedSinceLastActivation = false
-                state.pendingExpectedHashes = [:]
-                state.pendingActivation = nil
-                try stateStore.save(state)
-            } else {
-                state.activationState = .outOfSync
-                state.bundleChangedSinceLastActivation = true
-                try stateStore.save(state)
-            }
-        }
-
-        return state
+        _ = try bundleStateResolver.snapshot(gameInstall: gameInstall)
+        return stateStore.load()
     }
 
     private func currentSnapshot(gameInstall: GameInstall) throws -> BaseCacheSnapshotMetadata {
@@ -237,9 +203,16 @@ public struct ActivationManager: Sendable {
     }
 
     private func refuseIfBundleChanged(gameInstall: GameInstall) throws {
-        let state = try updateBundleChangedFlag(gameInstall: gameInstall)
-        if state.bundleChangedSinceLastActivation {
-            throw CyberMacError.unsupported("Bundle changed since the last activation and does not match the base snapshot. Restore vanilla, refresh base cache only after confirming a game update, or inspect manually before activation.")
+        let snapshot = try bundleStateResolver.snapshot(gameInstall: gameInstall)
+        if snapshot.activationBlocked {
+            switch snapshot.bundle.kind {
+            case .missing:
+                throw CyberMacError.unsupported("Bundle final.redscripts is missing. Restore a backup or inspect manually before activation.")
+            case .externallyChanged:
+                throw CyberMacError.unsupported("Bundle final.redscripts does not match the base snapshot or the last CyberMac activation. Restore vanilla, refresh base cache only after confirming a game update, or inspect manually before activation.")
+            case .vanilla, .cyberMacActive:
+                break
+            }
         }
     }
 

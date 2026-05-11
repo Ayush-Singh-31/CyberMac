@@ -17,6 +17,7 @@ public struct DiagnosticsExporter: Sendable {
         let redscript = runtimeImporter.redscriptStatus()
         let inputLoader = runtimeImporter.inputLoaderStatus()
         let launch = launchVerifier.currentStoredStatus()
+        let snapshot = gameInstall.flatMap { try? BundleStateResolver(home: home).snapshot(gameInstall: $0) }
         let state = StateStore(home: home).load()
         let installedMods = (try? manifestStore.list()) ?? []
 
@@ -38,8 +39,8 @@ public struct DiagnosticsExporter: Sendable {
             redscriptRuntime: runtimeSummary(redscript),
             inputLoaderRuntime: runtimeSummary(inputLoader),
             launchWorkflow: "\(launch.state.rawValue): \(launch.message)",
-            activationState: state.activationState.rawValue,
-            bundleChangedSinceLastActivation: state.bundleChangedSinceLastActivation,
+            activationState: snapshot?.activationState.rawValue ?? state.activationState.rawValue,
+            bundleChangedSinceLastActivation: snapshot?.bundleChangedSinceLastActivation ?? state.bundleChangedSinceLastActivation,
             activeModIDs: state.activeModIDs,
             baseCacheSnapshotID: state.baseCacheSnapshotID,
             lastBackupID: state.lastBackupID,

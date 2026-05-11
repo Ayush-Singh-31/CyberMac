@@ -15,6 +15,10 @@ let package = Package(
         .executable(
             name: "cybermac",
             targets: ["cybermac"]
+        ),
+        .executable(
+            name: "CyberMacApp",
+            targets: ["CyberMacApp"]
         )
     ],
     dependencies: [
@@ -30,6 +34,11 @@ let package = Package(
         .executableTarget(
             name: "cybermac",
             dependencies: ["CyberMacCore"]
+        ),
+        .executableTarget(
+            name: "CyberMacApp",
+            dependencies: ["CyberMacCore"],
+            path: "CyberMacApp"
         ),
         .testTarget(
             name: "CyberMacCoreTests",

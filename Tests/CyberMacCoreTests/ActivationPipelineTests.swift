@@ -92,7 +92,8 @@ final class ActivationPipelineTests: XCTestCase {
         XCTAssertEqual(absent.priorState, .absent)
         XCTAssertNil(absent.sha256)
         XCTAssertTrue(try backupManager.restoreCommand(id: absent.id, gameInstall: game).contains("sudo rm -f"))
-        XCTAssertTrue(try backupManager.verifyRestore(id: absent.id, gameInstall: game))
+        let absentResult = try backupManager.verifyRestore(id: absent.id, gameInstall: game)
+        XCTAssertEqual(absentResult.status, .verified(target: baseManager.bundleCacheURL(gameInstall: game).path))
     }
 
     func testRestoreVerifyClearsStateWhenBackupMatchesBaseSnapshot() throws {
@@ -117,7 +118,8 @@ final class ActivationPipelineTests: XCTestCase {
             to: target
         )
 
-        XCTAssertTrue(try backupManager.verifyRestore(id: backup.id, gameInstall: game))
+        let verified = try backupManager.verifyRestore(id: backup.id, gameInstall: game)
+        XCTAssertEqual(verified.status, .verified(target: target.path))
         let state = StateStore(home: home).load()
         XCTAssertEqual(state.activationState, .requiresBundleActivation)
         XCTAssertFalse(state.bundleChangedSinceLastActivation)
@@ -125,6 +127,132 @@ final class ActivationPipelineTests: XCTestCase {
         XCTAssertTrue(state.pendingExpectedHashes.isEmpty)
     }
 
+    func testBundleClassificationTreatsBaseSnapshotAsVanillaAndExternalHashAsBlocked() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        _ = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+
+        var snapshot = try BundleStateResolver(home: home).snapshot(gameInstall: game)
+        XCTAssertEqual(snapshot.bundle.kind, .vanilla)
+        XCTAssertFalse(snapshot.bundleChangedSinceLastActivation)
+        XCTAssertFalse(snapshot.activationBlocked)
+
+        try write("external-cache", to: baseManager.bundleCacheURL(gameInstall: game))
+        snapshot = try BundleStateResolver(home: home).snapshot(gameInstall: game)
+        XCTAssertEqual(snapshot.bundle.kind, .externallyChanged)
+        XCTAssertTrue(snapshot.bundleChangedSinceLastActivation)
+        XCTAssertTrue(snapshot.activationBlocked)
+
+        XCTAssertThrowsError(try ActivationManager(home: home).dryRun(gameInstall: game)) { error in
+            XCTAssertTrue(String(describing: error).contains("does not match the base snapshot"))
+        }
+    }
+
+    func testRestoreVerifyBaseSnapshotWithEnabledModsMarksOutOfSyncNotBundleChanged() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        let base = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        try saveEnabledManifest(id: "example_mod")
+        let backupManager = BundleBackupManager(home: home)
+        let backup = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+        let target = baseManager.bundleCacheURL(gameInstall: game)
+
+        try write("generated-cache", to: target)
+        try StateStore(home: home).save(CyberMacState(
+            activationState: .active,
+            bundleChangedSinceLastActivation: false,
+            activeModIDs: ["example_mod"],
+            pendingExpectedHashes: [target.path: "pending"],
+            activeBundleTargetHashes: [target.path: try PathSafety.sha256(url: target)]
+        ))
+
+        try FileManager.default.removeItem(at: target)
+        try FileManager.default.copyItem(
+            at: backupManager.backupDirectory(id: backup.id).appendingPathComponent("final.redscripts"),
+            to: target
+        )
+
+        let result = try backupManager.verifyRestore(id: backup.id, gameInstall: game)
+        XCTAssertEqual(result.status, .verified(target: target.path))
+        let state = StateStore(home: home).load()
+        XCTAssertEqual(state.activationState, .outOfSync)
+        XCTAssertFalse(state.bundleChangedSinceLastActivation)
+        XCTAssertTrue(state.activeBundleTargetHashes.isEmpty)
+        XCTAssertTrue(state.pendingExpectedHashes.isEmpty)
+    }
+
+    func testRestoreVerifyMismatchFormatsExpectedActualAndNextStep() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        let base = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        let backupManager = BundleBackupManager(home: home)
+        let backup = try backupManager.backup(gameInstall: game, fingerprintID: base.snapshotID)
+        let target = baseManager.bundleCacheURL(gameInstall: game)
+        try write("still-generated-cache", to: target)
+
+        let result = try backupManager.verifyRestore(id: backup.id, gameInstall: game)
+        guard case .hashMismatch(let expected, let actual, let mismatchTarget) = result.status else {
+            return XCTFail("Expected hash mismatch")
+        }
+        XCTAssertEqual(mismatchTarget, target.path)
+
+        let message = RestoreVerificationFormatter.format(result)
+        XCTAssertTrue(message.contains(expected))
+        XCTAssertTrue(message.contains(actual))
+        XCTAssertTrue(message.contains("The printed sudo restore command has not been run yet"))
+        XCTAssertTrue(message.contains("swift run cybermac restore --verify \(backup.id)"))
+    }
+
+    func testDoctorDefaultOutputIgnoresObsoleteLaunchWorkflowFailure() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let obsolete = LaunchWorkflowStatus(
+            state: .failed,
+            checkedAt: Date(),
+            message: "Could not copy the base script cache file"
+        )
+        try StateStore(home: home).saveLaunchWorkflow(obsolete)
+
+        let report = try DoctorReporter(home: home).makeReport(preferredAppPath: game.appURL.path, developerMode: false)
+        let output = DoctorReportFormatter.format(report, developerMode: false)
+        XCTAssertFalse(output.contains("Launch workflow"))
+        XCTAssertFalse(output.contains("Could not copy the base script cache file"))
+
+        let developerReport = try DoctorReporter(home: home).makeReport(preferredAppPath: game.appURL.path, developerMode: true)
+        let developerOutput = DoctorReportFormatter.format(developerReport, developerMode: true)
+        XCTAssertTrue(developerOutput.contains("Legacy probe"))
+        XCTAssertTrue(developerOutput.contains("Could not copy the base script cache file"))
+    }
+
+    func testLaunchPlanningRefusesInactiveModsUnlessVanillaOKAndAllowsActiveBundle() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        let baseManager = BaseCacheManager(home: home)
+        _ = try baseManager.refreshBaseCache(gameInstall: game, dryRun: false)
+        try saveEnabledManifest(id: "example_mod")
+        let manager = LaunchGameManager(home: home)
+
+        let defaultPlan = try manager.makeLaunchPlan(gameInstall: game, policy: .default)
+        XCTAssertFalse(defaultPlan.canLaunch)
+        XCTAssertEqual(defaultPlan.bundleKind, .vanilla)
+
+        let vanillaOKPlan = try manager.makeLaunchPlan(gameInstall: game, policy: .vanillaOK)
+        XCTAssertTrue(vanillaOKPlan.canLaunch)
+        XCTAssertFalse(vanillaOKPlan.warnings.isEmpty)
+
+        let target = baseManager.bundleCacheURL(gameInstall: game)
+        try write("generated-cache", to: target)
+        let generatedHash = try PathSafety.sha256(url: target)
+        try StateStore(home: home).save(CyberMacState(
+            activationState: .active,
+            bundleChangedSinceLastActivation: false,
+            activeModIDs: ["example_mod"],
+            activeBundleTargetHashes: [target.path: generatedHash]
+        ))
+
+        let activePlan = try manager.makeLaunchPlan(gameInstall: game, policy: .requireActive)
+        XCTAssertTrue(activePlan.canLaunch)
+        XCTAssertEqual(activePlan.bundleKind, .cyberMacActive)
+        XCTAssertEqual(activePlan.activationState, .active)
+    }
 
     func testActivationDryRunBundleModeAndVerifyUseOnlyFinalRedscriptsBundleTarget() throws {
         let game = try makeGameApp(cacheContents: "vanilla-cache")

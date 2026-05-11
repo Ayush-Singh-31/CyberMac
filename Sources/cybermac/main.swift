@@ -11,6 +11,8 @@ struct CyberMacCLI {
     func run() {
         do {
             try dispatch()
+        } catch let exit as SilentExit {
+            Foundation.exit(exit.code)
         } catch {
             fputs("Error: \(error)\n", stderr)
             exit(1)
@@ -42,6 +44,8 @@ struct CyberMacCLI {
             try generateLaunchScript()
         case "launch-test":
             try launchTest()
+        case "launch-game":
+            try launchGame()
         case "scan":
             try scan()
         case "install":
@@ -84,6 +88,7 @@ struct CyberMacCLI {
           cybermac probe-redscript [--compile] [--game-app /path/to/Cyberpunk.app]
           cybermac generate-launch-script [--game-app /path/to/Cyberpunk.app]
           cybermac launch-test [--run]
+          cybermac launch-game [--vanilla-ok|--require-active] [--show-command] [--game-app /path/to/Cyberpunk.app]
           cybermac scan /path/to/mod.zip
           cybermac install /path/to/mod.zip [--game-app /path/to/Cyberpunk.app]
           cybermac cache-status [--game-app /path/to/Cyberpunk.app]
@@ -111,30 +116,9 @@ struct CyberMacCLI {
 
     private func doctor() throws {
         try home.bootstrap()
-        let detector = GameInstallDetector()
-        let game = try detector.detect(preferredAppPath: optionValue("--game-app"))
-
-        print("Game found: yes")
-        print("Display name: \(game.displayName)")
-        print("Storefront: \(game.storefront.rawValue)")
-        print("App path: \(game.appURL.path)")
-        print("Executable found: \(FileManager.default.fileExists(atPath: game.executableURL.path) ? "yes" : "no")")
-        print("Data path found: \(FileManager.default.fileExists(atPath: game.dataURL.path) ? "yes" : "no")")
-        print("archive/Mac found: \(game.archiveMacURL == nil ? "no" : "yes")")
-        print("r6 found: \(game.r6URL == nil ? "no" : "yes")")
-        print("Bundle write test: skipped by design")
-        print("CyberMac app support path: \(PathSafety.redactUserPath(home.homeURL.path))")
-        print("Overlay scripts path: \(PathSafety.redactUserPath(home.overlayScriptsURL.path))")
-
-        let runtimes = RuntimeArchiveImporter(home: home)
-        printRuntimeStatus(runtimes.redscriptStatus())
-        printRuntimeStatus(runtimes.inputLoaderStatus())
-
-        let launch = LaunchWorkflowVerifier(home: home).currentStoredStatus()
-        print("Launch workflow: \(launch.state.rawValue) - \(launch.message)")
-        if let stateWarning = StateStore(home: home).corruptionMessage() {
-            print("State warning: \(stateWarning)")
-        }
+        let developerMode = hasFlag("--developer") || hasFlag("--developer-mode")
+        let report = try DoctorReporter(home: home).makeReport(preferredAppPath: optionValue("--game-app"), developerMode: developerMode)
+        print(DoctorReportFormatter.format(report, developerMode: developerMode))
     }
 
     private func importRuntime(kind: RuntimeKind) throws {
@@ -211,6 +195,40 @@ struct CyberMacCLI {
         }
     }
 
+    private func launchGame() throws {
+        try home.bootstrap()
+        let policy: LaunchPolicy
+        if hasFlag("--vanilla-ok") && hasFlag("--require-active") {
+            throw CyberMacError.invalidInput("Use only one launch policy: --vanilla-ok or --require-active")
+        } else if hasFlag("--vanilla-ok") {
+            policy = .vanillaOK
+        } else if hasFlag("--require-active") {
+            policy = .requireActive
+        } else {
+            policy = .default
+        }
+
+        let manager = LaunchGameManager(home: home)
+        let plan = try manager.makeLaunchPlan(policy: policy, preferredAppPath: optionValue("--game-app"))
+        if hasFlag("--show-command") {
+            print(plan.commandPreview)
+            return
+        }
+
+        guard plan.canLaunch else {
+            printLaunchRefusal(plan)
+            throw SilentExit(code: 1)
+        }
+
+        print("Launching Cyberpunk 2077.")
+        print("Current bundle: \(plan.bundleKind.displayName)")
+        print("Enabled mods: \(plan.enabledMods.count)")
+        for warning in plan.warnings {
+            print("Warning: \(warning)")
+        }
+        try manager.launch(plan: plan)
+    }
+
     private func scan() throws {
         guard arguments.count >= 2 else {
             throw CyberMacError.invalidInput("Missing mod zip path")
@@ -240,33 +258,27 @@ struct CyberMacCLI {
     private func cacheStatus() throws {
         try home.bootstrap()
         let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
-        let activation = ActivationManager(home: home)
-        let state = try activation.updateBundleChangedFlag(gameInstall: game)
-        let status = try BaseCacheManager(home: home).status(gameInstall: game)
-        print("Game app: \(status.fingerprint.appPath)")
-        print("Bundle target: \(status.bundleCacheURL.path)")
-        print("Game fingerprint: \(status.fingerprint.id)")
-        print("Bundle cache SHA-256: \(status.bundleCacheSHA256)")
-        print("Base snapshot: \(status.snapshot == nil ? "missing" : "present")")
-        if let snapshot = status.snapshot {
-            print("Base snapshot SHA-256: \(snapshot.bundleCacheSHA256)")
+        let snapshot = try BundleStateResolver(home: home).snapshot(gameInstall: game)
+        let fingerprint = try BaseCacheManager(home: home).fingerprint(gameInstall: game)
+        print("Game app: \(fingerprint.appPath)")
+        print("Bundle target: \(snapshot.bundle.targetPath)")
+        print("Game fingerprint: \(fingerprint.id)")
+        print("Bundle cache SHA-256: \(snapshot.bundle.currentSHA256 ?? "missing")")
+        print("Base snapshot: \(snapshot.bundle.baseSnapshotSHA256 == nil ? "missing" : "present")")
+        if let baseHash = snapshot.bundle.baseSnapshotSHA256 {
+            print("Base snapshot SHA-256: \(baseHash)")
         }
-        let currentBundle: String
-        if status.snapshot?.bundleCacheSHA256 == status.bundleCacheSHA256 {
-            currentBundle = "vanilla"
-        } else if state.activeBundleTargetHashes[status.bundleCacheURL.path] == status.bundleCacheSHA256 {
-            currentBundle = "CyberMac active"
-        } else if state.pendingExpectedHashes[status.bundleCacheURL.path] == status.bundleCacheSHA256 {
-            currentBundle = "pending activation"
-        } else {
-            currentBundle = "unknown"
-        }
-        print("Current bundle: \(currentBundle)")
-        print("Overlay mirror: \(status.mirrorExists ? "present" : "missing")")
-        print("Activation state: \(state.activationState.rawValue)")
-        print("Bundle changed since last activation: \(state.bundleChangedSinceLastActivation ? "yes" : "no")")
-        if let reason = status.refusedRefreshReason {
-            print("Refresh warning: \(reason)")
+        print("Current bundle: \(snapshot.bundle.kind.displayName)")
+        print("Overlay mirror: \(snapshot.bundle.overlayMirrorPresent ? "present" : "missing")")
+        print("Enabled mods: \(snapshot.enabledMods.count)")
+        print("Activation state: \(snapshot.activationState.rawValue)")
+        print("Bundle changed since last activation: \(snapshot.bundleChangedSinceLastActivation ? "yes" : "no")")
+        print("Next step: \(snapshot.nextStep)")
+        if snapshot.bundle.kind == .cyberMacActive {
+            let status = try? BaseCacheManager(home: home).status(gameInstall: game)
+            if let reason = status?.refusedRefreshReason {
+                print("Refresh warning: \(reason)")
+            }
         }
     }
 
@@ -349,8 +361,8 @@ struct CyberMacCLI {
         let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
         let manager = BundleBackupManager(home: home)
         if hasFlag("--verify") {
-            let matched = try manager.verifyRestore(id: id, gameInstall: game)
-            print(matched ? "Restore verified." : "Restore verify failed.")
+            let result = try manager.verifyRestore(id: id, gameInstall: game)
+            print(RestoreVerificationFormatter.format(result))
         } else {
             let command = try manager.restoreCommand(id: id, gameInstall: game)
             print(hasFlag("--dry-run") ? "Restore dry run." : "Run this restore command manually:")
@@ -442,6 +454,33 @@ struct CyberMacCLI {
         }
     }
 
+    private func printLaunchRefusal(_ plan: LaunchGamePlan) {
+        if plan.bundleKind == .vanilla && !plan.enabledMods.isEmpty {
+            print("Game is currently vanilla, but CyberMac has enabled mods that have not been activated.")
+            print("")
+            print("Enabled mods:")
+            for mod in plan.enabledMods {
+                print("- \(mod.displayName)")
+            }
+            print("")
+            print("Launch anyway:")
+            print("  cybermac launch-game --vanilla-ok")
+            print("")
+            print("Activate first:")
+            print("  cybermac activate --bundle-mode")
+            return
+        }
+
+        print("Refusing to launch from CyberMac.")
+        print("")
+        print("Reason:")
+        print("  \(plan.refusalReason ?? "Current state is not safe to launch through CyberMac.")")
+        if plan.bundleKind == .externallyChanged {
+            print("")
+            print("You can still launch manually from Finder, but CyberMac will not mark this state as safe.")
+        }
+    }
+
     private func optionValue(_ name: String) -> String? {
         guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else {
             return nil
@@ -475,4 +514,8 @@ struct CyberMacCLI {
         }
         return values
     }
+}
+
+private struct SilentExit: Error {
+    let code: Int32
 }
