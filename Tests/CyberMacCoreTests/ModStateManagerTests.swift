@@ -133,6 +133,134 @@ final class ModStateManagerTests: XCTestCase {
         XCTAssertTrue(StateStore(home: home).load().activeInputPatchModIDs.isEmpty)
     }
 
+    func testDeletePermanentlyRemovesManifestAndSidecarFiles() throws {
+        let id = "delete-mod"
+        let scriptRoot = home.overlayScriptsURL.appendingPathComponent(id, isDirectory: true)
+        let inputRoot = home.overlayInputURL.appendingPathComponent(id, isDirectory: true)
+        let disabledRoot = home.disabledURL.appendingPathComponent(id, isDirectory: true)
+        let script = scriptRoot.appendingPathComponent("nested/main.reds")
+        let input = inputRoot.appendingPathComponent("bindings.xml")
+        let disabledFile = disabledRoot.appendingPathComponent("scripts/old.reds")
+        try write("script", to: script)
+        try write("<bindings />", to: input)
+        try write("disabled", to: disabledFile)
+        try saveInputManifest(id: id, status: .enabled, scriptPath: script.path, inputPath: input.path)
+
+        let result = try manager.deletePermanently(id: id)
+
+        XCTAssertEqual(result.modID, id)
+        XCTAssertTrue(result.deletedPaths.contains(scriptRoot.path))
+        XCTAssertTrue(result.deletedPaths.contains(inputRoot.path))
+        XCTAssertTrue(result.deletedPaths.contains(disabledRoot.path))
+        XCTAssertTrue(result.deletedPaths.contains(manifestStore.manifestURL(id: id).path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: scriptRoot.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: inputRoot.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: disabledRoot.path))
+        XCTAssertThrowsError(try manifestStore.load(id: id))
+    }
+
+    func testDeletePermanentlyRefusesPathsOutsideCyberMacHome() throws {
+        let id = "unsafe-delete-mod"
+        let safeRoot = home.overlayScriptsURL.appendingPathComponent(id, isDirectory: true)
+        let safeScript = safeRoot.appendingPathComponent("main.reds")
+        let outside = tempDir.appendingPathComponent("outside.reds")
+        try write("safe", to: safeScript)
+        try write("outside", to: outside)
+        try saveManifest(id: id, status: .enabled, installedPath: outside.path)
+
+        XCTAssertThrowsError(try manager.deletePermanently(id: id)) { error in
+            guard case CyberMacError.unsafePath = error else {
+                XCTFail("Expected unsafePath, got \(error)")
+                return
+            }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: safeScript.path))
+        XCTAssertNoThrow(try manifestStore.load(id: id))
+    }
+
+    func testDeletePermanentlyMarksActivationOutOfSyncWhenNeeded() throws {
+        let id = "activated-delete-mod"
+        let scriptRoot = home.overlayScriptsURL.appendingPathComponent(id, isDirectory: true)
+        let script = scriptRoot.appendingPathComponent("main.reds")
+        try write("script", to: script)
+        try saveManifest(id: id, status: .enabled, installedPath: script.path)
+        try StateStore(home: home).save(CyberMacState(
+            activationState: .active,
+            activeModIDs: [id],
+            pendingExpectedHashes: ["/tmp/final.redscripts": "hash"],
+            pendingActivation: PendingActivation(
+                createdAt: Date(),
+                gameAppPath: "/Applications/Cyberpunk 2077.app",
+                bundleTarget: "/tmp/final.redscripts",
+                tempOutputPath: "/tmp/generated.redscripts",
+                backupID: "backup",
+                baseCacheSnapshotID: "snapshot",
+                activeModIDs: [id],
+                expectedHashes: ["/tmp/final.redscripts": "hash"]
+            )
+        ))
+
+        let result = try manager.deletePermanently(id: id)
+        let state = StateStore(home: home).load()
+
+        XCTAssertTrue(result.activationMarkedOutOfSync)
+        XCTAssertEqual(state.activationState, .outOfSync)
+        XCTAssertNil(state.pendingActivation)
+        XCTAssertTrue(state.pendingExpectedHashes.isEmpty)
+    }
+
+    func testDeletePermanentlyHandlesInputMappingFiles() throws {
+        let id = "delete-input-mod"
+        let otherID = "other-input-mod"
+        let script = home.overlayScriptsURL.appendingPathComponent(id, isDirectory: true).appendingPathComponent("main.reds")
+        let input = home.overlayInputURL.appendingPathComponent(id, isDirectory: true).appendingPathComponent("bindings.xml")
+        let otherScript = home.overlayScriptsURL.appendingPathComponent(otherID, isDirectory: true).appendingPathComponent("main.reds")
+        let otherInput = home.overlayInputURL.appendingPathComponent(otherID, isDirectory: true).appendingPathComponent("bindings.xml")
+        try write("script", to: script)
+        try write("<bindings />", to: input)
+        try write("other", to: otherScript)
+        try write("<bindings />", to: otherInput)
+        try saveInputManifest(id: id, status: .disabled, scriptPath: script.path, inputPath: input.path)
+        try saveInputManifest(id: otherID, status: .enabled, scriptPath: otherScript.path, inputPath: otherInput.path, inputPatchState: .active)
+        try StateStore(home: home).save(CyberMacState(
+            pendingInputPatch: PendingInputPatch(
+                id: "patch",
+                createdAt: Date(),
+                gameAppPath: "/Applications/Cyberpunk 2077.app",
+                modIDs: [id, otherID],
+                targetHashes: ["/tmp/inputContexts.xml": "hash"],
+                generatedFiles: ["/tmp/inputContexts.xml": "/tmp/generated.xml"],
+                backupID: "backup",
+                sudoCommands: []
+            ),
+            activeInputPatchModIDs: [id, otherID],
+            activeInputTargetHashes: ["/tmp/inputContexts.xml": "hash"]
+        ))
+
+        let result = try manager.deletePermanently(id: id)
+        let state = StateStore(home: home).load()
+
+        XCTAssertTrue(result.inputPatchMarkedOutOfSync)
+        XCTAssertThrowsError(try manifestStore.load(id: id))
+        XCTAssertNil(state.pendingInputPatch)
+        XCTAssertTrue(state.activeInputPatchModIDs.isEmpty)
+        XCTAssertEqual(try manifestStore.load(id: otherID).inputPatchState, .outOfSync)
+    }
+
+    func testDeletePermanentlyNoopsCleanlyForMissingFilesButExistingManifest() throws {
+        let id = "missing-delete-mod"
+        let missingScript = home.overlayScriptsURL
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("main.reds")
+        try saveManifest(id: id, status: .enabled, installedPath: missingScript.path)
+
+        let result = try manager.deletePermanently(id: id)
+
+        XCTAssertEqual(result.modID, id)
+        XCTAssertFalse(result.missingPaths.isEmpty)
+        XCTAssertThrowsError(try manifestStore.load(id: id))
+    }
+
     private func saveManifest(id: String, status: InstalledModStatus, installedPath: String) throws {
         try saveManifest(id: id, status: status, installedPaths: [installedPath])
     }
@@ -163,6 +291,36 @@ final class ModStateManagerTests: XCTestCase {
             installMode: "sidecar_overlay",
             installedFiles: installedPaths.count == 1 ? [record] : records,
             detectedDependencies: ["redscript"],
+            compatibilityStatus: .supported
+        )
+        try manifestStore.save(manifest)
+    }
+
+    private func saveInputManifest(
+        id: String,
+        status: InstalledModStatus,
+        scriptPath: String,
+        inputPath: String,
+        inputPatchState: InputPatchState = .required
+    ) throws {
+        let manifest = InstalledModManifest(
+            id: id,
+            displayName: id,
+            type: .redscriptInput,
+            status: status,
+            sourceArchive: "/tmp/\(id).zip",
+            installedAt: Date(),
+            gameAppPath: "/Applications/Cyberpunk 2077.app",
+            installMode: "sidecar_overlay",
+            installedFiles: [
+                InstalledFileRecord(sourceInArchive: "r6/scripts/main.reds", installedPath: scriptPath, sizeBytes: 0, sha256: "")
+            ],
+            inputMappingFiles: [
+                InstalledFileRecord(sourceInArchive: "r6/input/bindings.xml", installedPath: inputPath, sizeBytes: 0, sha256: "")
+            ],
+            inputPatchState: inputPatchState,
+            requiresInputMappingPatch: true,
+            detectedDependencies: ["redscript", "input-mapping"],
             compatibilityStatus: .supported
         )
         try manifestStore.save(manifest)

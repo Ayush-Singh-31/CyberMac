@@ -122,6 +122,10 @@ struct AppServiceContainer: Sendable {
         try ModStateManager(home: home).uninstall(id: id)
     }
 
+    func deleteMod(_ id: String) throws -> ModDeleteResult {
+        try ModStateManager(home: home).deletePermanently(id: id)
+    }
+
     func scanMod(url: URL) throws -> ModScanResult {
         try ModArchiveScanner().scan(zipURL: url)
     }

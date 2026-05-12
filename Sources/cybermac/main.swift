@@ -80,6 +80,8 @@ struct CyberMacCLI {
             try changeModState(action: .enable)
         case "uninstall":
             try changeModState(action: .uninstall)
+        case "delete-mod":
+            try deleteMod()
         case "diagnostics":
             try diagnostics()
         default:
@@ -120,6 +122,7 @@ struct CyberMacCLI {
           cybermac disable <mod-id>
           cybermac enable <mod-id>
           cybermac uninstall <mod-id>
+          cybermac delete-mod <mod-id>
           cybermac diagnostics [--game-app /path/to/Cyberpunk.app]
 
         v0.1 keeps installs in the CyberMac sidecar. Bundle activation is experimental and prints sudo commands for the user to run manually.
@@ -564,6 +567,24 @@ struct CyberMacCLI {
             manifest = try manager.uninstall(id: id)
         }
         print("\(manifest.displayName): \(manifest.status.rawValue)")
+    }
+
+    private func deleteMod() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing mod id")
+        }
+        let result = try ModStateManager(home: home).deletePermanently(id: arguments[1])
+        print("Deleted mod from CyberMac: \(result.modID)")
+        print("Deleted paths: \(result.deletedPaths.count)")
+        if !result.missingPaths.isEmpty {
+            print("Already missing paths: \(result.missingPaths.count)")
+        }
+        if result.activationMarkedOutOfSync {
+            print("Activation state: outOfSync")
+        }
+        if result.inputPatchMarkedOutOfSync {
+            print("Input patch state: outOfSync")
+        }
     }
 
     private func diagnostics() throws {

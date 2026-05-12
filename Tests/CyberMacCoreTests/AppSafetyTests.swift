@@ -7,10 +7,13 @@ final class AppSafetyTests: XCTestCase {
         let swiftFiles = try swiftSourceFiles(in: appDirectory)
         let forbiddenPatterns = [
             #"Process\s*\("#,
+            #"Process\s*\(\s*\)"#,
             #"/bin/(sh|zsh|bash)"#,
             #"\b(sh|zsh|bash)\s+-c\b"#,
             #"\bsudo\s+cp\b"#,
+            #"osascript"#,
             #"with administrator privileges"#,
+            #"AuthorizationExecuteWithPrivileges"#,
             #"NSAppleScript"#,
             #"do shell script"#
         ]

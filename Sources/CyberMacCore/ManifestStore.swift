@@ -23,6 +23,13 @@ public struct ManifestStore: Sendable {
         return try JSONDecoder.cybermac.decode(InstalledModManifest.self, from: data)
     }
 
+    public func delete(id: String) throws {
+        let url = manifestURL(id: id)
+        try PathSafety.validateContainedPath(url, in: home.manifestsURL)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
+    }
+
     public func list() throws -> [InstalledModManifest] {
         guard FileManager.default.fileExists(atPath: home.manifestsURL.path) else { return [] }
         let urls = try FileManager.default.contentsOfDirectory(

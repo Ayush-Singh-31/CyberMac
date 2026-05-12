@@ -21,11 +21,17 @@ struct InteractiveDropZone: View {
             }
             .frame(maxWidth: .infinity, minHeight: 150)
         }
+        .shadow(
+            color: CyberAccent.cyan.color.opacity(isTargeted ? 0.34 : 0.0),
+            radius: isTargeted ? 28 : 0,
+            y: isTargeted ? 10 : 0
+        )
+        .animation(.easeOut(duration: 0.18), value: isTargeted)
         .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isTargeted) { providers in
             loadFileURLs(from: providers)
             return true
         }
-        .help("Drop a redscript-only .zip mod archive")
+        .help("Drop a mod archive")
     }
 
     private func loadFileURLs(from providers: [NSItemProvider]) {

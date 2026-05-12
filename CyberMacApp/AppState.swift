@@ -154,30 +154,32 @@ final class CyberMacAppState: ObservableObject {
 
     func showActivationDryRun() async {
         do {
-            try await withCurrentTask(.preparingActivation) {
+            let result = try await withCurrentTask(.preparingActivation) {
                 let container = self.container
                 let result = try await BackgroundTaskRunner.run {
                     try container.activationDryRun()
                 }
                 try Task.checkCancellation()
-                commandToRun = ManualCommand(
-                    title: "Activation dry run",
-                    command: """
-                    Base cache snapshot:
-                    \(result.baseSnapshotID)
-
-                    Enabled mod ids:
-                    \(result.enabledModIDs.isEmpty ? "(none)" : result.enabledModIDs.joined(separator: ", "))
-
-                    Compile command:
-                    \(result.compileCommand)
-
-                    Manual copy shape:
-                    \(result.sudoCommandShape)
-                    """
-                )
-                lastError = nil
+                return result
             }
+            commandToRun = ManualCommand(
+                title: "Activation dry run",
+                command: """
+                Base cache snapshot:
+                \(result.baseSnapshotID)
+
+                Enabled mod ids:
+                \(result.enabledModIDs.isEmpty ? "(none)" : result.enabledModIDs.joined(separator: ", "))
+
+                Compile command:
+                \(result.compileCommand)
+
+                Manual copy shape:
+                \(result.sudoCommandShape)
+                """
+            )
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "showActivationDryRun")
         } catch is CancellationError {
         } catch {
             showActivationError(title: "Dry run failed", error: error)
@@ -200,6 +202,7 @@ final class CyberMacAppState: ObservableObject {
             activationDebugLog("[ActivationUI] command stored")
             lastError = nil
             activationDebugLog("[ActivationUI] currentTask cleared")
+            warnIfCommandAndCurrentTaskOverlap(context: "generateActivation")
             await refreshPreservingCommand()
             activationDebugLog("[ActivationUI] refresh complete")
         } catch is CancellationError {
@@ -210,34 +213,37 @@ final class CyberMacAppState: ObservableObject {
 
     func verifyActivation() async {
         do {
-            try await withCurrentTask(.verifyingActivation) {
+            let result = try await withCurrentTask(.verifyingActivation) {
                 let container = self.container
                 let result = try await BackgroundTaskRunner.run {
                     try container.verifyActivation()
                 }
                 try Task.checkCancellation()
-                if result.matched {
-                    commandToRun = ManualCommand(title: "Activation verified", command: "Activation verified.\nSHA-256: \(result.actualSHA256 ?? "")")
-                    lastError = nil
-                } else {
-                    commandToRun = ManualCommand(
-                        title: "Activation not verified",
-                        command: """
-                        Activation verify failed.
-
-                        Bundle target:
-                        \(result.bundleTarget)
-
-                        Expected SHA-256:
-                        \(result.expectedSHA256 ?? "missing")
-
-                        Actual SHA-256:
-                        \(result.actualSHA256 ?? "missing")
-                        """
-                    )
-                }
-                await refreshAfterStateChange()
+                return result
             }
+            if result.matched {
+                commandToRun = ManualCommand(title: "Activation verified", command: "Activation verified.\nSHA-256: \(result.actualSHA256 ?? "")")
+                lastError = nil
+            } else {
+                commandToRun = ManualCommand(
+                    title: "Activation not verified",
+                    command: """
+                    Activation verify failed.
+
+                    Bundle target:
+                    \(result.bundleTarget)
+
+                    Expected SHA-256:
+                    \(result.expectedSHA256 ?? "missing")
+
+                    Actual SHA-256:
+                    \(result.actualSHA256 ?? "missing")
+                    """
+                )
+            }
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "verifyActivation")
+            await refreshAfterStateChange()
         } catch is CancellationError {
         } catch {
             showActivationError(title: "Verify activation failed", error: error)
@@ -246,34 +252,36 @@ final class CyberMacAppState: ObservableObject {
 
     func prepareInputPatch(modID: String? = nil) async {
         do {
-            try await withCurrentTask(.preparingInputPatch) {
+            let result = try await withCurrentTask(.preparingInputPatch) {
                 let container = self.container
                 let result = try await BackgroundTaskRunner.run {
                     try container.prepareInputPatch(modID: modID)
                 }
                 try Task.checkCancellation()
-                commandToRun = ManualCommand(
-                    title: "Manual input patch required",
-                    command: """
-                    Input patch prepared.
-
-                    Generated files:
-                    \(result.generatedContextPath)
-                    \(result.generatedUserMappingsPath)
-
-                    Backup:
-                    \(result.backupID)
-
-                    Manual copy commands:
-                    \(result.sudoCommands.joined(separator: "\n"))
-
-                    Verify after copying:
-                    \(result.verifyCommand)
-                    """
-                )
-                lastError = nil
-                await refreshAfterStateChange()
+                return result
             }
+            commandToRun = ManualCommand(
+                title: "Manual input patch required",
+                command: """
+                Input patch prepared.
+
+                Generated files:
+                \(result.generatedContextPath)
+                \(result.generatedUserMappingsPath)
+
+                Backup:
+                \(result.backupID)
+
+                Manual copy commands:
+                \(result.sudoCommands.joined(separator: "\n"))
+
+                Verify after copying:
+                \(result.verifyCommand)
+                """
+            )
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "prepareInputPatch")
+            await refreshAfterStateChange()
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Input patch failed", message: String(describing: error))
@@ -282,23 +290,26 @@ final class CyberMacAppState: ObservableObject {
 
     func verifyInputPatch() async {
         do {
-            try await withCurrentTask(.verifyingInputPatch) {
+            let result = try await withCurrentTask(.verifyingInputPatch) {
                 let container = self.container
                 let result = try await BackgroundTaskRunner.run {
                     try container.verifyInputPatch()
                 }
                 try Task.checkCancellation()
-                if result.matched {
-                    commandToRun = ManualCommand(title: "Input patch verified", command: "Input patch verified: active")
-                    lastError = nil
-                } else {
-                    commandToRun = ManualCommand(
-                        title: "Input patch not verified",
-                        command: inputPatchMismatchText(result)
-                    )
-                }
-                await refreshAfterStateChange()
+                return result
             }
+            if result.matched {
+                commandToRun = ManualCommand(title: "Input patch verified", command: "Input patch verified: active")
+                lastError = nil
+            } else {
+                commandToRun = ManualCommand(
+                    title: "Input patch not verified",
+                    command: inputPatchMismatchText(result)
+                )
+            }
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "verifyInputPatch")
+            await refreshAfterStateChange()
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Verify input patch failed", message: String(describing: error))
@@ -307,16 +318,18 @@ final class CyberMacAppState: ObservableObject {
 
     func prepareRestore(backupID: String) async {
         do {
-            try await withCurrentTask(.preparingRestore) {
+            let command = try await withCurrentTask(.preparingRestore) {
                 let container = self.container
                 let command = try await BackgroundTaskRunner.run {
                     try container.restoreCommand(id: backupID)
                 }
                 try Task.checkCancellation()
-                pendingRestoreBackupID = backupID
-                commandToRun = ManualCommand(title: "Run this in Terminal", command: command)
-                lastError = nil
+                return command
             }
+            pendingRestoreBackupID = backupID
+            commandToRun = ManualCommand(title: "Run this in Terminal", command: command)
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "prepareRestore")
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Restore command failed", message: String(describing: error))
@@ -325,16 +338,18 @@ final class CyberMacAppState: ObservableObject {
 
     func prepareLatestVanillaRestore() async {
         do {
-            try await withCurrentTask(.preparingRestore) {
+            let prepared = try await withCurrentTask(.preparingRestore) {
                 let container = self.container
                 let prepared = try await BackgroundTaskRunner.run {
                     try container.prepareLatestVanillaRestoreCommand()
                 }
                 try Task.checkCancellation()
-                pendingRestoreBackupID = prepared.backup.id
-                commandToRun = ManualCommand(title: "Manual restore required", command: prepared.command)
-                lastError = nil
+                return prepared
             }
+            pendingRestoreBackupID = prepared.backup.id
+            commandToRun = ManualCommand(title: "Manual restore required", command: prepared.command)
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "prepareLatestVanillaRestore")
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "No vanilla backup found", message: String(describing: error))
@@ -347,16 +362,18 @@ final class CyberMacAppState: ObservableObject {
             return
         }
         do {
-            try await withCurrentTask(.verifyingRestore) {
+            let result = try await withCurrentTask(.verifyingRestore) {
                 let container = self.container
                 let result = try await BackgroundTaskRunner.run {
                     try container.verifyRestore(id: pendingRestoreBackupID)
                 }
                 try Task.checkCancellation()
-                commandToRun = ManualCommand(title: "Restore verification", command: RestoreVerificationFormatter.format(result))
-                lastError = nil
-                await refreshAfterStateChange()
+                return result
             }
+            commandToRun = ManualCommand(title: "Restore verification", command: RestoreVerificationFormatter.format(result))
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "verifyRestore")
+            await refreshAfterStateChange()
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Verify restore failed", message: String(describing: error))
@@ -365,16 +382,18 @@ final class CyberMacAppState: ObservableObject {
 
     func prepareInputConfigRestore(backupID: String) async {
         do {
-            try await withCurrentTask(.preparingInputRestore) {
+            let commands = try await withCurrentTask(.preparingInputRestore) {
                 let container = self.container
                 let commands = try await BackgroundTaskRunner.run {
                     try container.restoreInputConfigCommand(id: backupID)
                 }
                 try Task.checkCancellation()
-                pendingInputConfigBackupID = backupID
-                commandToRun = ManualCommand(title: "Manual input config restore required", command: commands.joined(separator: "\n"))
-                lastError = nil
+                return commands
             }
+            pendingInputConfigBackupID = backupID
+            commandToRun = ManualCommand(title: "Manual input config restore required", command: commands.joined(separator: "\n"))
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "prepareInputConfigRestore")
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Input restore command failed", message: String(describing: error))
@@ -387,16 +406,18 @@ final class CyberMacAppState: ObservableObject {
             return
         }
         do {
-            try await withCurrentTask(.verifyingInputRestore) {
+            let result = try await withCurrentTask(.verifyingInputRestore) {
                 let container = self.container
                 let result = try await BackgroundTaskRunner.run {
                     try container.verifyInputConfigRestore(id: pendingInputConfigBackupID)
                 }
                 try Task.checkCancellation()
-                commandToRun = ManualCommand(title: "Input restore verification", command: inputRestoreVerificationText(result))
-                lastError = nil
-                await refreshAfterStateChange()
+                return result
             }
+            commandToRun = ManualCommand(title: "Input restore verification", command: inputRestoreVerificationText(result))
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "verifyInputConfigRestore")
+            await refreshAfterStateChange()
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Verify input restore failed", message: String(describing: error))
@@ -404,15 +425,24 @@ final class CyberMacAppState: ObservableObject {
     }
 
     func setMod(_ mod: InstalledModManifest, enabled: Bool) async {
+        let action = enabled ? "enable" : "disable"
+        modDebugLog("[ModsUI] start \(action) \(mod.id)")
         do {
-            try await withCurrentTask(.changingModState) {
+            _ = try await withCurrentTask(.changingModState) {
                 let container = self.container
-                _ = try await BackgroundTaskRunner.run {
+                let manifest = try await BackgroundTaskRunner.run {
                     try container.setMod(mod.id, enabled: enabled)
                 }
                 try Task.checkCancellation()
-                lastError = nil
-                await refreshAfterStateChange()
+                modDebugLog("[ModsUI] core \(action) returned \(mod.id)")
+                return manifest
+            }
+            modDebugLog("[ModsUI] currentTask cleared")
+            lastError = nil
+            if let refreshError = await refreshAfterStateChange() {
+                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
+            } else {
+                modDebugLog("[ModsUI] refresh complete")
             }
         } catch is CancellationError {
         } catch {
@@ -444,17 +474,18 @@ final class CyberMacAppState: ObservableObject {
             return
         }
         do {
-            try await withCurrentTask(.installingMod) {
+            _ = try await withCurrentTask(.installingMod) {
                 let container = self.container
-                _ = try await BackgroundTaskRunner.run {
+                let manifest = try await BackgroundTaskRunner.run {
                     try container.installMod(url: scannedArchiveURL)
                 }
                 try Task.checkCancellation()
-                scanResult = nil
-                self.scannedArchiveURL = nil
-                lastError = nil
-                await refreshAfterStateChange()
+                return manifest
             }
+            scanResult = nil
+            self.scannedArchiveURL = nil
+            lastError = nil
+            await refreshAfterStateChange()
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Install failed", message: String(describing: error))
@@ -462,15 +493,23 @@ final class CyberMacAppState: ObservableObject {
     }
 
     func uninstallMod(_ mod: InstalledModManifest) async {
+        modDebugLog("[ModsUI] start uninstall \(mod.id)")
         do {
-            try await withCurrentTask(.changingModState) {
+            _ = try await withCurrentTask(.changingModState) {
                 let container = self.container
-                _ = try await BackgroundTaskRunner.run {
+                let manifest = try await BackgroundTaskRunner.run {
                     try container.uninstallMod(mod.id)
                 }
                 try Task.checkCancellation()
-                lastError = nil
-                await refreshAfterStateChange()
+                modDebugLog("[ModsUI] core uninstall returned \(mod.id)")
+                return manifest
+            }
+            modDebugLog("[ModsUI] currentTask cleared")
+            lastError = nil
+            if let refreshError = await refreshAfterStateChange() {
+                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
+            } else {
+                modDebugLog("[ModsUI] refresh complete")
             }
         } catch is CancellationError {
         } catch {
@@ -478,17 +517,44 @@ final class CyberMacAppState: ObservableObject {
         }
     }
 
+    func deleteMod(_ mod: InstalledModManifest) async {
+        modDebugLog("[ModsUI] start delete \(mod.id)")
+        do {
+            _ = try await withCurrentTask(.changingModState) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.deleteMod(mod.id)
+                }
+                try Task.checkCancellation()
+                modDebugLog("[ModsUI] core delete returned \(mod.id)")
+                return result
+            }
+            modDebugLog("[ModsUI] currentTask cleared")
+            lastError = nil
+            if let refreshError = await refreshAfterStateChange() {
+                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
+            } else {
+                modDebugLog("[ModsUI] refresh complete")
+            }
+        } catch is CancellationError {
+        } catch {
+            lastError = UserFacingError(title: "Delete failed", message: String(describing: error))
+        }
+    }
+
     func exportDiagnostics() async {
         do {
-            try await withCurrentTask(.exportingDiagnostics) {
+            let url = try await withCurrentTask(.exportingDiagnostics) {
                 let container = self.container
                 let url = try await BackgroundTaskRunner.run {
                     try container.exportDiagnostics()
                 }
                 try Task.checkCancellation()
-                commandToRun = ManualCommand(title: "Diagnostic report exported", command: url.path)
-                lastError = nil
+                return url
             }
+            commandToRun = ManualCommand(title: "Diagnostic report exported", command: url.path)
+            lastError = nil
+            warnIfCommandAndCurrentTaskOverlap(context: "exportDiagnostics")
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Export failed", message: String(describing: error))
@@ -550,12 +616,16 @@ final class CyberMacAppState: ObservableObject {
         lastError = nil
     }
 
-    private func refreshAfterStateChange() async {
+    @discardableResult
+    private func refreshAfterStateChange() async -> Error? {
         do {
             try await loadSnapshot()
+            return nil
         } catch is CancellationError {
+            return CancellationError()
         } catch {
             lastError = UserFacingError(title: "Refresh failed", message: String(describing: error))
+            return error
         }
     }
 
@@ -634,11 +704,26 @@ final class CyberMacAppState: ObservableObject {
             """
         )
         lastError = UserFacingError(title: title, message: message)
+        warnIfCommandAndCurrentTaskOverlap(context: title)
     }
 
     private func activationDebugLog(_ message: String) {
         #if DEBUG
         NSLog("%@", message)
+        #endif
+    }
+
+    private func modDebugLog(_ message: String) {
+        #if DEBUG
+        NSLog("%@", message)
+        #endif
+    }
+
+    private func warnIfCommandAndCurrentTaskOverlap(context: String) {
+        #if DEBUG
+        if commandToRun != nil, currentTask != nil {
+            NSLog("%@", "[AppState] warning: commandToRun and currentTask are both set after \(context)")
+        }
         #endif
     }
 

@@ -29,7 +29,11 @@ struct HoverCursorModifier: ViewModifier {
 }
 
 extension View {
-    func cyberCursor(_ cursor: NSCursor = .pointingHand) -> some View {
+    func hoverCursor(_ cursor: NSCursor) -> some View {
         modifier(HoverCursorModifier(cursor: cursor))
+    }
+
+    func cyberCursor(_ cursor: NSCursor = .pointingHand) -> some View {
+        hoverCursor(cursor)
     }
 }
