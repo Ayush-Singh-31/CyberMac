@@ -1,226 +1,129 @@
 # CyberMac
 
-CyberMac v0.1 is a local-first Cyberpunk 2077 macOS modding harness focused on the Mac App Store build and redscript-only mods.
+CyberMac is experimental developer-preview software for Cyberpunk 2077: Ultimate on macOS. It has been tested locally on the Mac App Store version on Apple Silicon. It is not affiliated with CD Projekt Red, Nexus Mods, redscript, input-loader, or any mod author. Use at your own risk and keep backups.
 
-This first pass is core-first. It provides:
+## What it is
 
-- game install detection for `/Applications/Cyberpunk 2077: Ultimate.app`
-- CyberMac sidecar workspace creation under `~/Library/Application Support/CyberMac`
-- manual redscript runtime zip import
-- manual input-loader zip import
-- quarantine detection and clearing
-- generated `launch_modded.sh`
-- redscript compile probing
-- conservative mod archive scanning
-- sidecar installation for supported `.reds` mods
-- base-cache snapshots and experimental bundle activation for generated `final.redscripts`
-- manifest creation with `schemaVersion: 1`
-- enable, disable, uninstall, and diagnostics commands
+CyberMac is an experimental macOS mod manager focused on redscript-based Cyberpunk 2077 mods. It installs supported mods into a CyberMac-owned sidecar, compiles script caches with redscript, prepares manual copy commands, and verifies activation.
 
-It never runs `sudo` or writes into the Cyberpunk `.app` bundle itself. Experimental bundle activation prints the exact manual `sudo cp` command needed to copy the generated `final.redscripts`.
+This is a source-only developer preview. CyberMac does not bundle redscript, input-loader, mods, Cyberpunk game files, or downloaded runtime files.
+
+## Current support
+
+Supported:
+
+- redscript-only mods
+- redscript + r6/input XML mods
+- Mac App Store Cyberpunk 2077: Ultimate layout
+- manual final.redscripts activation
+- manual input XML patching with backup and verification
+
+Unsupported:
+
+- Cyber Engine Tweaks
+- RED4ext
+- Codeware
+- ArchiveXL
+- TweakXL
+- Equipment-EX
+- DLL / ASI
+- REDmod-only mods
+- most clothing, body, archive, vehicle, texture, and framework mods
+
+## Safety model
+
+- CyberMacApp does not run sudo.
+- CyberMac generates commands for the user to run manually.
+- CyberMac writes generated files under `~/Library/Application Support/CyberMac`.
+- CyberMac backs up target files before preparing copy commands.
+- CyberMac verifies SHA-256 after manual copy.
+- CyberMac never edits the app bundle directly from the SwiftUI app.
 
 ## Requirements
 
 - macOS on Apple Silicon
-- Xcode command-line tools
-- Swift Package Manager
-- redscript macOS zip, downloaded manually
-- input-loader macOS zip, downloaded manually
+- Xcode / Swift toolchain
+- Cyberpunk 2077: Ultimate Mac App Store version
+- redscript macOS zip, imported by user
+- input-loader macOS zip, imported by user, only needed for input mapping mods
 
-## Build
+Runtimes are not bundled.
 
-From the repo root:
+## Install from source
+
+This is not yet a double-click downloadable app. For now, run:
 
 ```bash
-swift build
+git clone https://github.com/Ayush-Singh-31/CyberMac.git
+cd CyberMac
+swift test
+swift run CyberMacApp
 ```
 
-Run the built CLI:
+For CLI help:
 
 ```bash
-.build/debug/cybermac help
+swift run cybermac help
 ```
 
-Optional convenience alias while developing:
+If you want to test the UI, use SwiftPM. If you want to test compatibility, prefer CLI first.
+
+## CLI usage
 
 ```bash
-alias cybermac='swift run cybermac'
-```
-
-## First run workflow
-
-```bash
-swift run cybermac init-home
 swift run cybermac doctor
+swift run cybermac scan "$HOME/Downloads/mod.zip"
+swift run cybermac install "$HOME/Downloads/mod.zip"
+swift run cybermac activate --bundle-mode
+# run printed sudo cp manually
+swift run cybermac activate --verify
+swift run cybermac launch-game
 ```
 
-Expected detection on Ayush's machine:
-
-```text
-App path: /Applications/Cyberpunk 2077: Ultimate.app
-Storefront: Mac App Store
-Executable: Contents/MacOS/Cyberpunk2077
-Data path: Contents/Data
-```
-
-## Runtime setup
-
-After downloading the required macOS zips:
+For input mapping:
 
 ```bash
-swift run cybermac import-redscript ~/Downloads/redscript*.zip
-swift run cybermac import-input-loader ~/Downloads/input*.zip
+swift run cybermac prepare-input-patch <mod-id>
+# run printed sudo cp commands manually
+swift run cybermac verify-input-patch
+```
+
+Common setup commands:
+
+```bash
+swift run cybermac import-redscript "$HOME/Downloads/redscript-macos.zip"
+swift run cybermac import-input-loader "$HOME/Downloads/input-loader-macos.zip"
 swift run cybermac clear-quarantine
-swift run cybermac probe-redscript
-```
-
-Run the compile probe only after the runtimes are imported:
-
-```bash
 swift run cybermac probe-redscript --compile
 ```
 
-If the compile probe succeeds, generate the launch script:
-
-```bash
-swift run cybermac generate-launch-script
-swift run cybermac launch-test
-```
-
-To actually start the game through the generated script:
-
-```bash
-swift run cybermac launch-test --run
-```
-
-## Mod scanning
-
-```bash
-swift run cybermac scan ~/Downloads/SomeMod.zip
-```
-
-The scanner uses three compatibility statuses:
-
-- `Supported`: redscript-only zip, no blocked markers
-- `Unsupported`: known v0.1 blocker such as `.dll`, `.asi`, CET, RED4ext, ArchiveXL, TweakXL, or Codeware
-- `Untested`: layout or mod type not safely installable by v0.1
-
-## Installing redscript-only mods
-
-Only supported redscript-only mods can be installed:
-
-```bash
-swift run cybermac install ~/Downloads/SomeRedscriptMod.zip
-swift run cybermac list-mods
-```
-
-Installed `.reds` files are copied into:
+CyberMac expects the Mac App Store bundle at:
 
 ```text
-~/Library/Application Support/CyberMac/game-overlay/r6/scripts/<mod-id>/
+/Applications/Cyberpunk 2077: Ultimate.app
 ```
 
-CyberMac keeps a manifest in:
+CyberMac stores its sidecar files under:
 
 ```text
-~/Library/Application Support/CyberMac/manifests/<mod-id>.json
+~/Library/Application Support/CyberMac
 ```
 
-Installing, enabling, disabling, or uninstalling marks activation `outOfSync`. The game will not see sidecar changes until bundle activation is run.
+## Development status
 
-## Base cache and activation
+v0.1 developer preview. API/UI may change. Source-only release.
 
-CyberMac compiles from a mini game-script root:
+## Contributing/testing
 
-```text
-~/Library/Application Support/CyberMac/game-overlay/
-  r6/scripts/
-  r6/cache/final.redscripts
-```
+Please report:
 
-The durable clean input is stored separately:
+- macOS version
+- Cyberpunk version/storefront
+- Apple Silicon model
+- mod name/version
+- scan output
+- doctor output
+- whether activation/input patch worked
+- any scc errors
 
-```text
-~/Library/Application Support/CyberMac/base-cache/<game-fingerprint-id>/final.redscripts
-```
-
-Typical activation workflow:
-
-```bash
-swift run cybermac cache-status
-swift run cybermac refresh-base-cache
-swift run cybermac activate --dry-run
-swift run cybermac activate --bundle-mode
-# manually run the printed sudo cp command
-swift run cybermac activate --verify
-```
-
-Only this bundle target is in scope for v0.1 activation:
-
-```text
-Contents/Data/r6/cache/final.redscripts
-```
-
-CyberMac does not copy `final.redscripts.ts`, `.bk` files, `r6/scripts/`, input-loader files, or redscript runtime files into the bundle.
-
-Bundle activation remains experimental behind `--bundle-mode` until one activation+launch cycle and one restore+launch cycle succeed with no `amfid`, `taskgated`, or `syspolicyd` errors recorded in diagnostics, then another developer or user reproduces both on a separate machine.
-
-## Backups and restore
-
-Every `activate --bundle-mode` creates a backup manifest under:
-
-```text
-~/Library/Application Support/CyberMac/backups/<backup-id>/
-```
-
-Restore commands are manual too:
-
-```bash
-swift run cybermac list-backups
-swift run cybermac restore --dry-run <backup-id>
-swift run cybermac restore <backup-id>
-# manually run the printed sudo command
-swift run cybermac restore --verify <backup-id>
-```
-
-## Managing mods
-
-```bash
-swift run cybermac disable <mod-id>
-swift run cybermac enable <mod-id>
-swift run cybermac uninstall <mod-id>
-```
-
-CyberMac only removes or moves files it installed itself.
-
-## Diagnostics
-
-```bash
-swift run cybermac diagnostics
-```
-
-Reports are exported to:
-
-```text
-~/Library/Application Support/CyberMac/diagnostics/
-```
-
-User home paths are redacted in diagnostic output.
-
-## v0.1 non-goals
-
-CyberMac v0.1 does not support:
-
-- CET mods
-- RED4ext mods
-- ArchiveXL mods
-- TweakXL mods
-- Codeware mods
-- AMM
-- Equipment-EX
-- Virtual Atelier
-- `.archive` clothing, texture, or replacement mods
-- Nexus login
-- automatic downloads
-- Steam, GOG, or Epic installs
-- sandboxed App Store distribution
+Do not upload copyrighted game files.

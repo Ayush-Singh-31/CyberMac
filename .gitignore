@@ -1,2 +1,45 @@
-.build
-.vscode
+.DS_Store
+
+# Swift / Xcode local state
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserdata
+*.xcuserstate
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# editor local state
+.vscode/
+
+# release artifacts
+dist/
+release/
+*.dmg
+*.zip
+
+# logs and diagnostics
+*.log
+diagnostics/
+tmp/
+*.tmp
+
+# local CyberMac app-support/runtime/generated artifacts
+redscript*
+input-loader*
+final.redscripts
+*.redscripts
+*.reds.cache
+*.ts
+*.bk
+
+# downloaded/reference files
+*.xlsx
+*.xls
+*.csv
+
+# Cyberpunk/mod assets
+*.archive
+*.xl
+*.tweak
+*.reds.bak.*
+*.backup

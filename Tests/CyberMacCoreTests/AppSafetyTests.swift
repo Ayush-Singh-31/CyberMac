@@ -11,11 +11,15 @@ final class AppSafetyTests: XCTestCase {
             #"/bin/(sh|zsh|bash)"#,
             #"\b(sh|zsh|bash)\s+-c\b"#,
             #"\bsudo\s+cp\b"#,
+            #"FileHandle\s*\.\s*standard(Input|Output|Error)"#,
             #"osascript"#,
             #"with administrator privileges"#,
             #"AuthorizationExecuteWithPrivileges"#,
             #"NSAppleScript"#,
-            #"do shell script"#
+            #"do shell script"#,
+            #"SMJobBless"#,
+            #"AuthorizationCreate"#,
+            #"AuthorizationCopyRights"#
         ]
         var violations: [String] = []
 
