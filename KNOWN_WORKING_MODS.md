@@ -30,10 +30,6 @@ These are confirmed only on one local setup. This does not guarantee compatibili
   Type: redscript
   Status: installed/activated locally; needs gameplay confirmation
 
-- Player Underwear Removal
-  Type: redscript
-  Status: installed/activated locally; needs gameplay confirmation
-
 ## Not supported examples
 
 - ArchiveXL clothing mods
