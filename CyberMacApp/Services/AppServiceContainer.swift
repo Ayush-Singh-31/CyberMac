@@ -135,6 +135,18 @@ struct AppServiceContainer: Sendable {
         return try RedscriptModInstaller(home: home).install(zipURL: url, gameInstall: game)
     }
 
+    func listEditableScripts(modID: String) throws -> [EditableScriptFile] {
+        try ScriptEditorService(home: home).listEditableScripts(modID: modID)
+    }
+
+    func loadScript(modID: String, relativePath: String) throws -> String {
+        try ScriptEditorService(home: home).loadScript(modID: modID, relativePath: relativePath)
+    }
+
+    func saveScript(modID: String, relativePath: String, contents: String) throws -> ScriptSaveResult {
+        try ScriptEditorService(home: home).saveScript(modID: modID, relativePath: relativePath, contents: contents)
+    }
+
     func exportDiagnostics() throws -> URL {
         let game = try? GameInstallDetector().detect()
         return try DiagnosticsExporter(home: home).export(gameInstall: game)

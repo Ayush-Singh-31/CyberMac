@@ -34,6 +34,8 @@ enum AppTask: Equatable, Sendable {
     case exportingDiagnostics
     case scanningMod
     case installingMod
+    case loadingScript
+    case savingScript
 
     var title: String {
         switch self {
@@ -65,6 +67,10 @@ enum AppTask: Equatable, Sendable {
             return "Scanning mod archive..."
         case .installingMod:
             return "Installing mod..."
+        case .loadingScript:
+            return "Loading script..."
+        case .savingScript:
+            return "Saving script..."
         }
     }
 }
@@ -489,6 +495,67 @@ final class CyberMacAppState: ObservableObject {
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Install failed", message: String(describing: error))
+        }
+    }
+
+    func listEditableScripts(for modID: String) async -> [EditableScriptFile] {
+        do {
+            let files = try await withCurrentTask(.loadingScript) {
+                let container = self.container
+                let files = try await BackgroundTaskRunner.run {
+                    try container.listEditableScripts(modID: modID)
+                }
+                try Task.checkCancellation()
+                return files
+            }
+            lastError = nil
+            return files
+        } catch is CancellationError {
+            return []
+        } catch {
+            lastError = UserFacingError(title: "Script list failed", message: String(describing: error))
+            return []
+        }
+    }
+
+    func loadScript(modID: String, relativePath: String) async throws -> String {
+        do {
+            let contents = try await withCurrentTask(.loadingScript) {
+                let container = self.container
+                let contents = try await BackgroundTaskRunner.run {
+                    try container.loadScript(modID: modID, relativePath: relativePath)
+                }
+                try Task.checkCancellation()
+                return contents
+            }
+            lastError = nil
+            return contents
+        } catch let error as CancellationError {
+            throw error
+        } catch {
+            lastError = UserFacingError(title: "Script load failed", message: String(describing: error))
+            throw error
+        }
+    }
+
+    func saveScript(modID: String, relativePath: String, contents: String) async throws -> ScriptSaveResult {
+        do {
+            let result = try await withCurrentTask(.savingScript) {
+                let container = self.container
+                let result = try await BackgroundTaskRunner.run {
+                    try container.saveScript(modID: modID, relativePath: relativePath, contents: contents)
+                }
+                try Task.checkCancellation()
+                return result
+            }
+            lastError = nil
+            await refreshAfterStateChange()
+            return result
+        } catch let error as CancellationError {
+            throw error
+        } catch {
+            lastError = UserFacingError(title: "Script save failed", message: String(describing: error))
+            throw error
         }
     }
 

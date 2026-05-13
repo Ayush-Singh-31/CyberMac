@@ -94,6 +94,7 @@ private struct ModRow: View {
     let mod: InstalledModManifest
     @ObservedObject var appState: CyberMacAppState
     @State private var showingDeleteConfirmation = false
+    @State private var showingScriptEditor = false
 
     var body: some View {
         CyberPanel(accent: rowAccent) {
@@ -115,6 +116,10 @@ private struct ModRow: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes CyberMac's stored files and manifest for this mod. It does not edit the game bundle. If this mod was previously activated, reactivate scripts afterward.")
+        }
+        .sheet(isPresented: $showingScriptEditor) {
+            ModScriptEditorView(mod: mod, appState: appState)
+                .frame(minWidth: 900, minHeight: 650)
         }
     }
 
@@ -174,6 +179,11 @@ private struct ModRow: View {
         HStack(spacing: 10) {
             switch mod.status {
             case .enabled:
+                if canEditScripts {
+                    actionButton("Edit scripts", systemImage: "pencil", variant: .secondary, accent: .green) {
+                        showingScriptEditor = true
+                    }
+                }
                 actionButton("Disable", systemImage: "pause.circle.fill", variant: .secondary, accent: .cyan) {
                     Task { await appState.setMod(mod, enabled: false) }
                 }
@@ -220,6 +230,17 @@ private struct ModRow: View {
             pills.append(ModStatusPill(label: "Input: \(inputStatus)", accent: inputAccent))
         }
         return pills
+    }
+
+    private var canEditScripts: Bool {
+        guard mod.status == .enabled, !mod.installedFiles.isEmpty else { return false }
+        if mod.type == .redscript || mod.type == .redscriptInput {
+            return true
+        }
+        return mod.installedFiles.contains { record in
+            URL(fileURLWithPath: record.installedPath).pathExtension.lowercased() == "reds" ||
+            record.sourceInArchive.lowercased().hasSuffix(".reds")
+        }
     }
 
     private var substatusLine: String? {
