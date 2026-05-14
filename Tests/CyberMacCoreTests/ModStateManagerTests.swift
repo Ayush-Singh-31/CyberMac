@@ -261,6 +261,43 @@ final class ModStateManagerTests: XCTestCase {
         XCTAssertThrowsError(try manifestStore.load(id: id))
     }
 
+    func testRenameUpdatesDisplayNameOnlyAndPreservesActivationState() throws {
+        let id = "rename-mod"
+        let script = home.overlayScriptsURL
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("main.reds")
+        try write("script", to: script)
+        try saveManifest(id: id, status: .enabled, installedPath: script.path)
+        try StateStore(home: home).save(CyberMacState(
+            activationState: .active,
+            activeModIDs: [id],
+            activeBundleTargetHashes: ["/tmp/final.redscripts": "hash"]
+        ))
+
+        let renamed = try manager.rename(id: id, displayName: "  Better Name  ")
+        let state = StateStore(home: home).load()
+
+        XCTAssertEqual(renamed.displayName, "Better Name")
+        XCTAssertEqual(try manifestStore.load(id: id).displayName, "Better Name")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: script.path))
+        XCTAssertEqual(state.activationState, .active)
+        XCTAssertEqual(state.activeModIDs, [id])
+        XCTAssertEqual(state.activeBundleTargetHashes["/tmp/final.redscripts"], "hash")
+    }
+
+    func testRenameRejectsEmptyAndTooLongNames() throws {
+        let id = "bad-rename-mod"
+        let script = home.overlayScriptsURL
+            .appendingPathComponent(id, isDirectory: true)
+            .appendingPathComponent("main.reds")
+        try write("script", to: script)
+        try saveManifest(id: id, status: .enabled, installedPath: script.path)
+
+        XCTAssertThrowsError(try manager.rename(id: id, displayName: "   "))
+        XCTAssertThrowsError(try manager.rename(id: id, displayName: String(repeating: "x", count: 121)))
+        XCTAssertEqual(try manifestStore.load(id: id).displayName, id)
+    }
+
     private func saveManifest(id: String, status: InstalledModStatus, installedPath: String) throws {
         try saveManifest(id: id, status: status, installedPaths: [installedPath])
     }

@@ -25,6 +25,7 @@ public struct ModArchiveScanner: Sendable {
         var inputMappingEntries: [String] = []
         var unsupportedFindings: [ModScanFinding] = []
         var untestedFindings: [ModScanFinding] = []
+        var dependencyMarkers = ModDependencyMarkers()
         var entryCount = 0
 
         for entry in archive {
@@ -36,6 +37,12 @@ public struct ModArchiveScanner: Sendable {
             let path = entry.path
             let lower = path.lowercased()
             allEntries.append(path)
+            updatePathMarkers(
+                lowerPath: lower,
+                originalPath: path,
+                markers: &dependencyMarkers,
+                unsupportedFindings: &unsupportedFindings
+            )
 
             switch entry.type {
             case .directory:
@@ -52,24 +59,40 @@ public struct ModArchiveScanner: Sendable {
                 continue
             }
 
+            if isInputMappingXML(lower) {
+                inputMappingEntries.append(path)
+                dependencyMarkers.hasInputMappingXML = true
+                continue
+            }
+
             if lower.hasSuffix(".archive") {
+                dependencyMarkers.hasArchiveFiles = true
                 archiveEntries.append(path)
-                untestedFindings.append(ModScanFinding(path: path, reason: "Archive-based mods are not installed by CyberMac v0.1"))
+                untestedFindings.append(ModScanFinding(path: path, reason: "Archive asset file detected; archive installation is scan-only in Phase A"))
                 continue
             }
 
-            if lower.hasSuffix(".dll") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "Windows DLL plugin detected"))
+            if lower.hasSuffix(".archive.xl") || lower.hasSuffix(".xl") {
+                dependencyMarkers.hasArchiveXL = true
+                unsupportedFindings.append(ModScanFinding(path: path, reason: "ArchiveXL .xl file detected"))
                 continue
             }
 
-            if lower.hasSuffix(".asi") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "ASI plugin detected"))
+            if lower.hasSuffix(".tweak") {
+                dependencyMarkers.hasTweakXL = true
+                unsupportedFindings.append(ModScanFinding(path: path, reason: "TweakXL .tweak file detected"))
+                continue
+            }
+
+            if isNativePluginFile(lower) {
+                dependencyMarkers.hasNativePlugin = true
+                unsupportedFindings.append(ModScanFinding(path: path, reason: "Native or Windows plugin binary detected"))
                 continue
             }
 
             if lower.hasSuffix(".lua") {
-                if containsPathComponents(lower, ["bin", "x64", "plugins", "cyber_engine_tweaks"]) {
+                if isCETPath(lower) {
+                    dependencyMarkers.hasCET = true
                     unsupportedFindings.append(ModScanFinding(path: path, reason: "Cyber Engine Tweaks Lua script detected"))
                 } else {
                     untestedFindings.append(ModScanFinding(path: path, reason: "Lua script outside a known CET path"))
@@ -79,45 +102,11 @@ public struct ModArchiveScanner: Sendable {
 
             if lower.hasSuffix(".yaml") || lower.hasSuffix(".yml") {
                 if containsPathComponents(lower, ["r6", "tweaks"]) {
+                    dependencyMarkers.hasTweakXL = true
                     unsupportedFindings.append(ModScanFinding(path: path, reason: "TweakXL r6/tweaks file detected"))
                 } else {
                     untestedFindings.append(ModScanFinding(path: path, reason: "YAML file outside a known TweakXL path"))
                 }
-                continue
-            }
-
-            if containsPathComponents(lower, ["bin", "x64", "plugins"]) {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "bin/x64 plugin marker detected"))
-                continue
-            }
-
-            if lower.contains("red4ext") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "RED4ext marker detected"))
-                continue
-            }
-
-            if lower.contains("cyber_engine_tweaks") || pathComponents(lower).contains("cet") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "Cyber Engine Tweaks marker detected"))
-                continue
-            }
-
-            if lower.contains("archivexl") || lower.contains("archive-xl") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "ArchiveXL marker detected"))
-                continue
-            }
-
-            if lower.contains("tweakxl") || lower.contains("tweak-xl") || containsPathComponents(lower, ["r6", "tweaks"]) {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "TweakXL marker detected"))
-                continue
-            }
-
-            if lower.contains("codeware") {
-                unsupportedFindings.append(ModScanFinding(path: path, reason: "Codeware marker detected"))
-                continue
-            }
-
-            if isInputMappingXML(lower) {
-                inputMappingEntries.append(path)
                 continue
             }
 
@@ -129,7 +118,12 @@ public struct ModArchiveScanner: Sendable {
         }
 
         let displayName = zipURL.deletingPathExtension().lastPathComponent
-        let kind = determineKind(redscriptEntries: redscriptEntries, archiveEntries: archiveEntries, inputMappingEntries: inputMappingEntries, allEntries: allEntries)
+        let kind = determineKind(
+            redscriptEntries: redscriptEntries,
+            inputMappingEntries: inputMappingEntries,
+            markers: dependencyMarkers,
+            allEntries: allEntries
+        )
         let status: CompatibilityStatus
         let sidecarInstallable: Bool
         let installBlockReason: String?
@@ -137,36 +131,46 @@ public struct ModArchiveScanner: Sendable {
         var reasons: [String] = []
         var findings: [ModScanFinding] = []
 
-        if !unsupportedFindings.isEmpty {
+        if hasUnsupportedMarkers(dependencyMarkers) {
             status = .unsupported
             sidecarInstallable = false
-            installBlockReason = "Known unsupported dependency or Windows modding marker detected"
+            installBlockReason = "Unsupported framework, native plugin, or REDmod marker detected"
             requiresInputMappingPatch = false
-            reasons.append("Known unsupported dependency or Windows modding marker detected")
+            reasons.append("Unsupported framework mod. Detected \(unsupportedMarkerLabels(dependencyMarkers).joined(separator: ", ")).")
+            reasons.append("CyberMac currently supports redscript and input XML patching only.")
             findings = unsupportedFindings + untestedFindings
-        } else if !redscriptEntries.isEmpty && !inputMappingEntries.isEmpty && archiveEntries.isEmpty && untestedFindings.isEmpty {
+        } else if !redscriptEntries.isEmpty && !inputMappingEntries.isEmpty && !hasArchiveMarkers(dependencyMarkers) && untestedFindings.isEmpty {
             status = .supported
             sidecarInstallable = true
             installBlockReason = nil
             requiresInputMappingPatch = true
             reasons.append("Found redscript files plus Cyberpunk input mapping XML")
             reasons.append("Input config patch is required before keybinds will work")
-            reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, ASI, or symlink markers detected")
+            reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, Equipment-EX, REDmod, native plugin, or symlink markers detected")
             findings = []
-        } else if !redscriptEntries.isEmpty && inputMappingEntries.isEmpty && archiveEntries.isEmpty && untestedFindings.isEmpty {
+        } else if !redscriptEntries.isEmpty && inputMappingEntries.isEmpty && !hasArchiveMarkers(dependencyMarkers) && untestedFindings.isEmpty {
             status = .supported
             sidecarInstallable = true
             installBlockReason = nil
             requiresInputMappingPatch = false
             reasons.append("Found redscript-only files plus normal documentation or metadata")
-            reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, DLL, ASI, or symlink markers detected")
+            reasons.append("No CET, RED4ext, ArchiveXL, TweakXL, Codeware, Equipment-EX, REDmod, native plugin, or symlink markers detected")
             findings = []
-        } else if redscriptEntries.isEmpty && !archiveEntries.isEmpty && unsupportedFindings.isEmpty {
+        } else if kind == .archiveOnly {
             status = .untested
             sidecarInstallable = false
-            installBlockReason = "Archive-based mods are not installed by CyberMac v0.1"
+            installBlockReason = "Archive-only asset mods are scan-only in Phase A"
             requiresInputMappingPatch = false
-            reasons.append("Archive-based mods are not installed by CyberMac v0.1")
+            reasons.append("Archive-only asset mod detected")
+            reasons.append("CyberMac can identify this package, but archive installation is not enabled until a Mac archive load-path probe succeeds.")
+            findings = untestedFindings
+        } else if kind == .mixed {
+            status = .untested
+            sidecarInstallable = false
+            installBlockReason = "Mixed redscript/archive packages are not partially installed in Phase A"
+            requiresInputMappingPatch = false
+            reasons.append("Mixed redscript/archive package detected")
+            reasons.append("CyberMac will not partially install mixed archive packages in Phase A.")
             findings = untestedFindings
         } else {
             status = .untested
@@ -189,17 +193,107 @@ public struct ModArchiveScanner: Sendable {
             redscriptEntries: redscriptEntries.sorted(),
             archiveEntries: archiveEntries.sorted(),
             inputMappingEntries: inputMappingEntries.sorted(),
+            dependencyMarkers: dependencyMarkers,
             requiresInputMappingPatch: requiresInputMappingPatch,
             allEntries: allEntries.sorted()
         )
     }
 
-    private func determineKind(redscriptEntries: [String], archiveEntries: [String], inputMappingEntries: [String], allEntries: [String]) -> ModKind {
-        if !redscriptEntries.isEmpty && !inputMappingEntries.isEmpty && archiveEntries.isEmpty { return .redscriptInput }
-        if !redscriptEntries.isEmpty && archiveEntries.isEmpty { return .redscript }
-        if redscriptEntries.isEmpty && !archiveEntries.isEmpty { return .archive }
-        if !redscriptEntries.isEmpty && !archiveEntries.isEmpty { return .mixed }
+    private func determineKind(redscriptEntries: [String], inputMappingEntries: [String], markers: ModDependencyMarkers, allEntries: [String]) -> ModKind {
+        if hasUnsupportedMarkers(markers) { return .frameworkStack }
+        if !redscriptEntries.isEmpty && !inputMappingEntries.isEmpty && !hasArchiveMarkers(markers) { return .redscriptInput }
+        if !redscriptEntries.isEmpty && !hasArchiveMarkers(markers) { return .redscript }
+        if !redscriptEntries.isEmpty && hasArchiveMarkers(markers) { return .mixed }
+        if redscriptEntries.isEmpty && hasArchiveMarkers(markers) { return .archiveOnly }
         return allEntries.isEmpty ? .unknown : .unknown
+    }
+
+    private func updatePathMarkers(
+        lowerPath: String,
+        originalPath: String,
+        markers: inout ModDependencyMarkers,
+        unsupportedFindings: inout [ModScanFinding]
+    ) {
+        if containsPathComponents(lowerPath, ["archive", "pc", "mod"]) {
+            markers.hasArchivePCModPath = true
+        }
+        if containsPathComponents(lowerPath, ["archive", "pc", "content"]) {
+            markers.hasArchivePCContentPath = true
+        }
+        if containsPathComponents(lowerPath, ["archive", "mac", "mod"]) {
+            markers.hasArchiveMacModPath = true
+        }
+        if containsPathComponents(lowerPath, ["archive", "mac", "content"]) {
+            markers.hasArchiveMacContentPath = true
+        }
+        if lowerPath.contains("archivexl") || lowerPath.contains("archive-xl") {
+            markers.hasArchiveXL = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "ArchiveXL marker detected"))
+        }
+        if lowerPath.contains("tweakxl") || lowerPath.contains("tweak-xl") || containsPathComponents(lowerPath, ["r6", "tweaks"]) {
+            markers.hasTweakXL = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "TweakXL marker detected"))
+        }
+        if lowerPath.contains("red4ext") {
+            markers.hasRED4ext = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "RED4ext marker detected"))
+        }
+        if containsPathComponents(lowerPath, ["red4ext", "plugins"]) {
+            markers.hasNativePlugin = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "RED4ext native plugin path detected"))
+        }
+        if lowerPath.contains("codeware") {
+            markers.hasCodeware = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "Codeware marker detected"))
+        }
+        if lowerPath.contains("equipment-ex") || lowerPath.contains("equipmentex") || lowerPath.contains("equipment_ex") {
+            markers.hasEquipmentEX = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "Equipment-EX marker detected"))
+        }
+        if isCETPath(lowerPath) {
+            markers.hasCET = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "Cyber Engine Tweaks marker detected"))
+        }
+        if containsPathComponents(lowerPath, ["bin", "x64", "plugins"]) {
+            markers.hasNativePlugin = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "bin/x64 plugin marker detected"))
+        }
+        if isREDmodPath(lowerPath) {
+            markers.hasREDmod = true
+            unsupportedFindings.append(ModScanFinding(path: originalPath, reason: "REDmod package marker detected"))
+        }
+    }
+
+    private func hasArchiveMarkers(_ markers: ModDependencyMarkers) -> Bool {
+        markers.hasArchiveFiles ||
+            markers.hasArchivePCModPath ||
+            markers.hasArchivePCContentPath ||
+            markers.hasArchiveMacModPath ||
+            markers.hasArchiveMacContentPath
+    }
+
+    private func hasUnsupportedMarkers(_ markers: ModDependencyMarkers) -> Bool {
+        markers.hasArchiveXL ||
+            markers.hasTweakXL ||
+            markers.hasRED4ext ||
+            markers.hasCodeware ||
+            markers.hasCET ||
+            markers.hasEquipmentEX ||
+            markers.hasREDmod ||
+            markers.hasNativePlugin
+    }
+
+    private func unsupportedMarkerLabels(_ markers: ModDependencyMarkers) -> [String] {
+        var labels: [String] = []
+        if markers.hasArchiveXL { labels.append("ArchiveXL") }
+        if markers.hasTweakXL { labels.append("TweakXL") }
+        if markers.hasRED4ext { labels.append("RED4ext") }
+        if markers.hasCodeware { labels.append("Codeware") }
+        if markers.hasCET { labels.append("CET") }
+        if markers.hasEquipmentEX { labels.append("Equipment-EX") }
+        if markers.hasREDmod { labels.append("REDmod") }
+        if markers.hasNativePlugin { labels.append("native plugin") }
+        return labels
     }
 
     private func pathComponents(_ lowerPath: String) -> [String] {
@@ -217,6 +311,22 @@ public struct ModArchiveScanner: Sendable {
             }
         }
         return false
+    }
+
+    private func isCETPath(_ lowerPath: String) -> Bool {
+        lowerPath.contains("cyber_engine_tweaks") || pathComponents(lowerPath).contains("cet")
+    }
+
+    private func isREDmodPath(_ lowerPath: String) -> Bool {
+        let components = pathComponents(lowerPath)
+        if components.first == "mods" { return true }
+        if containsPathComponents(lowerPath, ["r6", "config", "redsuserhints"]) { return true }
+        let fileName = URL(fileURLWithPath: lowerPath).lastPathComponent
+        return (fileName == "info.json" || fileName == "metadata.json") && components.first == "mods"
+    }
+
+    private func isNativePluginFile(_ lowerPath: String) -> Bool {
+        [".dll", ".asi", ".exe", ".dylib", ".so"].contains { lowerPath.hasSuffix($0) }
     }
 
     private func isInputMappingXML(_ lowerPath: String) -> Bool {

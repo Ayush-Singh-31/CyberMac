@@ -118,6 +118,10 @@ struct AppServiceContainer: Sendable {
         return enabled ? try manager.enable(id: id) : try manager.disable(id: id)
     }
 
+    func renameMod(_ id: String, displayName: String) throws -> InstalledModManifest {
+        try ModStateManager(home: home).rename(id: id, displayName: displayName)
+    }
+
     func uninstallMod(_ id: String) throws -> InstalledModManifest {
         try ModStateManager(home: home).uninstall(id: id)
     }

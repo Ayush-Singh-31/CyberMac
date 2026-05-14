@@ -19,7 +19,7 @@ struct ModsView: View {
                 }
 
                 if let scan = appState.scanResult {
-                    CyberPanel(accent: scan.sidecarInstallable ? .green : .amber) {
+                    CyberPanel(accent: scanPanelAccent(scan)) {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -33,7 +33,7 @@ struct ModsView: View {
                                     .font(.caption.weight(.semibold))
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
-                                    .background((scan.sidecarInstallable ? CyberAccent.green.color : CyberAccent.amber.color).opacity(0.14), in: Capsule())
+                                    .background(scanPanelAccent(scan).color.opacity(0.14), in: Capsule())
                             }
                             if scan.requiresInputMappingPatch {
                                 Text("CyberMac can install the redscript file and prepare the required input XML patch. Manual copy and verification are required before the keybinds work.")
@@ -44,6 +44,18 @@ struct ModsView: View {
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
                                     .background(CyberAccent.amber.color.opacity(0.14), in: Capsule())
+                            }
+                            if scan.kind == .archiveOnly {
+                                Text("Archive-only asset mod detected. CyberMac can identify this package, but archive installation is not enabled until a Mac archive load-path probe succeeds.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                scanMarkerPills(scan.dependencyMarkers.archiveMarkerLabels, accent: .amber)
+                            }
+                            if scan.kind == .frameworkStack {
+                                Text("Unsupported framework mod. CyberMac currently supports redscript and input XML patching only.")
+                                    .font(.callout)
+                                    .foregroundStyle(CyberAccent.red.color)
+                                scanMarkerPills(scan.dependencyMarkers.frameworkMarkerLabels, accent: .red)
                             }
                             ForEach(scan.reasons, id: \.self) { reason in
                                 Text(reason)
@@ -88,6 +100,24 @@ struct ModsView: View {
             .frame(maxWidth: 1080, alignment: .leading)
         }
     }
+
+    private func scanPanelAccent(_ scan: ModScanResult) -> CyberAccent {
+        if scan.sidecarInstallable { return .green }
+        if scan.kind == .frameworkStack { return .red }
+        return .amber
+    }
+
+    private func scanMarkerPills(_ labels: [String], accent: CyberAccent) -> some View {
+        WrappingHStack(horizontalSpacing: 8, verticalSpacing: 8) {
+            ForEach(labels, id: \.self) { label in
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(accent.color.opacity(0.14), in: Capsule())
+            }
+        }
+    }
 }
 
 private struct ModRow: View {
@@ -95,6 +125,7 @@ private struct ModRow: View {
     @ObservedObject var appState: CyberMacAppState
     @State private var showingDeleteConfirmation = false
     @State private var showingScriptEditor = false
+    @State private var showingRenameSheet = false
 
     var body: some View {
         CyberPanel(accent: rowAccent) {
@@ -120,6 +151,10 @@ private struct ModRow: View {
         .sheet(isPresented: $showingScriptEditor) {
             ModScriptEditorView(mod: mod, appState: appState)
                 .frame(minWidth: 900, minHeight: 650)
+        }
+        .sheet(isPresented: $showingRenameSheet) {
+            RenameModView(mod: mod, appState: appState)
+                .frame(width: 460)
         }
     }
 
@@ -177,6 +212,9 @@ private struct ModRow: View {
     @ViewBuilder
     private var actionZone: some View {
         HStack(spacing: 10) {
+            actionButton("Rename", systemImage: "text.cursor", variant: .secondary, accent: .blue) {
+                showingRenameSheet = true
+            }
             switch mod.status {
             case .enabled:
                 if canEditScripts {
@@ -358,6 +396,88 @@ private struct ModRow: View {
         }
         .buttonStyle(CyberButtonStyle(variant, accent: accent, minWidth: 118))
         .help(title)
+    }
+}
+
+private struct RenameModView: View {
+    let mod: InstalledModManifest
+    @ObservedObject var appState: CyberMacAppState
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draftName: String
+    @State private var isSaving = false
+    @FocusState private var nameFieldFocused: Bool
+
+    init(mod: InstalledModManifest, appState: CyberMacAppState) {
+        self.mod = mod
+        self.appState = appState
+        self._draftName = State(initialValue: mod.displayName)
+    }
+
+    private var trimmedName: String {
+        draftName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        !trimmedName.isEmpty && trimmedName.count <= 120 && !isSaving
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Rename mod")
+                    .font(.title3.weight(.semibold))
+                Text(mod.id)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            TextField("Mod name", text: $draftName)
+                .textFieldStyle(.roundedBorder)
+                .focused($nameFieldFocused)
+                .onSubmit {
+                    Task { await save() }
+                }
+                .disabled(isSaving)
+
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Cancel", systemImage: "xmark")
+                }
+                .buttonStyle(CyberButtonStyle(.secondary, accent: .neutral, minWidth: 110))
+                .disabled(isSaving)
+
+                Spacer()
+
+                Button {
+                    Task { await save() }
+                } label: {
+                    Label(isSaving ? "Saving" : "Save", systemImage: "checkmark")
+                }
+                .buttonStyle(CyberButtonStyle(.primary, accent: .blue, minWidth: 110))
+                .disabled(!canSave)
+            }
+        }
+        .padding(24)
+        .onAppear {
+            DispatchQueue.main.async {
+                nameFieldFocused = true
+            }
+        }
+    }
+
+    @MainActor
+    private func save() async {
+        guard canSave else { return }
+        isSaving = true
+        defer { isSaving = false }
+        if await appState.renameMod(mod, displayName: trimmedName) {
+            dismiss()
+        }
     }
 }
 

@@ -48,6 +48,8 @@ struct CyberMacCLI {
             try launchGame()
         case "scan":
             try scan()
+        case "archive-probe":
+            try archiveProbe()
         case "install":
             try install()
         case "cache-status":
@@ -74,6 +76,8 @@ struct CyberMacCLI {
             try restoreVanilla()
         case "list-mods":
             try listMods()
+        case "rename", "rename-mod":
+            try renameMod()
         case "disable":
             try changeModState(action: .disable)
         case "enable":
@@ -104,6 +108,11 @@ struct CyberMacCLI {
           cybermac launch-test [--run]
           cybermac launch-game [--vanilla-ok|--require-active] [--show-command] [--game-app /path/to/Cyberpunk.app]
           cybermac scan /path/to/mod.zip
+          cybermac archive-probe prepare /path/to/mod.zip [--candidate mac-mod|mac-content|pc-mod|pc-content] [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-probe verify-copy <probe-id>
+          cybermac archive-probe verify-removal <probe-id>
+          cybermac archive-probe record-result <probe-id> worked|no-effect|game-failed-to-launch|unknown
+          cybermac archive-probe list
           cybermac install /path/to/mod.zip [--game-app /path/to/Cyberpunk.app]
           cybermac cache-status [--game-app /path/to/Cyberpunk.app]
           cybermac refresh-base-cache [--dry-run] [--game-app /path/to/Cyberpunk.app]
@@ -119,6 +128,7 @@ struct CyberMacCLI {
           cybermac restore [--dry-run|--verify] <backup-id> [--game-app /path/to/Cyberpunk.app]
           cybermac restore-vanilla [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
           cybermac list-mods
+          cybermac rename <mod-id> <new display name>
           cybermac disable <mod-id>
           cybermac enable <mod-id>
           cybermac uninstall <mod-id>
@@ -258,6 +268,120 @@ struct CyberMacCLI {
         let zipURL = PathSafety.expandedURL(from: arguments[1])
         let result = try ModArchiveScanner().scan(zipURL: zipURL)
         printScanResult(result)
+    }
+
+    private func archiveProbe() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing archive-probe subcommand")
+        }
+
+        switch arguments[1] {
+        case "prepare":
+            try archiveProbePrepare()
+        case "verify-copy":
+            try archiveProbeVerifyCopy()
+        case "verify-removal":
+            try archiveProbeVerifyRemoval()
+        case "record-result":
+            try archiveProbeRecordResult()
+        case "list":
+            try archiveProbeList()
+        default:
+            throw CyberMacError.invalidInput("Unknown archive-probe subcommand: \(arguments[1])")
+        }
+    }
+
+    private func archiveProbePrepare() throws {
+        let positionals = archiveProbePositionals(valueFlags: ["--candidate", "--game-app"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-probe prepare <mod.zip> [--candidate mac-mod|mac-content|pc-mod|pc-content] [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let candidate: ArchiveProbeCandidate
+        if let candidateValue = optionValue("--candidate") {
+            guard let parsed = ArchiveProbeCandidate(rawValue: candidateValue) else {
+                throw CyberMacError.invalidInput("Unknown archive probe candidate: \(candidateValue). Expected one of: \(ArchiveProbeCandidate.acceptedValuesDescription)")
+            }
+            candidate = parsed
+        } else {
+            candidate = .macMod
+        }
+
+        try home.bootstrap()
+        let zipURL = PathSafety.expandedURL(from: positionals[0])
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let record = try ArchiveProbeManager(home: home).prepare(zipURL: zipURL, gameInstall: game, candidate: candidate)
+        printArchiveProbePrepare(record)
+    }
+
+    private func archiveProbeVerifyCopy() throws {
+        let positionals = archiveProbePositionals(valueFlags: ["--game-app"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-probe verify-copy <probe-id> [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let result = try ArchiveProbeManager(home: home).verifyCopy(id: positionals[0])
+        if result.matched {
+            print("Archive probe copy verified.")
+            print("Probe ID: \(result.record.id)")
+            print("Target: \(result.record.candidateTargetPath)")
+            print("SHA-256: \(result.expectedSHA256)")
+        } else {
+            print("Archive probe copy not verified.")
+            print("Probe ID: \(result.record.id)")
+            print("Target: \(result.record.candidateTargetPath)")
+            if result.targetExists {
+                print("Expected SHA-256: \(result.expectedSHA256)")
+                print("Actual SHA-256: \(result.actualSHA256 ?? "unknown")")
+            } else {
+                print("Target file is missing.")
+            }
+        }
+    }
+
+    private func archiveProbeVerifyRemoval() throws {
+        let positionals = archiveProbePositionals(valueFlags: ["--game-app"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-probe verify-removal <probe-id> [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let result = try ArchiveProbeManager(home: home).verifyRemoval(id: positionals[0])
+        if result.removed {
+            print("Archive probe removal verified.")
+            print("Probe ID: \(result.record.id)")
+            print("Target absent: \(result.record.candidateTargetPath)")
+        } else {
+            print("Archive probe removal not verified.")
+            print("Probe ID: \(result.record.id)")
+            print("Target still exists: \(result.record.candidateTargetPath)")
+            print("Run the printed removal command manually, then verify removal again.")
+        }
+    }
+
+    private func archiveProbeRecordResult() throws {
+        let positionals = archiveProbePositionals(valueFlags: ["--game-app"])
+        guard positionals.count == 2 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-probe record-result <probe-id> worked|no-effect|game-failed-to-launch|unknown")
+        }
+        guard let result = ArchiveProbeUserResult(rawValue: positionals[1]) else {
+            throw CyberMacError.invalidInput("Unknown archive probe result: \(positionals[1]). Expected worked, no-effect, game-failed-to-launch, or unknown.")
+        }
+
+        let record = try ArchiveProbeManager(home: home).recordResult(id: positionals[0], result: result)
+        print("Archive probe result recorded.")
+        printArchiveProbeSummary(record)
+    }
+
+    private func archiveProbeList() throws {
+        let records = try ArchiveProbeManager(home: home).list()
+        guard !records.isEmpty else {
+            print("No archive probe records found.")
+            return
+        }
+
+        for record in records {
+            printArchiveProbeSummary(record)
+        }
     }
 
     private func install() throws {
@@ -551,6 +675,18 @@ struct CyberMacCLI {
 
     private enum ModAction { case disable, enable, uninstall }
 
+    private func renameMod() throws {
+        guard arguments.count >= 3 else {
+            throw CyberMacError.invalidInput("Usage: cybermac rename <mod-id> <new display name>")
+        }
+        let id = arguments[1]
+        let displayName = arguments.dropFirst(2).joined(separator: " ")
+        let manifest = try ModStateManager(home: home).rename(id: id, displayName: displayName)
+        print("Renamed mod.")
+        print("ID: \(manifest.id)")
+        print("Name: \(manifest.displayName)")
+    }
+
     private func changeModState(action: ModAction) throws {
         guard arguments.count >= 2 else {
             throw CyberMacError.invalidInput("Missing mod id")
@@ -605,14 +741,48 @@ struct CyberMacCLI {
         }
     }
 
+    private func printArchiveProbePrepare(_ record: ArchiveProbeRecord) {
+        print("Archive probe prepared.")
+        print("Probe ID: \(record.id)")
+        print("Archive file: \(record.archiveFileName)")
+        print("SHA-256: \(record.archiveSHA256)")
+        print("Candidate target: \(record.candidateTargetPath)")
+        print("")
+        print("Manual copy commands:")
+        print(record.commandPrinted)
+        print("")
+        print("Manual removal command:")
+        print(record.removalCommandPrinted)
+        print("")
+        print("Next steps:")
+        print("1. Run the printed copy commands manually in Terminal.")
+        print("2. Launch the game manually.")
+        print("3. Check whether the archive replacer has a visible effect.")
+        print("4. Run: swift run cybermac archive-probe verify-copy \(record.id)")
+        print("5. Remove the file using the printed removal command.")
+        print("6. Run: swift run cybermac archive-probe verify-removal \(record.id)")
+        print("7. Run: swift run cybermac archive-probe record-result \(record.id) worked|no-effect|game-failed-to-launch|unknown")
+    }
+
+    private func printArchiveProbeSummary(_ record: ArchiveProbeRecord) {
+        print("\(record.id) | \(record.createdAt) | \(record.archiveFileName) | \(record.candidateTargetPath) | copied: \(yesNo(record.verifiedCopied)) | removed: \(yesNo(record.verifiedRemoved)) | result: \(record.userReportedResult?.rawValue ?? "none")")
+    }
+
     private func printScanResult(_ result: ModScanResult) {
         print("Name: \(result.displayName)")
         print("Status: \(result.displayStatusLabel)")
+        print("Compatibility: \(result.compatibilityStatus.rawValue)")
+        print("Type: \(result.kind.displayName)")
         print("Sidecar installable: \(result.sidecarInstallable ? "yes" : "no")")
         if let reason = result.installBlockReason {
             print("Install block: \(reason)")
         }
-        print("Type: \(result.kind.displayName)")
+        print("Detected archive files: \(result.archiveEntries.count)")
+        print("Detected input XML files: \(result.inputMappingEntries.count)")
+        let frameworkMarkers = result.dependencyMarkers.frameworkMarkerLabels
+        print("Dependency/framework markers: \(frameworkMarkers.isEmpty ? "none" : frameworkMarkers.joined(separator: ", "))")
+        let archiveMarkers = result.dependencyMarkers.archiveMarkerLabels.filter { $0 != "input XML" }
+        print("Archive/layout markers: \(archiveMarkers.isEmpty ? "none" : archiveMarkers.joined(separator: ", "))")
         print("Input patch required: \(result.requiresInputMappingPatch ? "yes" : "no")")
         print("Reasons:")
         for reason in result.reasons {
@@ -716,6 +886,30 @@ struct CyberMacCLI {
 
     private func hasFlag(_ name: String) -> Bool {
         arguments.contains(name)
+    }
+
+    private func yesNo(_ value: Bool) -> String {
+        value ? "yes" : "no"
+    }
+
+    private func archiveProbePositionals(valueFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
     }
 
     private func positionalArguments(after command: String, excludingFlags: Set<String>) -> [String] {

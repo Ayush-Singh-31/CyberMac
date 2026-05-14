@@ -40,6 +40,15 @@ public struct ModStateManager: Sendable {
         try manifestStore.list()
     }
 
+    public func rename(id: String, displayName rawDisplayName: String) throws -> InstalledModManifest {
+        var manifest = try manifestStore.load(id: id)
+        let displayName = try sanitizedDisplayName(rawDisplayName)
+        guard manifest.displayName != displayName else { return manifest }
+        manifest.displayName = displayName
+        try manifestStore.save(manifest)
+        return manifest
+    }
+
     public func disable(id: String) throws -> InstalledModManifest {
         var manifest = try manifestStore.load(id: id)
         guard manifest.status == .enabled else { return manifest }
@@ -347,5 +356,19 @@ public struct ModStateManager: Sendable {
             unique.append(url)
         }
         return unique
+    }
+
+    private func sanitizedDisplayName(_ rawDisplayName: String) throws -> String {
+        let displayName = rawDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !displayName.isEmpty else {
+            throw CyberMacError.invalidInput("Mod name cannot be empty.")
+        }
+        guard displayName.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {
+            throw CyberMacError.invalidInput("Mod name cannot contain control characters.")
+        }
+        guard displayName.count <= 120 else {
+            throw CyberMacError.invalidInput("Mod name is too long; use 120 characters or fewer.")
+        }
+        return displayName
     }
 }

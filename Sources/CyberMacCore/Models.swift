@@ -86,9 +86,83 @@ public enum InputPatchVerificationStatus: Codable, Equatable, Sendable {
 public enum ModKind: String, Codable, Sendable {
     case redscript
     case redscriptInput
-    case archive
+    case archiveOnly
+    case frameworkStack
     case mixed
     case unknown
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        switch rawValue {
+        case "redscript":
+            self = .redscript
+        case "redscriptInput":
+            self = .redscriptInput
+        case "archive", "archiveOnly":
+            self = .archiveOnly
+        case "frameworkStack":
+            self = .frameworkStack
+        case "mixed":
+            self = .mixed
+        default:
+            self = .unknown
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public struct ModDependencyMarkers: Codable, Sendable, Equatable {
+    public var hasArchiveFiles: Bool
+    public var hasArchiveXL: Bool
+    public var hasTweakXL: Bool
+    public var hasRED4ext: Bool
+    public var hasCodeware: Bool
+    public var hasCET: Bool
+    public var hasEquipmentEX: Bool
+    public var hasREDmod: Bool
+    public var hasNativePlugin: Bool
+    public var hasArchivePCModPath: Bool
+    public var hasArchivePCContentPath: Bool
+    public var hasArchiveMacModPath: Bool
+    public var hasArchiveMacContentPath: Bool
+    public var hasInputMappingXML: Bool
+
+    public init(
+        hasArchiveFiles: Bool = false,
+        hasArchiveXL: Bool = false,
+        hasTweakXL: Bool = false,
+        hasRED4ext: Bool = false,
+        hasCodeware: Bool = false,
+        hasCET: Bool = false,
+        hasEquipmentEX: Bool = false,
+        hasREDmod: Bool = false,
+        hasNativePlugin: Bool = false,
+        hasArchivePCModPath: Bool = false,
+        hasArchivePCContentPath: Bool = false,
+        hasArchiveMacModPath: Bool = false,
+        hasArchiveMacContentPath: Bool = false,
+        hasInputMappingXML: Bool = false
+    ) {
+        self.hasArchiveFiles = hasArchiveFiles
+        self.hasArchiveXL = hasArchiveXL
+        self.hasTweakXL = hasTweakXL
+        self.hasRED4ext = hasRED4ext
+        self.hasCodeware = hasCodeware
+        self.hasCET = hasCET
+        self.hasEquipmentEX = hasEquipmentEX
+        self.hasREDmod = hasREDmod
+        self.hasNativePlugin = hasNativePlugin
+        self.hasArchivePCModPath = hasArchivePCModPath
+        self.hasArchivePCContentPath = hasArchivePCContentPath
+        self.hasArchiveMacModPath = hasArchiveMacModPath
+        self.hasArchiveMacContentPath = hasArchiveMacContentPath
+        self.hasInputMappingXML = hasInputMappingXML
+    }
 }
 
 public struct ModScanFinding: Codable, Sendable {
@@ -113,6 +187,7 @@ public struct ModScanResult: Codable, Sendable {
     public let redscriptEntries: [String]
     public let archiveEntries: [String]
     public let inputMappingEntries: [String]
+    public let dependencyMarkers: ModDependencyMarkers
     public let requiresInputMappingPatch: Bool
     public let allEntries: [String]
 
@@ -128,6 +203,7 @@ public struct ModScanResult: Codable, Sendable {
         redscriptEntries: [String],
         archiveEntries: [String],
         inputMappingEntries: [String] = [],
+        dependencyMarkers: ModDependencyMarkers = ModDependencyMarkers(),
         requiresInputMappingPatch: Bool = false,
         allEntries: [String]
     ) {
@@ -142,8 +218,88 @@ public struct ModScanResult: Codable, Sendable {
         self.redscriptEntries = redscriptEntries
         self.archiveEntries = archiveEntries
         self.inputMappingEntries = inputMappingEntries
+        self.dependencyMarkers = dependencyMarkers
         self.requiresInputMappingPatch = requiresInputMappingPatch
         self.allEntries = allEntries
+    }
+}
+
+public enum ArchiveProbeUserResult: String, Codable, Sendable, Equatable {
+    case worked
+    case noEffect = "no-effect"
+    case gameFailedToLaunch = "game-failed-to-launch"
+    case unknown
+}
+
+public enum ArchiveProbeCandidate: String, Codable, Sendable, Equatable, CaseIterable {
+    case macMod = "mac-mod"
+    case macContent = "mac-content"
+    case pcMod = "pc-mod"
+    case pcContent = "pc-content"
+
+    public var dataRelativePath: String {
+        switch self {
+        case .macMod:
+            return "archive/Mac/mod"
+        case .macContent:
+            return "archive/Mac/content"
+        case .pcMod:
+            return "archive/pc/mod"
+        case .pcContent:
+            return "archive/pc/content"
+        }
+    }
+
+    public static var acceptedValuesDescription: String {
+        allCases.map(\.rawValue).joined(separator: ", ")
+    }
+}
+
+public struct ArchiveProbeRecord: Codable, Sendable, Equatable {
+    public let id: String
+    public let createdAt: Date
+    public let modArchivePath: String
+    public let archiveFileName: String
+    public let archiveSHA256: String
+    public let candidateTargetPath: String
+    public let commandPrinted: String
+    public let removalCommandPrinted: String
+    public var verifiedCopied: Bool
+    public var verifiedRemoved: Bool
+    public var userReportedResult: ArchiveProbeUserResult?
+
+    public init(
+        id: String,
+        createdAt: Date,
+        modArchivePath: String,
+        archiveFileName: String,
+        archiveSHA256: String,
+        candidateTargetPath: String,
+        commandPrinted: String,
+        removalCommandPrinted: String,
+        verifiedCopied: Bool = false,
+        verifiedRemoved: Bool = false,
+        userReportedResult: ArchiveProbeUserResult? = nil
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.modArchivePath = modArchivePath
+        self.archiveFileName = archiveFileName
+        self.archiveSHA256 = archiveSHA256
+        self.candidateTargetPath = candidateTargetPath
+        self.commandPrinted = commandPrinted
+        self.removalCommandPrinted = removalCommandPrinted
+        self.verifiedCopied = verifiedCopied
+        self.verifiedRemoved = verifiedRemoved
+        self.userReportedResult = userReportedResult
+    }
+}
+
+public struct ArchiveProbeState: Codable, Sendable, Equatable {
+    public var records: [ArchiveProbeRecord]
+
+    public init(records: [ArchiveProbeRecord] = []) {
+        self.records = records
     }
 }
 
@@ -351,7 +507,7 @@ public struct InstalledFileRecord: Codable, Sendable {
 public struct InstalledModManifest: Codable, Sendable {
     public let schemaVersion: Int
     public let id: String
-    public let displayName: String
+    public var displayName: String
     public let type: ModKind
     public var status: InstalledModStatus
     public let sourceArchive: String

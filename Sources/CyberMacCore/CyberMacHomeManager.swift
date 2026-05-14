@@ -35,6 +35,8 @@ public struct CyberMacHomeManager: Sendable {
     public var diagnosticsURL: URL { homeURL.appendingPathComponent("diagnostics", isDirectory: true) }
     public var stateURL: URL { configURL.appendingPathComponent("state.json") }
     public var inputPatchStateURL: URL { configURL.appendingPathComponent("input-patches.json") }
+    public var archiveProbeStateURL: URL { configURL.appendingPathComponent("archive-probe-state.json") }
+    public var archiveProbeTmpURL: URL { tmpURL.appendingPathComponent("archive-probe", isDirectory: true) }
 
     public func bootstrap() throws {
         let directories = [
@@ -51,6 +53,7 @@ public struct CyberMacHomeManager: Sendable {
             backupsURL,
             inputPatchBackupsURL,
             tmpURL,
+            archiveProbeTmpURL,
             generatedURL,
             manifestsURL,
             disabledURL,

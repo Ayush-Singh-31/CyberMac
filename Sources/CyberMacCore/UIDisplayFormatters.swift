@@ -7,8 +7,10 @@ public extension ModKind {
             return "redscript"
         case .redscriptInput:
             return "redscript + input mapping"
-        case .archive:
-            return "archive"
+        case .archiveOnly:
+            return "archive-only"
+        case .frameworkStack:
+            return "framework stack"
         case .mixed:
             return "mixed"
         case .unknown:
@@ -19,7 +21,39 @@ public extension ModKind {
 
 public extension ModScanResult {
     var displayStatusLabel: String {
-        requiresInputMappingPatch ? "Supported with input patch" : compatibilityStatus.rawValue
+        if kind == .archiveOnly && compatibilityStatus == .untested {
+            return "Experimental archive-only"
+        }
+        if kind == .frameworkStack {
+            return "Unsupported framework"
+        }
+        return requiresInputMappingPatch ? "Supported with input patch" : compatibilityStatus.rawValue
+    }
+}
+
+public extension ModDependencyMarkers {
+    var frameworkMarkerLabels: [String] {
+        var labels: [String] = []
+        if hasArchiveXL { labels.append("ArchiveXL") }
+        if hasTweakXL { labels.append("TweakXL") }
+        if hasRED4ext { labels.append("RED4ext") }
+        if hasCodeware { labels.append("Codeware") }
+        if hasCET { labels.append("CET") }
+        if hasEquipmentEX { labels.append("Equipment-EX") }
+        if hasREDmod { labels.append("REDmod") }
+        if hasNativePlugin { labels.append("native plugin") }
+        return labels
+    }
+
+    var archiveMarkerLabels: [String] {
+        var labels: [String] = []
+        if hasArchiveFiles { labels.append(".archive files") }
+        if hasArchivePCModPath { labels.append("archive/pc/mod") }
+        if hasArchivePCContentPath { labels.append("archive/pc/content") }
+        if hasArchiveMacModPath { labels.append("archive/Mac/mod") }
+        if hasArchiveMacContentPath { labels.append("archive/Mac/content") }
+        if hasInputMappingXML { labels.append("input XML") }
+        return labels
     }
 }
 

@@ -31,6 +31,7 @@ enum AppTask: Equatable, Sendable {
     case preparingInputRestore
     case verifyingInputRestore
     case changingModState
+    case renamingMod
     case exportingDiagnostics
     case scanningMod
     case installingMod
@@ -61,6 +62,8 @@ enum AppTask: Equatable, Sendable {
             return "Verifying input restore..."
         case .changingModState:
             return "Updating mod state..."
+        case .renamingMod:
+            return "Renaming mod..."
         case .exportingDiagnostics:
             return "Exporting diagnostics..."
         case .scanningMod:
@@ -453,6 +456,35 @@ final class CyberMacAppState: ObservableObject {
         } catch is CancellationError {
         } catch {
             lastError = UserFacingError(title: "Mod update failed", message: String(describing: error))
+        }
+    }
+
+    @discardableResult
+    func renameMod(_ mod: InstalledModManifest, displayName: String) async -> Bool {
+        modDebugLog("[ModsUI] start rename \(mod.id)")
+        do {
+            _ = try await withCurrentTask(.renamingMod) {
+                let container = self.container
+                let manifest = try await BackgroundTaskRunner.run {
+                    try container.renameMod(mod.id, displayName: displayName)
+                }
+                try Task.checkCancellation()
+                modDebugLog("[ModsUI] core rename returned displayName=\(manifest.displayName)")
+                return manifest
+            }
+            modDebugLog("[ModsUI] currentTask cleared")
+            lastError = nil
+            if let refreshError = await refreshAfterStateChange() {
+                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
+                return false
+            }
+            modDebugLog("[ModsUI] refresh complete")
+            return true
+        } catch is CancellationError {
+            return false
+        } catch {
+            lastError = UserFacingError(title: "Rename failed", message: String(describing: error))
+            return false
         }
     }
 
