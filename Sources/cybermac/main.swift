@@ -50,6 +50,8 @@ struct CyberMacCLI {
             try scan()
         case "archive-probe":
             try archiveProbe()
+        case "archive-research":
+            try archiveResearch()
         case "install":
             try install()
         case "cache-status":
@@ -113,6 +115,9 @@ struct CyberMacCLI {
           cybermac archive-probe verify-removal <probe-id>
           cybermac archive-probe record-result <probe-id> worked|no-effect|game-failed-to-launch|unknown
           cybermac archive-probe list
+          cybermac archive-research report [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-research strings [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-research seal [--game-app /path/to/Cyberpunk.app]
           cybermac install /path/to/mod.zip [--game-app /path/to/Cyberpunk.app]
           cybermac cache-status [--game-app /path/to/Cyberpunk.app]
           cybermac refresh-base-cache [--dry-run] [--game-app /path/to/Cyberpunk.app]
@@ -382,6 +387,56 @@ struct CyberMacCLI {
         for record in records {
             printArchiveProbeSummary(record)
         }
+    }
+
+    private func archiveResearch() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing archive-research subcommand")
+        }
+
+        switch arguments[1] {
+        case "report":
+            try archiveResearchReport()
+        case "strings":
+            try archiveResearchStrings()
+        case "seal":
+            try archiveResearchSeal()
+        default:
+            throw CyberMacError.invalidInput("Unknown archive-research subcommand: \(arguments[1])")
+        }
+    }
+
+    private func archiveResearchReport() throws {
+        let positionals = archiveResearchPositionals(valueFlags: ["--game-app"])
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-research report [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let report = ArchiveResearchReporter(home: home).makeReport(gameInstall: game)
+        print(ArchiveResearchReportFormatter.format(report))
+    }
+
+    private func archiveResearchStrings() throws {
+        let positionals = archiveResearchPositionals(valueFlags: ["--game-app"])
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-research strings [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let report = ArchiveStringResearchReporter(home: home).makeReport(gameInstall: game)
+        print(ArchiveStringResearchReportFormatter.format(report))
+    }
+
+    private func archiveResearchSeal() throws {
+        let positionals = archiveResearchPositionals(valueFlags: ["--game-app"])
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-research seal [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let report = ArchiveSealResearchReporter(home: home).makeReport(gameInstall: game)
+        print(ArchiveSealResearchReportFormatter.format(report))
     }
 
     private func install() throws {
@@ -894,6 +949,26 @@ struct CyberMacCLI {
     }
 
     private func archiveProbePositionals(valueFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
+    }
+
+    private func archiveResearchPositionals(valueFlags: Set<String>) -> [String] {
         var values: [String] = []
         var skipNext = false
         for argument in arguments.dropFirst(2) {

@@ -64,10 +64,10 @@ public struct ArchiveProbeManager: Sendable {
             try PathSafety.validateContainedPath(targetURL, in: candidateDirectory)
 
             let copyCommands = [
-                "sudo mkdir -p \(PathSafety.shellDoubleQuoted(candidateDirectory.path))",
-                "sudo cp \(PathSafety.shellDoubleQuoted(extractedArchiveURL.path)) \(PathSafety.shellDoubleQuoted(targetURL.path))"
+                "sudo mkdir -p \(PathSafety.shellQuoted(candidateDirectory.path))",
+                "sudo cp \(PathSafety.shellQuoted(extractedArchiveURL.path)) \(PathSafety.shellQuoted(targetURL.path))"
             ].joined(separator: "\n")
-            let removalCommand = "sudo rm -f \(PathSafety.shellDoubleQuoted(targetURL.path))"
+            let removalCommand = "sudo rm -f \(PathSafety.shellQuoted(targetURL.path))"
 
             let record = ArchiveProbeRecord(
                 id: id,

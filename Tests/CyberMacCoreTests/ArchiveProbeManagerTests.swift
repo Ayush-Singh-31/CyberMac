@@ -152,18 +152,27 @@ final class ArchiveProbeManagerTests: XCTestCase {
     }
 
     func testGeneratedCommandsUseManualSudoAndSafeQuoting() throws {
-        let quotedGame = try makeGameInstall(name: "Cyberpunk 2077: Ultimate \"QA\" (Test).app")
+        let quotedGame = try makeGameInstall(name: "Cyberpunk 2077: Ultimate QA (Test)'s ! Build.app")
+        let archiveFileName = "!Dogtown LUT: O'Clock (QA) test.archive"
         let zipURL = try makeZip(named: "quoted.zip", entries: [
-            .file("archive/pc/mod/quote \"x\" test.archive")
+            .file("archive/pc/mod/\(archiveFileName)")
         ])
 
         let record = try manager.prepare(zipURL: zipURL, gameInstall: quotedGame)
 
-        XCTAssertTrue(record.commandPrinted.contains("sudo mkdir -p \""))
-        XCTAssertTrue(record.commandPrinted.contains("sudo cp \""))
-        XCTAssertTrue(record.removalCommandPrinted.contains("sudo rm -f \""))
-        XCTAssertTrue(record.commandPrinted.contains("Cyberpunk 2077: Ultimate \\\"QA\\\" (Test).app"))
-        XCTAssertTrue(record.commandPrinted.contains("quote \\\"x\\\" test.archive"))
+        let targetURL = URL(fileURLWithPath: record.candidateTargetPath)
+        let sourceURL = extractedArchiveURL(for: record)
+        let expectedCopyCommands = [
+            "sudo mkdir -p \(PathSafety.shellQuoted(targetURL.deletingLastPathComponent().path))",
+            "sudo cp \(PathSafety.shellQuoted(sourceURL.path)) \(PathSafety.shellQuoted(targetURL.path))"
+        ].joined(separator: "\n")
+        let expectedRemovalCommand = "sudo rm -f \(PathSafety.shellQuoted(targetURL.path))"
+
+        XCTAssertEqual(record.commandPrinted, expectedCopyCommands)
+        XCTAssertEqual(record.removalCommandPrinted, expectedRemovalCommand)
+        XCTAssertTrue(record.commandPrinted.contains("'\\''"))
+        XCTAssertTrue(record.removalCommandPrinted.contains("'\\''"))
+        XCTAssertTrue(record.commandPrinted.contains("!Dogtown LUT: O'\\''Clock (QA) test.archive"))
         XCTAssertEqual(record.commandPrinted.components(separatedBy: "\n").count, 2)
     }
 
