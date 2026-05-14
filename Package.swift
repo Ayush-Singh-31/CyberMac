@@ -38,7 +38,10 @@ let package = Package(
         .executableTarget(
             name: "CyberMacApp",
             dependencies: ["CyberMacCore"],
-            path: "CyberMacApp"
+            path: "CyberMacApp",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "CyberMacCoreTests",

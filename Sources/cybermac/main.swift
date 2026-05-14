@@ -743,6 +743,7 @@ struct CyberMacCLI {
 
     private func printArchiveProbePrepare(_ record: ArchiveProbeRecord) {
         print("Archive probe prepared.")
+        print("Experimental probe only: this does not enable managed archive mod support.")
         print("Probe ID: \(record.id)")
         print("Archive file: \(record.archiveFileName)")
         print("SHA-256: \(record.archiveSHA256)")

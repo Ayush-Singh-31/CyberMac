@@ -92,7 +92,7 @@ public struct ArchiveProbeManager: Sendable {
         var state = try loadState()
         let index = try recordIndex(id: id, in: state.records)
         var record = state.records[index]
-        let targetURL = URL(fileURLWithPath: record.candidateTargetPath)
+        let targetURL = try validatedPersistedTargetURL(for: record)
 
         guard FileManager.default.fileExists(atPath: targetURL.path) else {
             record.verifiedCopied = false
@@ -125,7 +125,7 @@ public struct ArchiveProbeManager: Sendable {
         var state = try loadState()
         let index = try recordIndex(id: id, in: state.records)
         var record = state.records[index]
-        let targetURL = URL(fileURLWithPath: record.candidateTargetPath)
+        let targetURL = try validatedPersistedTargetURL(for: record)
         let targetExists = FileManager.default.fileExists(atPath: targetURL.path)
         record.verifiedRemoved = !targetExists
         state.records[index] = record
@@ -169,6 +169,76 @@ public struct ArchiveProbeManager: Sendable {
         try home.bootstrap()
         let data = try JSONEncoder.cybermac.encode(state)
         try data.write(to: home.archiveProbeStateURL, options: [.atomic])
+    }
+
+    private func validatedPersistedTargetURL(for record: ArchiveProbeRecord) throws -> URL {
+        let rawPath = record.candidateTargetPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawPath.isEmpty else {
+            throw tamperedTargetPath("Persisted target path is empty.")
+        }
+        guard rawPath.hasPrefix("/") else {
+            throw tamperedTargetPath("Persisted target path is not absolute: \(record.candidateTargetPath)")
+        }
+        guard !containsControlCharacter(rawPath) else {
+            throw tamperedTargetPath("Persisted target path contains control characters.")
+        }
+        let rawComponents = rawPath.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !rawComponents.contains("..") else {
+            throw tamperedTargetPath("Persisted target path contains traversal: \(record.candidateTargetPath)")
+        }
+        guard isPlainArchiveFileName(record.archiveFileName) else {
+            throw tamperedTargetPath("Persisted archive file name is invalid: \(record.archiveFileName)")
+        }
+
+        let targetURL = URL(fileURLWithPath: rawPath).standardizedFileURL
+        guard targetURL.lastPathComponent == record.archiveFileName else {
+            throw tamperedTargetPath("Persisted target file name does not match \(record.archiveFileName): \(record.candidateTargetPath)")
+        }
+        guard isApprovedCandidateTarget(targetURL, archiveFileName: record.archiveFileName) else {
+            throw tamperedTargetPath("Persisted target path is outside approved archive probe directories: \(record.candidateTargetPath)")
+        }
+        return targetURL
+    }
+
+    private func isPlainArchiveFileName(_ fileName: String) -> Bool {
+        guard !fileName.isEmpty,
+              fileName.lowercased().hasSuffix(".archive"),
+              !fileName.contains("/"),
+              !fileName.contains("\\"),
+              !containsControlCharacter(fileName),
+              fileName != ".",
+              fileName != ".."
+        else {
+            return false
+        }
+        return URL(fileURLWithPath: fileName).lastPathComponent == fileName
+    }
+
+    private func isApprovedCandidateTarget(_ targetURL: URL, archiveFileName: String) -> Bool {
+        let components = targetURL.pathComponents
+        guard components.last == archiveFileName else { return false }
+
+        for appIndex in components.indices where components[appIndex].lowercased().hasSuffix(".app") {
+            for candidate in ArchiveProbeCandidate.allCases {
+                let expectedTail = ["Contents", "Data"] +
+                    candidate.dataRelativePath.split(separator: "/").map(String.init) +
+                    [archiveFileName]
+                let startIndex = appIndex + 1
+                guard components.count == startIndex + expectedTail.count else { continue }
+                if Array(components[startIndex..<components.count]) == expectedTail {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func containsControlCharacter(_ value: String) -> Bool {
+        value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    private func tamperedTargetPath(_ message: String) -> CyberMacError {
+        CyberMacError.unsafePath("Archive probe target path is invalid or tampered. \(message)")
     }
 
     private func validatedProbeArchivePath(_ scan: ModScanResult) throws -> String {

@@ -14,10 +14,26 @@ struct CyberMacDesktopApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        setDockIcon()
         NSApp.activate(ignoringOtherApps: true)
+
+        Task { @MainActor in
+            self.setDockIcon()
+            NSApp.dockTile.display()
+        }
+    }
+
+    private func setDockIcon() {
+        guard let url = Bundle.module.url(forResource: "CyberMacIcon", withExtension: "png"),
+              let image = NSImage(contentsOf: url) else {
+            return
+        }
+
+        NSApp.applicationIconImage = image
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

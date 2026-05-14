@@ -75,6 +75,30 @@ final class ArchiveProbeManagerTests: XCTestCase {
         XCTAssertThrowsError(try manager.prepare(zipURL: zipURL, gameInstall: gameInstall))
     }
 
+    func testPrepareRefusesAdditionalFrameworkAndPackageMarkers() throws {
+        let cases: [(String, [ZipEntry])] = [
+            ("codeware.zip", [.file("r6/scripts/codeware/init.reds")]),
+            ("equipment-ex.zip", [.file("archive/pc/mod/equipment-ex.archive")]),
+            ("cet.zip", [.file("bin/x64/plugins/cyber_engine_tweaks/mods/example/init.lua")]),
+            ("redmod.zip", [.file("mods/example/info.json")]),
+            ("input-xml.zip", [.file("r6/input/inputContexts.xml")])
+        ]
+
+        for (name, entries) in cases {
+            let zipURL = try makeZip(named: name, entries: entries)
+            XCTAssertThrowsError(try manager.prepare(zipURL: zipURL, gameInstall: gameInstall), "Expected prepare to refuse \(name)")
+        }
+    }
+
+    func testPrepareRefusesArchiveWithUnknownExtraContent() throws {
+        let zipURL = try makeZip(named: "archive-extra-content.zip", entries: [
+            .file("archive/pc/mod/example.archive"),
+            .file("config/settings.dat")
+        ])
+
+        XCTAssertThrowsError(try manager.prepare(zipURL: zipURL, gameInstall: gameInstall))
+    }
+
     func testPrepareRefusesMultipleArchiveFiles() throws {
         let zipURL = try makeZip(named: "multiple-archives.zip", entries: [
             .file("archive/pc/mod/one.archive"),
@@ -94,7 +118,7 @@ final class ArchiveProbeManagerTests: XCTestCase {
 
         XCTAssertEqual(record.archiveFileName, "example.archive")
         XCTAssertFalse(record.archiveSHA256.isEmpty)
-        XCTAssertTrue(record.candidateTargetPath.hasSuffix("Contents/Data/archive/Mac/mod/example.archive"))
+        XCTAssertEqual(record.candidateTargetPath, expectedTargetPath(fileName: "example.archive", candidate: .macMod))
         XCTAssertTrue(FileManager.default.fileExists(atPath: extractedArchiveURL(for: record).path))
         XCTAssertTrue(try ManifestStore(home: home).list().isEmpty)
     }
@@ -106,25 +130,24 @@ final class ArchiveProbeManagerTests: XCTestCase {
 
         let record = try manager.prepare(zipURL: zipURL, gameInstall: gameInstall)
 
-        XCTAssertTrue(record.candidateTargetPath.hasSuffix("Contents/Data/archive/Mac/mod/default.archive"))
+        XCTAssertEqual(record.candidateTargetPath, expectedTargetPath(fileName: "default.archive", candidate: .macMod))
     }
 
     func testEachCandidateMapsToExpectedTargetDirectory() throws {
-        let expectations: [(ArchiveProbeCandidate, String)] = [
-            (.macMod, "Contents/Data/archive/Mac/mod/probe.archive"),
-            (.macContent, "Contents/Data/archive/Mac/content/probe.archive"),
-            (.pcMod, "Contents/Data/archive/pc/mod/probe.archive"),
-            (.pcContent, "Contents/Data/archive/pc/content/probe.archive")
-        ]
+        let candidates: [ArchiveProbeCandidate] = [.macMod, .macContent, .pcMod, .pcContent]
 
-        for (candidate, suffix) in expectations {
+        for candidate in candidates {
             let zipURL = try makeZip(named: "\(candidate.rawValue)-\(UUID().uuidString).zip", entries: [
                 .file("archive/pc/mod/probe.archive")
             ])
 
             let record = try manager.prepare(zipURL: zipURL, gameInstall: gameInstall, candidate: candidate)
 
-            XCTAssertTrue(record.candidateTargetPath.hasSuffix(suffix), "Unexpected target for \(candidate.rawValue): \(record.candidateTargetPath)")
+            XCTAssertEqual(
+                record.candidateTargetPath,
+                expectedTargetPath(fileName: "probe.archive", candidate: candidate),
+                "Unexpected target for \(candidate.rawValue)"
+            )
         }
     }
 
@@ -196,6 +219,44 @@ final class ArchiveProbeManagerTests: XCTestCase {
         XCTAssertFalse(presentResult.record.verifiedRemoved)
     }
 
+    func testVerifyCopyRejectsTamperedTargetPathOutsideApprovedDirectories() throws {
+        let record = try prepareSingleArchive()
+        let outsideURL = tempDir.appendingPathComponent("outside-target.archive")
+        try "outside content".write(to: outsideURL, atomically: true, encoding: .utf8)
+        let tampered = try saveTamperedRecord(record, candidateTargetPath: outsideURL.path)
+
+        XCTAssertThrowsUnsafePath(try manager.verifyCopy(id: tampered.id))
+    }
+
+    func testVerifyRemovalRejectsTamperedTargetPathOutsideApprovedDirectories() throws {
+        let record = try prepareSingleArchive()
+        let outsideURL = tempDir.appendingPathComponent("outside-removal-target.archive")
+        try "outside content".write(to: outsideURL, atomically: true, encoding: .utf8)
+        let tampered = try saveTamperedRecord(record, candidateTargetPath: outsideURL.path)
+
+        XCTAssertThrowsUnsafePath(try manager.verifyRemoval(id: tampered.id))
+    }
+
+    func testVerifyRejectsUnrelatedDirectoryWithArchivePathSuffix() throws {
+        let record = try prepareSingleArchive()
+        let unrelatedURL = tempDir
+            .appendingPathComponent("unrelated", isDirectory: true)
+            .appendingPathComponent("archive/Mac/mod/example.archive")
+        try FileManager.default.createDirectory(at: unrelatedURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "outside content".write(to: unrelatedURL, atomically: true, encoding: .utf8)
+        let tampered = try saveTamperedRecord(record, candidateTargetPath: unrelatedURL.path)
+
+        XCTAssertThrowsUnsafePath(try manager.verifyCopy(id: tampered.id))
+    }
+
+    func testVerifyRejectsRawTraversalInPersistedTargetPath() throws {
+        let record = try prepareSingleArchive()
+        let traversalPath = gameInstall.dataURL.path + "/archive/Mac/mod/../mod/example.archive"
+        let tampered = try saveTamperedRecord(record, candidateTargetPath: traversalPath)
+
+        XCTAssertThrowsUnsafePath(try manager.verifyRemoval(id: tampered.id))
+    }
+
     func testRecordResultPersistsAcceptedUserResults() throws {
         let record = try prepareSingleArchive()
 
@@ -221,6 +282,15 @@ final class ArchiveProbeManagerTests: XCTestCase {
         return try manager.prepare(zipURL: zipURL, gameInstall: gameInstall)
     }
 
+    private func expectedTargetPath(fileName: String, candidate: ArchiveProbeCandidate) -> String {
+        let candidateDirectory = candidate.dataRelativePath
+            .split(separator: "/")
+            .reduce(gameInstall.dataURL) { partial, component in
+                partial.appendingPathComponent(String(component), isDirectory: true)
+            }
+        return candidateDirectory.appendingPathComponent(fileName).path
+    }
+
     private func copyExtractedArchiveToTarget(_ record: ArchiveProbeRecord) throws {
         let sourceURL = extractedArchiveURL(for: record)
         let targetURL = URL(fileURLWithPath: record.candidateTargetPath)
@@ -235,6 +305,40 @@ final class ArchiveProbeManagerTests: XCTestCase {
         home.archiveProbeTmpURL
             .appendingPathComponent(record.id, isDirectory: true)
             .appendingPathComponent(record.archiveFileName)
+    }
+
+    private func saveTamperedRecord(_ record: ArchiveProbeRecord, candidateTargetPath: String) throws -> ArchiveProbeRecord {
+        let tampered = ArchiveProbeRecord(
+            id: record.id,
+            createdAt: record.createdAt,
+            modArchivePath: record.modArchivePath,
+            archiveFileName: record.archiveFileName,
+            archiveSHA256: record.archiveSHA256,
+            candidateTargetPath: candidateTargetPath,
+            commandPrinted: record.commandPrinted,
+            removalCommandPrinted: record.removalCommandPrinted,
+            verifiedCopied: record.verifiedCopied,
+            verifiedRemoved: record.verifiedRemoved,
+            userReportedResult: record.userReportedResult
+        )
+        try home.bootstrap()
+        let data = try JSONEncoder.cybermac.encode(ArchiveProbeState(records: [tampered]))
+        try data.write(to: home.archiveProbeStateURL, options: [.atomic])
+        return tampered
+    }
+
+    private func XCTAssertThrowsUnsafePath<T>(
+        _ expression: @autoclosure () throws -> T,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try expression(), file: file, line: line) { error in
+            guard case CyberMacError.unsafePath(let message) = error else {
+                XCTFail("Expected CyberMacError.unsafePath, got \(error)", file: file, line: line)
+                return
+            }
+            XCTAssertTrue(message.contains("Archive probe target path"), file: file, line: line)
+        }
     }
 
     private func makeGameInstall(name: String) throws -> GameInstall {
