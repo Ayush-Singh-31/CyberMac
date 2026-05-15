@@ -2,7 +2,7 @@ import CyberMacCore
 import SwiftUI
 
 struct BackupsView: View {
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     var body: some View {
         ScrollView {

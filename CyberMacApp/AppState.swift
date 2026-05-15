@@ -1,6 +1,7 @@
-import Combine
 import CyberMacCore
 import Foundation
+import Observation
+import os
 
 struct UserFacingError: Identifiable, Sendable {
     let id = UUID()
@@ -19,99 +20,66 @@ struct ManualCommand: Identifiable, Sendable {
     }
 }
 
-enum AppTask: Equatable, Sendable {
-    case refreshing
-    case launching
-    case preparingActivation
-    case verifyingActivation
-    case preparingInputPatch
-    case verifyingInputPatch
-    case preparingRestore
-    case verifyingRestore
-    case preparingInputRestore
-    case verifyingInputRestore
-    case changingModState
-    case renamingMod
-    case exportingDiagnostics
-    case scanningMod
-    case installingMod
-    case loadingScript
-    case savingScript
+struct AppTask: Equatable, Sendable {
+    let title: String
 
-    var title: String {
-        switch self {
-        case .refreshing:
-            return "Refreshing CyberMac state..."
-        case .launching:
-            return "Launching Cyberpunk 2077..."
-        case .preparingActivation:
-            return "Preparing activation output..."
-        case .verifyingActivation:
-            return "Verifying activation..."
-        case .preparingInputPatch:
-            return "Preparing input patch..."
-        case .verifyingInputPatch:
-            return "Verifying input patch..."
-        case .preparingRestore:
-            return "Preparing restore command..."
-        case .verifyingRestore:
-            return "Verifying restore..."
-        case .preparingInputRestore:
-            return "Preparing input restore command..."
-        case .verifyingInputRestore:
-            return "Verifying input restore..."
-        case .changingModState:
-            return "Updating mod state..."
-        case .renamingMod:
-            return "Renaming mod..."
-        case .exportingDiagnostics:
-            return "Exporting diagnostics..."
-        case .scanningMod:
-            return "Scanning mod archive..."
-        case .installingMod:
-            return "Installing mod..."
-        case .loadingScript:
-            return "Loading script..."
-        case .savingScript:
-            return "Saving script..."
-        }
-    }
+    static let refreshing            = AppTask(title: "Refreshing CyberMac state…")
+    static let launching             = AppTask(title: "Launching Cyberpunk 2077…")
+    static let preparingActivation   = AppTask(title: "Preparing activation output…")
+    static let verifyingActivation   = AppTask(title: "Verifying activation…")
+    static let preparingInputPatch   = AppTask(title: "Preparing input patch…")
+    static let verifyingInputPatch   = AppTask(title: "Verifying input patch…")
+    static let preparingRestore      = AppTask(title: "Preparing restore command…")
+    static let verifyingRestore      = AppTask(title: "Verifying restore…")
+    static let preparingInputRestore = AppTask(title: "Preparing input restore command…")
+    static let verifyingInputRestore = AppTask(title: "Verifying input restore…")
+    static let changingModState      = AppTask(title: "Updating mod state…")
+    static let renamingMod           = AppTask(title: "Renaming mod…")
+    static let exportingDiagnostics  = AppTask(title: "Exporting diagnostics…")
+    static let scanningMod           = AppTask(title: "Scanning mod archive…")
+    static let installingMod         = AppTask(title: "Installing mod…")
+    static let loadingScript         = AppTask(title: "Loading script…")
+    static let savingScript          = AppTask(title: "Saving script…")
+}
+
+extension Logger {
+    static let activation = Logger(subsystem: "com.cybermac.app", category: "activation")
+    static let mods       = Logger(subsystem: "com.cybermac.app", category: "mods")
+    static let state      = Logger(subsystem: "com.cybermac.app", category: "state")
 }
 
 @MainActor
-final class CyberMacAppState: ObservableObject {
-    @Published var doctor: DoctorReport?
-    @Published var cache: BundleCacheClassification?
-    @Published var mods: [InstalledModManifest] = []
-    @Published var backups: [BundleBackupManifest] = []
-    @Published var inputStatus: InputPatchStatus?
-    @Published var inputBackups: [InputConfigBackupManifest] = []
-    @Published var scanResult: ModScanResult?
-    @Published var scannedArchiveURL: URL?
-    @Published var currentTask: AppTask?
-    @Published var lastError: UserFacingError?
-    @Published var commandToRun: ManualCommand?
-    @Published var pendingRestoreBackupID: String?
-    @Published var pendingInputConfigBackupID: String?
-    @Published var snapshotWarnings: [SnapshotWarning] = []
-    @Published var developerMode: Bool {
-        didSet {
-            UserDefaults.standard.set(developerMode, forKey: Self.developerModeKey)
-        }
-    }
-    @Published var inputLoaderWarningDismissed: Bool {
-        didSet {
-            UserDefaults.standard.set(inputLoaderWarningDismissed, forKey: Self.inputLoaderWarningDismissedKey)
-        }
-    }
-    @Published var showRawHashes: Bool {
-        didSet {
-            UserDefaults.standard.set(showRawHashes, forKey: Self.showRawHashesKey)
-        }
+@Observable
+final class CyberMacAppState {
+    var doctor: DoctorReport?
+    var cache: BundleCacheClassification?
+    var mods: [InstalledModManifest] = []
+    var backups: [BundleBackupManifest] = []
+    var inputStatus: InputPatchStatus?
+    var inputBackups: [InputConfigBackupManifest] = []
+    var scanResult: ModScanResult?
+    var scannedArchiveURL: URL?
+    var currentTask: AppTask?
+    var lastError: UserFacingError?
+    var commandToRun: ManualCommand?
+    var pendingRestoreBackupID: String?
+    var pendingInputConfigBackupID: String?
+    var snapshotWarnings: [SnapshotWarning] = []
+
+    var developerMode: Bool {
+        didSet { UserDefaults.standard.set(developerMode, forKey: Self.developerModeKey) }
     }
 
-    private let container: any AppServiceProviding
-    private var activeTasks: [(id: UUID, task: AppTask)] = []
+    var inputLoaderWarningDismissed: Bool {
+        didSet { UserDefaults.standard.set(inputLoaderWarningDismissed, forKey: Self.inputLoaderWarningDismissedKey) }
+    }
+
+    var showRawHashes: Bool {
+        didSet { UserDefaults.standard.set(showRawHashes, forKey: Self.showRawHashesKey) }
+    }
+
+    @ObservationIgnored private let container: any AppServiceProviding
+    @ObservationIgnored private var currentTaskID: UUID?
     private static let developerModeKey = "CyberMacDeveloperMode"
     private static let inputLoaderWarningDismissedKey = "CyberMacInputLoaderWarningDismissed"
     private static let showRawHashesKey = "CyberMacShowRawHashes"
@@ -123,56 +91,41 @@ final class CyberMacAppState: ObservableObject {
         self.showRawHashes = UserDefaults.standard.bool(forKey: Self.showRawHashesKey)
     }
 
+    // MARK: - High-level commands
+
     func refresh() async {
-        do {
-            clearStaleCurrentTaskIfNeeded()
-            try await withCurrentTask(.refreshing) {
-                try await loadSnapshot()
-            }
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Refresh failed", message: String(describing: error))
+        await runTask(.refreshing, failureTitle: "Refresh failed") { [container] in
+            try container.loadSnapshot()
+        } onSuccess: { snapshot in
+            self.apply(snapshot: snapshot)
         }
     }
 
     func launchGame() async {
-        do {
-            try await withCurrentTask(.launching) {
-                let container = self.container
-                let plan = try await BackgroundTaskRunner.run {
-                    try container.makeLaunchPlan()
-                }
-                try Task.checkCancellation()
-                guard plan.canLaunch else {
-                    lastError = UserFacingError(
-                        title: "Launch blocked",
-                        message: plan.refusalReason ?? "CyberMac does not consider this bundle state safe to launch."
-                    )
-                    return
-                }
-                try await BackgroundTaskRunner.run {
-                    try container.launchGame(plan: plan)
-                }
-                try Task.checkCancellation()
-                lastError = nil
+        await runTask(.launching, failureTitle: "Launch failed") { [container] in
+            let plan = try container.makeLaunchPlan()
+            return plan
+        } onSuccess: { plan in
+            guard plan.canLaunch else {
+                self.lastError = UserFacingError(
+                    title: "Launch blocked",
+                    message: plan.refusalReason ?? "CyberMac does not consider this bundle state safe to launch."
+                )
+                return
             }
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Launch failed", message: String(describing: error))
+            do {
+                try self.container.launchGame(plan: plan)
+            } catch {
+                self.lastError = UserFacingError(title: "Launch failed", message: String(describing: error))
+            }
         }
     }
 
     func showActivationDryRun() async {
-        do {
-            let result = try await withCurrentTask(.preparingActivation) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.activationDryRun()
-                }
-                try Task.checkCancellation()
-                return result
-            }
-            commandToRun = ManualCommand(
+        await runTask(.preparingActivation, failureTitle: "Dry run failed") { [container] in
+            try container.activationDryRun()
+        } onSuccess: { result in
+            self.commandToRun = ManualCommand(
                 title: "Activation dry run",
                 command: """
                 Base cache snapshot:
@@ -188,59 +141,40 @@ final class CyberMacAppState: ObservableObject {
                 \(result.sudoCommandShape)
                 """
             )
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "showActivationDryRun")
-        } catch is CancellationError {
-        } catch {
-            showActivationError(title: "Dry run failed", error: error)
+        } onError: { error in
+            self.commandToRun = ManualCommand(
+                title: "Dry run failed",
+                command: "Dry run failed\n\n\(String(describing: error))"
+            )
         }
     }
 
     func generateActivation() async {
-        clearStaleCurrentTaskIfNeeded()
-        guard currentTask == nil else {
-            activationDebugLog("[ActivationUI] ignored duplicate generate while \(currentTask?.title ?? "busy")")
-            return
-        }
-        activationDebugLog("[ActivationUI] start generate")
-        do {
-            let result = try await withCurrentTask(.preparingActivation) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.generateActivation()
-                }
-                try Task.checkCancellation()
-                activationDebugLog("[ActivationUI] core activation returned")
-                return result
-            }
-            commandToRun = activationCommandPanel(for: result)
-            activationDebugLog("[ActivationUI] command stored")
-            lastError = nil
-            activationDebugLog("[ActivationUI] currentTask cleared")
-            warnIfCommandAndCurrentTaskOverlap(context: "generateActivation")
-            await refreshPreservingCommand()
-            activationDebugLog("[ActivationUI] refresh complete")
-        } catch is CancellationError {
-        } catch {
-            showActivationError(title: "Activation failed", error: error)
+        Logger.activation.debug("start generate")
+        await runTask(.preparingActivation, failureTitle: "Activation failed", refreshAfter: true) { [container] in
+            try container.generateActivation()
+        } onSuccess: { result in
+            self.commandToRun = self.activationCommandPanel(for: result)
+            Logger.activation.debug("command stored")
+        } onError: { error in
+            self.commandToRun = ManualCommand(
+                title: "Activation failed",
+                command: "Activation failed\n\n\(String(describing: error))"
+            )
         }
     }
 
     func verifyActivation() async {
-        do {
-            let result = try await withCurrentTask(.verifyingActivation) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.verifyActivation()
-                }
-                try Task.checkCancellation()
-                return result
-            }
+        await runTask(.verifyingActivation, failureTitle: "Verify activation failed", refreshAfter: true) { [container] in
+            try container.verifyActivation()
+        } onSuccess: { result in
             if result.matched {
-                commandToRun = ManualCommand(title: "Activation verified", command: "Activation verified.\nSHA-256: \(result.actualSHA256 ?? "")")
-                lastError = nil
+                self.commandToRun = ManualCommand(
+                    title: "Activation verified",
+                    command: "Activation verified.\nSHA-256: \(result.actualSHA256 ?? "")"
+                )
             } else {
-                commandToRun = ManualCommand(
+                self.commandToRun = ManualCommand(
                     title: "Activation not verified",
                     command: """
                     Activation verify failed.
@@ -256,26 +190,19 @@ final class CyberMacAppState: ObservableObject {
                     """
                 )
             }
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "verifyActivation")
-            await refreshAfterStateChange()
-        } catch is CancellationError {
-        } catch {
-            showActivationError(title: "Verify activation failed", error: error)
+        } onError: { error in
+            self.commandToRun = ManualCommand(
+                title: "Verify activation failed",
+                command: "Verify activation failed\n\n\(String(describing: error))"
+            )
         }
     }
 
     func prepareInputPatch(modID: String? = nil) async {
-        do {
-            let result = try await withCurrentTask(.preparingInputPatch) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.prepareInputPatch(modID: modID)
-                }
-                try Task.checkCancellation()
-                return result
-            }
-            commandToRun = ManualCommand(
+        await runTask(.preparingInputPatch, failureTitle: "Input patch failed", refreshAfter: true) { [container] in
+            try container.prepareInputPatch(modID: modID)
+        } onSuccess: { result in
+            self.commandToRun = ManualCommand(
                 title: "Manual input patch required",
                 command: """
                 Input patch prepared.
@@ -294,80 +221,39 @@ final class CyberMacAppState: ObservableObject {
                 \(result.verifyCommand)
                 """
             )
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "prepareInputPatch")
-            await refreshAfterStateChange()
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Input patch failed", message: String(describing: error))
         }
     }
 
     func verifyInputPatch() async {
-        do {
-            let result = try await withCurrentTask(.verifyingInputPatch) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.verifyInputPatch()
-                }
-                try Task.checkCancellation()
-                return result
-            }
+        await runTask(.verifyingInputPatch, failureTitle: "Verify input patch failed", refreshAfter: true) { [container] in
+            try container.verifyInputPatch()
+        } onSuccess: { result in
             if result.matched {
-                commandToRun = ManualCommand(title: "Input patch verified", command: "Input patch verified: active")
-                lastError = nil
+                self.commandToRun = ManualCommand(title: "Input patch verified", command: "Input patch verified: active")
             } else {
-                commandToRun = ManualCommand(
+                self.commandToRun = ManualCommand(
                     title: "Input patch not verified",
-                    command: inputPatchMismatchText(result)
+                    command: self.inputPatchMismatchText(result)
                 )
             }
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "verifyInputPatch")
-            await refreshAfterStateChange()
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Verify input patch failed", message: String(describing: error))
         }
     }
 
     func prepareRestore(backupID: String) async {
-        do {
-            let command = try await withCurrentTask(.preparingRestore) {
-                let container = self.container
-                let command = try await BackgroundTaskRunner.run {
-                    try container.restoreCommand(id: backupID)
-                }
-                try Task.checkCancellation()
-                return command
-            }
-            pendingRestoreBackupID = backupID
-            commandToRun = ManualCommand(title: "Run this in Terminal", command: command)
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "prepareRestore")
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Restore command failed", message: String(describing: error))
+        await runTask(.preparingRestore, failureTitle: "Restore command failed") { [container] in
+            try container.restoreCommand(id: backupID)
+        } onSuccess: { command in
+            self.pendingRestoreBackupID = backupID
+            self.commandToRun = ManualCommand(title: "Run this in Terminal", command: command)
         }
     }
 
     func prepareLatestVanillaRestore() async {
-        do {
-            let prepared = try await withCurrentTask(.preparingRestore) {
-                let container = self.container
-                let prepared = try await BackgroundTaskRunner.run {
-                    try container.prepareLatestVanillaRestoreCommand()
-                }
-                try Task.checkCancellation()
-                return prepared
-            }
-            pendingRestoreBackupID = prepared.backup.id
-            commandToRun = ManualCommand(title: "Manual restore required", command: prepared.command)
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "prepareLatestVanillaRestore")
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "No vanilla backup found", message: String(describing: error))
+        await runTask(.preparingRestore, failureTitle: "No vanilla backup found") { [container] in
+            try container.prepareLatestVanillaRestoreCommand()
+        } onSuccess: { prepared in
+            self.pendingRestoreBackupID = prepared.backup.id
+            self.commandToRun = ManualCommand(title: "Manual restore required", command: prepared.command)
         }
     }
 
@@ -376,42 +262,19 @@ final class CyberMacAppState: ObservableObject {
             lastError = UserFacingError(title: "No restore pending", message: "Choose a backup and prepare its restore command first.")
             return
         }
-        do {
-            let result = try await withCurrentTask(.verifyingRestore) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.verifyRestore(id: pendingRestoreBackupID)
-                }
-                try Task.checkCancellation()
-                return result
-            }
-            commandToRun = ManualCommand(title: "Restore verification", command: RestoreVerificationFormatter.format(result))
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "verifyRestore")
-            await refreshAfterStateChange()
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Verify restore failed", message: String(describing: error))
+        await runTask(.verifyingRestore, failureTitle: "Verify restore failed", refreshAfter: true) { [container] in
+            try container.verifyRestore(id: pendingRestoreBackupID)
+        } onSuccess: { result in
+            self.commandToRun = ManualCommand(title: "Restore verification", command: RestoreVerificationFormatter.format(result))
         }
     }
 
     func prepareInputConfigRestore(backupID: String) async {
-        do {
-            let commands = try await withCurrentTask(.preparingInputRestore) {
-                let container = self.container
-                let commands = try await BackgroundTaskRunner.run {
-                    try container.restoreInputConfigCommand(id: backupID)
-                }
-                try Task.checkCancellation()
-                return commands
-            }
-            pendingInputConfigBackupID = backupID
-            commandToRun = ManualCommand(title: "Manual input config restore required", command: commands.joined(separator: "\n"))
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "prepareInputConfigRestore")
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Input restore command failed", message: String(describing: error))
+        await runTask(.preparingInputRestore, failureTitle: "Input restore command failed") { [container] in
+            try container.restoreInputConfigCommand(id: backupID)
+        } onSuccess: { commands in
+            self.pendingInputConfigBackupID = backupID
+            self.commandToRun = ManualCommand(title: "Manual input config restore required", command: commands.joined(separator: "\n"))
         }
     }
 
@@ -420,95 +283,35 @@ final class CyberMacAppState: ObservableObject {
             lastError = UserFacingError(title: "No input restore pending", message: "Choose an input config backup and prepare its restore command first.")
             return
         }
-        do {
-            let result = try await withCurrentTask(.verifyingInputRestore) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.verifyInputConfigRestore(id: pendingInputConfigBackupID)
-                }
-                try Task.checkCancellation()
-                return result
-            }
-            commandToRun = ManualCommand(title: "Input restore verification", command: inputRestoreVerificationText(result))
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "verifyInputConfigRestore")
-            await refreshAfterStateChange()
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Verify input restore failed", message: String(describing: error))
+        await runTask(.verifyingInputRestore, failureTitle: "Verify input restore failed", refreshAfter: true) { [container] in
+            try container.verifyInputConfigRestore(id: pendingInputConfigBackupID)
+        } onSuccess: { result in
+            self.commandToRun = ManualCommand(title: "Input restore verification", command: self.inputRestoreVerificationText(result))
         }
     }
 
     func setMod(_ mod: InstalledModManifest, enabled: Bool) async {
         let action = enabled ? "enable" : "disable"
-        modDebugLog("[ModsUI] start \(action) \(mod.id)")
-        do {
-            _ = try await withCurrentTask(.changingModState) {
-                let container = self.container
-                let manifest = try await BackgroundTaskRunner.run {
-                    try container.setMod(mod.id, enabled: enabled)
-                }
-                try Task.checkCancellation()
-                modDebugLog("[ModsUI] core \(action) returned \(mod.id)")
-                return manifest
-            }
-            modDebugLog("[ModsUI] currentTask cleared")
-            lastError = nil
-            if let refreshError = await refreshAfterStateChange() {
-                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
-            } else {
-                modDebugLog("[ModsUI] refresh complete")
-            }
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Mod update failed", message: String(describing: error))
+        Logger.mods.debug("start \(action, privacy: .public) \(mod.id, privacy: .public)")
+        await runTask(.changingModState, failureTitle: "Mod update failed", refreshAfter: true) { [container] in
+            try container.setMod(mod.id, enabled: enabled)
         }
     }
 
     @discardableResult
     func renameMod(_ mod: InstalledModManifest, displayName: String) async -> Bool {
-        modDebugLog("[ModsUI] start rename \(mod.id)")
-        do {
-            _ = try await withCurrentTask(.renamingMod) {
-                let container = self.container
-                let manifest = try await BackgroundTaskRunner.run {
-                    try container.renameMod(mod.id, displayName: displayName)
-                }
-                try Task.checkCancellation()
-                modDebugLog("[ModsUI] core rename returned displayName=\(manifest.displayName)")
-                return manifest
-            }
-            modDebugLog("[ModsUI] currentTask cleared")
-            lastError = nil
-            if let refreshError = await refreshAfterStateChange() {
-                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
-                return false
-            }
-            modDebugLog("[ModsUI] refresh complete")
-            return true
-        } catch is CancellationError {
-            return false
-        } catch {
-            lastError = UserFacingError(title: "Rename failed", message: String(describing: error))
-            return false
+        Logger.mods.debug("start rename \(mod.id, privacy: .public)")
+        return await runTask(.renamingMod, failureTitle: "Rename failed", refreshAfter: true) { [container] in
+            try container.renameMod(mod.id, displayName: displayName)
         }
     }
 
     func scanMod(url: URL) async {
-        do {
-            try await withCurrentTask(.scanningMod) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.scanMod(url: url)
-                }
-                try Task.checkCancellation()
-                scannedArchiveURL = url
-                scanResult = result
-                lastError = nil
-            }
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Scan failed", message: String(describing: error))
+        await runTask(.scanningMod, failureTitle: "Scan failed") { [container] in
+            try container.scanMod(url: url)
+        } onSuccess: { result in
+            self.scannedArchiveURL = url
+            self.scanResult = result
         }
     }
 
@@ -517,152 +320,57 @@ final class CyberMacAppState: ObservableObject {
             lastError = UserFacingError(title: "No mod selected", message: "Drop a supported redscript mod archive first.")
             return
         }
-        do {
-            _ = try await withCurrentTask(.installingMod) {
-                let container = self.container
-                let manifest = try await BackgroundTaskRunner.run {
-                    try container.installMod(url: scannedArchiveURL)
-                }
-                try Task.checkCancellation()
-                return manifest
-            }
-            scanResult = nil
+        await runTask(.installingMod, failureTitle: "Install failed", refreshAfter: true) { [container] in
+            try container.installMod(url: scannedArchiveURL)
+        } onSuccess: { _ in
+            self.scanResult = nil
             self.scannedArchiveURL = nil
-            lastError = nil
-            await refreshAfterStateChange()
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Install failed", message: String(describing: error))
         }
     }
 
     func listEditableScripts(for modID: String) async -> [EditableScriptFile] {
-        do {
-            let files = try await withCurrentTask(.loadingScript) {
-                let container = self.container
-                let files = try await BackgroundTaskRunner.run {
-                    try container.listEditableScripts(modID: modID)
-                }
-                try Task.checkCancellation()
-                return files
-            }
-            lastError = nil
-            return files
-        } catch is CancellationError {
-            return []
-        } catch {
-            lastError = UserFacingError(title: "Script list failed", message: String(describing: error))
-            return []
+        var files: [EditableScriptFile] = []
+        await runTask(.loadingScript, failureTitle: "Script list failed") { [container] in
+            try container.listEditableScripts(modID: modID)
+        } onSuccess: { result in
+            files = result
         }
+        return files
     }
 
     func loadScript(modID: String, relativePath: String) async throws -> String {
-        do {
-            let contents = try await withCurrentTask(.loadingScript) {
-                let container = self.container
-                let contents = try await BackgroundTaskRunner.run {
-                    try container.loadScript(modID: modID, relativePath: relativePath)
-                }
-                try Task.checkCancellation()
-                return contents
-            }
-            lastError = nil
-            return contents
-        } catch let error as CancellationError {
-            throw error
-        } catch {
-            lastError = UserFacingError(title: "Script load failed", message: String(describing: error))
-            throw error
+        try await runTaskThrowing(.loadingScript, failureTitle: "Script load failed") { [container] in
+            try container.loadScript(modID: modID, relativePath: relativePath)
         }
     }
 
     func saveScript(modID: String, relativePath: String, contents: String) async throws -> ScriptSaveResult {
-        do {
-            let result = try await withCurrentTask(.savingScript) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.saveScript(modID: modID, relativePath: relativePath, contents: contents)
-                }
-                try Task.checkCancellation()
-                return result
-            }
-            lastError = nil
-            await refreshAfterStateChange()
-            return result
-        } catch let error as CancellationError {
-            throw error
-        } catch {
-            lastError = UserFacingError(title: "Script save failed", message: String(describing: error))
-            throw error
+        let result = try await runTaskThrowing(.savingScript, failureTitle: "Script save failed") { [container] in
+            try container.saveScript(modID: modID, relativePath: relativePath, contents: contents)
         }
+        await refreshAfterStateChange()
+        return result
     }
 
     func uninstallMod(_ mod: InstalledModManifest) async {
-        modDebugLog("[ModsUI] start uninstall \(mod.id)")
-        do {
-            _ = try await withCurrentTask(.changingModState) {
-                let container = self.container
-                let manifest = try await BackgroundTaskRunner.run {
-                    try container.uninstallMod(mod.id)
-                }
-                try Task.checkCancellation()
-                modDebugLog("[ModsUI] core uninstall returned \(mod.id)")
-                return manifest
-            }
-            modDebugLog("[ModsUI] currentTask cleared")
-            lastError = nil
-            if let refreshError = await refreshAfterStateChange() {
-                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
-            } else {
-                modDebugLog("[ModsUI] refresh complete")
-            }
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Uninstall failed", message: String(describing: error))
+        Logger.mods.debug("start uninstall \(mod.id, privacy: .public)")
+        await runTask(.changingModState, failureTitle: "Uninstall failed", refreshAfter: true) { [container] in
+            try container.uninstallMod(mod.id)
         }
     }
 
     func deleteMod(_ mod: InstalledModManifest) async {
-        modDebugLog("[ModsUI] start delete \(mod.id)")
-        do {
-            _ = try await withCurrentTask(.changingModState) {
-                let container = self.container
-                let result = try await BackgroundTaskRunner.run {
-                    try container.deleteMod(mod.id)
-                }
-                try Task.checkCancellation()
-                modDebugLog("[ModsUI] core delete returned \(mod.id)")
-                return result
-            }
-            modDebugLog("[ModsUI] currentTask cleared")
-            lastError = nil
-            if let refreshError = await refreshAfterStateChange() {
-                modDebugLog("[ModsUI] refresh failed: \(refreshError)")
-            } else {
-                modDebugLog("[ModsUI] refresh complete")
-            }
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Delete failed", message: String(describing: error))
+        Logger.mods.debug("start delete \(mod.id, privacy: .public)")
+        await runTask(.changingModState, failureTitle: "Delete failed", refreshAfter: true) { [container] in
+            try container.deleteMod(mod.id)
         }
     }
 
     func exportDiagnostics() async {
-        do {
-            let url = try await withCurrentTask(.exportingDiagnostics) {
-                let container = self.container
-                let url = try await BackgroundTaskRunner.run {
-                    try container.exportDiagnostics()
-                }
-                try Task.checkCancellation()
-                return url
-            }
-            commandToRun = ManualCommand(title: "Diagnostic report exported", command: url.path)
-            lastError = nil
-            warnIfCommandAndCurrentTaskOverlap(context: "exportDiagnostics")
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Export failed", message: String(describing: error))
+        await runTask(.exportingDiagnostics, failureTitle: "Export failed") { [container] in
+            try container.exportDiagnostics()
+        } onSuccess: { url in
+            self.commandToRun = ManualCommand(title: "Diagnostic report exported", command: url.path)
         }
     }
 
@@ -691,27 +399,18 @@ final class CyberMacAppState: ObservableObject {
     }
 
     func clearTemporaryActivationOutputs() async {
-        do {
-            try await withCurrentTask(.refreshing) {
-                let container = self.container
-                try await BackgroundTaskRunner.run {
-                    try container.clearTemporaryActivationOutputs()
-                }
-                try Task.checkCancellation()
-                lastError = nil
-            }
-        } catch is CancellationError {
-        } catch {
-            lastError = UserFacingError(title: "Clear temporary files failed", message: String(describing: error))
+        await runTask(.refreshing, failureTitle: "Clear temporary files failed") { [container] in
+            try container.clearTemporaryActivationOutputs()
         }
     }
 
-    private func loadSnapshot() async throws {
-        let container = self.container
-        let snapshot = try await BackgroundTaskRunner.run {
-            try container.loadSnapshot()
-        }
-        try Task.checkCancellation()
+    func invalidateGameInstall() {
+        container.invalidateGameInstall()
+    }
+
+    // MARK: - Internals
+
+    private func apply(snapshot: AppSnapshot) {
         doctor = snapshot.doctor
         cache = snapshot.cache
         mods = snapshot.mods
@@ -719,17 +418,15 @@ final class CyberMacAppState: ObservableObject {
         inputStatus = snapshot.inputStatus
         inputBackups = snapshot.inputBackups
         snapshotWarnings = snapshot.warnings
-        lastError = nil
-    }
-
-    func invalidateGameInstall() {
-        container.invalidateGameInstall()
     }
 
     @discardableResult
     private func refreshAfterStateChange() async -> Error? {
         do {
-            try await loadSnapshot()
+            let container = self.container
+            let snapshot = try await BackgroundTaskRunner.run { try container.loadSnapshot() }
+            try Task.checkCancellation()
+            apply(snapshot: snapshot)
             return nil
         } catch is CancellationError {
             return CancellationError()
@@ -739,40 +436,72 @@ final class CyberMacAppState: ObservableObject {
         }
     }
 
-    private func refreshPreservingCommand() async {
-        await refreshAfterStateChange()
-    }
-
-    private func withCurrentTask<Value>(
+    @discardableResult
+    private func runTask<Value: Sendable>(
         _ task: AppTask,
-        operation: () async throws -> Value
-    ) async throws -> Value {
-        let taskID = beginCurrentTask(task)
-        return try await withTaskCancellationHandler {
-            defer { finishCurrentTask(taskID) }
-            return try await operation()
-        } onCancel: {
-            Task { @MainActor in
-                self.finishCurrentTask(taskID)
+        failureTitle: String,
+        refreshAfter: Bool = false,
+        body: @escaping @Sendable () throws -> Value,
+        onSuccess: (Value) -> Void = { _ in },
+        onError: (Error) -> Void = { _ in }
+    ) async -> Bool {
+        guard let taskID = beginCurrentTask(task) else { return false }
+        do {
+            let value = try await BackgroundTaskRunner.run(body)
+            try Task.checkCancellation()
+            finishCurrentTask(taskID)
+            onSuccess(value)
+            lastError = nil
+            if refreshAfter {
+                await refreshAfterStateChange()
             }
+            return true
+        } catch is CancellationError {
+            finishCurrentTask(taskID)
+            return false
+        } catch {
+            finishCurrentTask(taskID)
+            lastError = UserFacingError(title: failureTitle, message: String(describing: error))
+            onError(error)
+            return false
         }
     }
 
-    private func beginCurrentTask(_ task: AppTask) -> UUID {
-        clearStaleCurrentTaskIfNeeded()
-        let taskID = UUID()
-        activeTasks.append((id: taskID, task: task))
+    private func runTaskThrowing<Value: Sendable>(
+        _ task: AppTask,
+        failureTitle: String,
+        body: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        guard let taskID = beginCurrentTask(task) else {
+            throw CancellationError()
+        }
+        do {
+            let value = try await BackgroundTaskRunner.run(body)
+            try Task.checkCancellation()
+            finishCurrentTask(taskID)
+            lastError = nil
+            return value
+        } catch let error as CancellationError {
+            finishCurrentTask(taskID)
+            throw error
+        } catch {
+            finishCurrentTask(taskID)
+            lastError = UserFacingError(title: failureTitle, message: String(describing: error))
+            throw error
+        }
+    }
+
+    private func beginCurrentTask(_ task: AppTask) -> UUID? {
+        guard currentTask == nil else { return nil }
+        let id = UUID()
+        currentTaskID = id
         currentTask = task
-        return taskID
+        return id
     }
 
-    private func finishCurrentTask(_ taskID: UUID) {
-        activeTasks.removeAll { $0.id == taskID }
-        currentTask = activeTasks.last?.task
-    }
-
-    private func clearStaleCurrentTaskIfNeeded() {
-        guard currentTask != nil, activeTasks.isEmpty else { return }
+    private func finishCurrentTask(_ id: UUID) {
+        guard currentTaskID == id else { return }
+        currentTaskID = nil
         currentTask = nil
     }
 
@@ -801,40 +530,6 @@ final class CyberMacAppState: ObservableObject {
             \(result.verifyCommand)
             """
         )
-    }
-
-    private func showActivationError(title: String, error: Error) {
-        let message = String(describing: error)
-        commandToRun = ManualCommand(
-            title: title,
-            command: """
-            \(title)
-
-            \(message)
-            """
-        )
-        lastError = UserFacingError(title: title, message: message)
-        warnIfCommandAndCurrentTaskOverlap(context: title)
-    }
-
-    private func activationDebugLog(_ message: String) {
-        #if DEBUG
-        NSLog("%@", message)
-        #endif
-    }
-
-    private func modDebugLog(_ message: String) {
-        #if DEBUG
-        NSLog("%@", message)
-        #endif
-    }
-
-    private func warnIfCommandAndCurrentTaskOverlap(context: String) {
-        #if DEBUG
-        if commandToRun != nil, currentTask != nil {
-            NSLog("%@", "[AppState] warning: commandToRun and currentTask are both set after \(context)")
-        }
-        #endif
     }
 
     private func inputPatchMismatchText(_ result: InputPatchVerifyResult) -> String {

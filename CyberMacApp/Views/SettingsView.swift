@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     var body: some View {
         ScrollView {

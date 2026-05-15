@@ -2,7 +2,7 @@ import CyberMacCore
 import SwiftUI
 
 struct ModsView: View {
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     var body: some View {
         ScrollView {
@@ -122,7 +122,7 @@ struct ModsView: View {
 
 private struct ModRow: View {
     let mod: InstalledModManifest
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
     @State private var showingDeleteConfirmation = false
     @State private var showingScriptEditor = false
     @State private var showingRenameSheet = false
@@ -401,7 +401,7 @@ private struct ModRow: View {
 
 private struct RenameModView: View {
     let mod: InstalledModManifest
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     @Environment(\.dismiss) private var dismiss
     @State private var draftName: String

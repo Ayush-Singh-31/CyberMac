@@ -29,7 +29,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
 }
 
 struct RootView: View {
-    @StateObject private var appState = CyberMacAppState()
+    @State private var appState = CyberMacAppState()
     @State private var selection: AppScreen? = .home
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

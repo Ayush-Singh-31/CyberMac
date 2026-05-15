@@ -4,7 +4,7 @@ import SwiftUI
 
 struct ModScriptEditorView: View {
     let mod: InstalledModManifest
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     @Environment(\.dismiss) private var dismiss
     @State private var scripts: [EditableScriptFile] = []
