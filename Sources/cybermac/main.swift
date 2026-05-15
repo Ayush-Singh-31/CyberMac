@@ -124,6 +124,7 @@ struct CyberMacCLI {
           cybermac archive-research seal [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-patch manual-plan <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch list-backups
           cybermac archive-patch restore-official <backup-id> [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
           cybermac mod-lab assess <mod.zip> [--goal clothing|skin|ui|unknown]
@@ -458,6 +459,8 @@ struct CyberMacCLI {
             try archivePatchBackupOfficial()
         case "preflight":
             try archivePatchPreflight()
+        case "manual-plan":
+            try archivePatchManualPlan()
         case "list-backups":
             try archivePatchListBackups()
         case "restore-official":
@@ -499,6 +502,19 @@ struct CyberMacCLI {
             preferredGameAppPath: optionValue("--game-app")
         )
         print(OfficialArchivePreflightFormatter.format(result))
+    }
+
+    private func archivePatchManualPlan() throws {
+        let positionals = archivePatchPositionals(valueFlags: ["--game-app"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch manual-plan <relative-archive-path> [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let result = OfficialArchiveBackupManager(home: home).preflight(
+            relativeArchivePath: positionals[0],
+            preferredGameAppPath: optionValue("--game-app")
+        )
+        print(OfficialArchiveManualPlanFormatter.format(result))
     }
 
     private func archivePatchListBackups() throws {

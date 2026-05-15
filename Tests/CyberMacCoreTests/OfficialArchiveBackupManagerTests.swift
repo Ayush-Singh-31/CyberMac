@@ -440,6 +440,203 @@ final class OfficialArchiveBackupManagerTests: XCTestCase {
         XCTAssertFalse(formatted.contains("sudo cp"))
     }
 
+    func testManualPlanRejectsAbsolutePaths() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+
+        assertManualPlanBlocked(relativeArchivePath: "/Data/archive/Mac/content/basegame.archive", gameInstall: game)
+    }
+
+    func testManualPlanRejectsTraversalPaths() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+
+        assertManualPlanBlocked(relativeArchivePath: "Data/archive/Mac/content/../ep1/bad.archive", gameInstall: game)
+    }
+
+    func testManualPlanRejectsNonArchivePaths() throws {
+        let textRelativePath = "Data/archive/Mac/content/readme.txt"
+        let game = try makeGameInstall(
+            archiveFiles: [textRelativePath: "not an archive"],
+            codeResourcesPaths: [textRelativePath]
+        )
+
+        assertManualPlanBlocked(relativeArchivePath: textRelativePath, gameInstall: game)
+    }
+
+    func testManualPlanRejectsDataArchiveMacMod() throws {
+        let relativePath = "Data/archive/Mac/mod/bad.archive"
+        let game = try makeGameInstall(
+            archiveFiles: [relativePath: "bad"],
+            codeResourcesPaths: [relativePath]
+        )
+
+        assertManualPlanBlocked(relativeArchivePath: relativePath, gameInstall: game)
+    }
+
+    func testManualPlanRejectsDataArchivePCMod() throws {
+        let relativePath = "Data/archive/pc/mod/bad.archive"
+        let game = try makeGameInstall(
+            archiveFiles: [relativePath: "bad"],
+            codeResourcesPaths: [relativePath]
+        )
+
+        assertManualPlanBlocked(relativeArchivePath: relativePath, gameInstall: game)
+    }
+
+    func testManualPlanRejectsDataArchivePCContent() throws {
+        let relativePath = "Data/archive/pc/content/bad.archive"
+        let game = try makeGameInstall(
+            archiveFiles: [relativePath: "bad"],
+            codeResourcesPaths: [relativePath]
+        )
+
+        assertManualPlanBlocked(relativeArchivePath: relativePath, gameInstall: game)
+    }
+
+    func testManualPlanRejectsArchiveNotListedInCodeResources() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: []
+        )
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("Status: BLOCKED"))
+        XCTAssertTrue(formatted.contains("Validation failed."))
+        XCTAssertTrue(formatted.contains("CodeResources"))
+        XCTAssertFalse(formatted.contains("Manual experiment checklist:"))
+        XCTAssertFalse(formatted.contains("Manual restore command:"))
+    }
+
+    func testManualPlanPrintsPristineChecklistWithBackupIDAndHash() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        let metadata = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("Official archive manual patch plan"))
+        XCTAssertTrue(formatted.contains("Status: PRISTINE"))
+        XCTAssertTrue(formatted.contains("Backup ID: \(metadata.backupID)"))
+        XCTAssertTrue(formatted.contains("Backup SHA-256: \(metadata.originalSHA256)"))
+        XCTAssertTrue(formatted.contains("Archive is safe to use as a baseline."))
+        XCTAssertTrue(formatted.contains("Manual experiment checklist:"))
+    }
+
+    func testManualPlanPristineIncludesPreflightBeforeAndAfterCopy() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        _ = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("Run preflight and confirm PRISTINE:"))
+        XCTAssertTrue(formatted.contains("Run preflight again before copying."))
+        XCTAssertTrue(formatted.contains("Run preflight again and expect MODIFIED:"))
+        XCTAssertTrue(formatted.contains("swift run cybermac archive-patch preflight \(contentRelativePath)"))
+    }
+
+    func testManualPlanPristineIncludesRestoreVerifyFinalPreflightAndWarnings() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        let metadata = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("swift run cybermac archive-patch restore-official \(metadata.backupID) --dry-run"))
+        XCTAssertTrue(formatted.contains("swift run cybermac archive-patch restore-official \(metadata.backupID) --verify"))
+        XCTAssertTrue(formatted.contains("Run preflight again and expect PRISTINE:"))
+        XCTAssertTrue(formatted.contains("Warnings:"))
+        XCTAssertTrue(formatted.contains("Do not test clothing yet."))
+        XCTAssertTrue(formatted.contains("Do not patch basegame_4_appearance.archive or gamedata archives yet."))
+        XCTAssertTrue(formatted.contains("CyberMac should not automate WolvenKit or sudo copy operations."))
+    }
+
+    func testManualPlanNoBackupPrintsBackupCommandAndNoPatchSteps() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("Status: NO_BACKUP"))
+        XCTAssertTrue(formatted.contains("Do not patch yet."))
+        XCTAssertTrue(formatted.contains("swift run cybermac archive-patch backup-official \(contentRelativePath)"))
+        XCTAssertTrue(formatted.contains("swift run cybermac archive-patch preflight \(contentRelativePath)"))
+        XCTAssertFalse(formatted.contains("Manual experiment checklist:"))
+        XCTAssertFalse(formatted.contains("Make one tiny visible UI/menu change only."))
+    }
+
+    func testManualPlanModifiedPrintsManualRestoreCommandAndNoPatchSteps() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        let metadata = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+        try "changed archive".write(to: archiveURL(relativePath: contentRelativePath, gameInstall: game), atomically: true, encoding: .utf8)
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("Status: MODIFIED"))
+        XCTAssertTrue(formatted.contains("Do not begin a new experiment."))
+        XCTAssertTrue(formatted.contains("Manual restore command:"))
+        XCTAssertTrue(formatted.contains("sudo cp \(PathSafety.shellQuoted(metadata.backupFilePath))"))
+        XCTAssertTrue(formatted.contains("swift run cybermac archive-patch restore-official \(metadata.backupID) --verify"))
+        XCTAssertFalse(formatted.contains("Manual experiment checklist:"))
+        XCTAssertFalse(formatted.contains("Make one tiny visible UI/menu change only."))
+    }
+
+    func testManualPlanMissingPrintsManualRestoreCommandWhenBackupExistsAndNoPatchSteps() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        let metadata = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+        try FileManager.default.removeItem(at: archiveURL(relativePath: contentRelativePath, gameInstall: game))
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("Status: MISSING"))
+        XCTAssertTrue(formatted.contains("Do not launch or patch."))
+        XCTAssertTrue(formatted.contains("Official archive is missing."))
+        XCTAssertTrue(formatted.contains("Manual restore command:"))
+        XCTAssertTrue(formatted.contains("sudo cp \(PathSafety.shellQuoted(metadata.backupFilePath))"))
+        XCTAssertTrue(formatted.contains("swift run cybermac archive-patch restore-official \(metadata.backupID) --verify"))
+        XCTAssertFalse(formatted.contains("Manual experiment checklist:"))
+        XCTAssertFalse(formatted.contains("Make one tiny visible UI/menu change only."))
+    }
+
+    func testManualPlanRejectsTamperedMetadataBackupFilePathOutsideBackupRootBeforePrintingRestoreCommand() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        let metadata = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+        let outsideURL = tempDir.appendingPathComponent("outside-manual-plan.archive")
+        try "outside backup".write(to: outsideURL, atomically: true, encoding: .utf8)
+        try saveTamperedMetadata(copyMetadata(metadata, backupFilePath: outsideURL.path))
+        try "changed archive".write(to: archiveURL(relativePath: contentRelativePath, gameInstall: game), atomically: true, encoding: .utf8)
+
+        let formatted = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertTrue(formatted.contains("Status: BLOCKED"))
+        XCTAssertTrue(formatted.contains("Validation failed."))
+        XCTAssertFalse(formatted.contains("Manual restore command:"))
+        XCTAssertFalse(formatted.contains("sudo cp"))
+    }
+
     func testTamperedMetadataBackupFilePathOutsideBackupRootIsRejected() throws {
         let game = try makeGameInstall(
             archiveFiles: [contentRelativePath: "official content archive"],
@@ -498,7 +695,7 @@ final class OfficialArchiveBackupManagerTests: XCTestCase {
         }
     }
 
-    func testBackupPreflightListDryRunAndVerifyDoNotModifyGameBundleFiles() throws {
+    func testManualPlanPreflightListDryRunAndVerifyDoNotModifyGameBundleFilesOrBackupMetadata() throws {
         let game = try makeGameInstall(
             archiveFiles: [contentRelativePath: "official content archive"],
             codeResourcesPaths: [contentRelativePath]
@@ -506,12 +703,15 @@ final class OfficialArchiveBackupManagerTests: XCTestCase {
         let before = try gameBundleSnapshot(gameInstall: game)
 
         let metadata = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+        let backupMetadataBefore = try backupMetadataSnapshot()
+        _ = manualPlan(relativeArchivePath: contentRelativePath, gameInstall: game)
         _ = manager.preflight(relativeArchivePath: contentRelativePath, gameInstall: game)
         _ = try manager.list()
         _ = try manager.restoreDryRunCommand(backupID: metadata.backupID)
         _ = try manager.verifyRestore(backupID: metadata.backupID)
 
         XCTAssertEqual(try gameBundleSnapshot(gameInstall: game), before)
+        XCTAssertEqual(try backupMetadataSnapshot(), backupMetadataBefore)
     }
 
     private func makeGameInstall(
@@ -606,6 +806,26 @@ final class OfficialArchiveBackupManagerTests: XCTestCase {
         XCTAssertNil(result.manualRestoreCommand, file: file, line: line)
     }
 
+    private func assertManualPlanBlocked(
+        relativeArchivePath: String,
+        gameInstall: GameInstall,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let formatted = manualPlan(relativeArchivePath: relativeArchivePath, gameInstall: gameInstall)
+        XCTAssertTrue(formatted.contains("Status: BLOCKED"), file: file, line: line)
+        XCTAssertTrue(formatted.contains("Validation failed."), file: file, line: line)
+        XCTAssertTrue(formatted.contains("No experiment plan printed."), file: file, line: line)
+        XCTAssertFalse(formatted.contains("Manual experiment checklist:"), file: file, line: line)
+        XCTAssertFalse(formatted.contains("Manual restore command:"), file: file, line: line)
+    }
+
+    private func manualPlan(relativeArchivePath: String, gameInstall: GameInstall) -> String {
+        OfficialArchiveManualPlanFormatter.format(
+            manager.preflight(relativeArchivePath: relativeArchivePath, gameInstall: gameInstall)
+        )
+    }
+
     private func gameBundleSnapshot(gameInstall: GameInstall) throws -> [String: String] {
         let contentsURL = gameInstall.appURL.appendingPathComponent("Contents", isDirectory: true)
         guard let enumerator = FileManager.default.enumerator(
@@ -622,6 +842,28 @@ final class OfficialArchiveBackupManagerTests: XCTestCase {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else { continue }
             let relativePath = try PathSafety.relativePath(of: url, in: contentsURL)
+            snapshot[relativePath] = try PathSafety.sha256(url: url)
+        }
+        return snapshot
+    }
+
+    private func backupMetadataSnapshot() throws -> [String: String] {
+        guard FileManager.default.fileExists(atPath: home.officialArchiveBackupsURL.path),
+              let enumerator = FileManager.default.enumerator(
+                  at: home.officialArchiveBackupsURL,
+                  includingPropertiesForKeys: [.isRegularFileKey],
+                  options: [.skipsHiddenFiles]
+              )
+        else {
+            return [:]
+        }
+
+        var snapshot: [String: String] = [:]
+        for item in enumerator {
+            guard let url = item as? URL else { continue }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else { continue }
+            let relativePath = try PathSafety.relativePath(of: url, in: home.officialArchiveBackupsURL)
             snapshot[relativePath] = try PathSafety.sha256(url: url)
         }
         return snapshot

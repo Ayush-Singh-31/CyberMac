@@ -153,6 +153,140 @@ public enum OfficialArchivePreflightFormatter {
     }
 }
 
+public enum OfficialArchiveManualPlanFormatter {
+    public static func format(_ result: OfficialArchivePreflightResult) -> String {
+        var lines: [String] = [
+            "Official archive manual patch plan",
+            "Status: \(result.status.rawValue)",
+            "Relative path: \(result.relativeArchivePath)"
+        ]
+        lines.append("Destination: \(result.destinationPath ?? "unresolved")")
+        if let currentSHA256 = result.currentSHA256 {
+            lines.append("Current SHA-256: \(currentSHA256)")
+        }
+        if let backupID = result.newestBackupID {
+            lines.append("Backup ID: \(backupID)")
+        }
+        if let backupSHA256 = result.expectedOriginalSHA256 {
+            lines.append("Backup SHA-256: \(backupSHA256)")
+        }
+
+        switch result.status {
+        case .pristine:
+            appendPristinePlan(to: &lines, result: result)
+        case .noBackup:
+            appendNoBackupPlan(to: &lines, result: result)
+        case .modified:
+            appendModifiedPlan(to: &lines, result: result)
+        case .missing:
+            appendMissingPlan(to: &lines, result: result)
+        case .blocked:
+            appendBlockedPlan(to: &lines, result: result)
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static func appendPristinePlan(to lines: inout [String], result: OfficialArchivePreflightResult) {
+        lines.append("")
+        lines.append("Archive is safe to use as a baseline.")
+        lines.append("")
+        lines.append("Manual experiment checklist:")
+        lines.append("1. Run preflight and confirm PRISTINE:")
+        lines.append("   \(preflightCommand(relativePath: result.relativeArchivePath))")
+        lines.append("2. Export the archive externally with WolvenKit CLI or another trusted Cyberpunk archive tool.")
+        lines.append("3. Make one tiny visible UI/menu change only.")
+        lines.append("4. Repack the archive externally.")
+        lines.append("5. Run preflight again before copying.")
+        lines.append("6. Manually copy the repacked archive into the official path with sudo cp.")
+        lines.append("7. Run preflight again and expect MODIFIED:")
+        lines.append("   \(preflightCommand(relativePath: result.relativeArchivePath))")
+        lines.append("8. Launch the game and check launch success plus visible change.")
+        lines.append("9. Record the result manually.")
+        lines.append("10. Restore the original archive using CyberMac restore dry-run output:")
+        lines.append("    \(restoreCommand(backupID: result.newestBackupID, mode: "--dry-run"))")
+        lines.append("11. Run restore --verify:")
+        lines.append("    \(restoreCommand(backupID: result.newestBackupID, mode: "--verify"))")
+        lines.append("12. Run preflight again and expect PRISTINE:")
+        lines.append("    \(preflightCommand(relativePath: result.relativeArchivePath))")
+        appendWarnings(to: &lines)
+    }
+
+    private static func appendNoBackupPlan(to lines: inout [String], result: OfficialArchivePreflightResult) {
+        lines.append("")
+        lines.append("Do not patch yet.")
+        lines.append("No matching CyberMac official backup exists.")
+        lines.append("")
+        lines.append("Suggested backup command:")
+        lines.append(result.suggestedBackupCommand ?? backupCommand(relativePath: result.relativeArchivePath))
+        lines.append("")
+        lines.append("Suggested preflight command after backup:")
+        lines.append(preflightCommand(relativePath: result.relativeArchivePath))
+    }
+
+    private static func appendModifiedPlan(to lines: inout [String], result: OfficialArchivePreflightResult) {
+        lines.append("")
+        lines.append("Do not begin a new experiment.")
+        lines.append("Current archive differs from the newest CyberMac official backup.")
+        appendRestoreRecovery(to: &lines, result: result)
+    }
+
+    private static func appendMissingPlan(to lines: inout [String], result: OfficialArchivePreflightResult) {
+        lines.append("")
+        lines.append("Do not launch or patch.")
+        lines.append("Official archive is missing.")
+        appendRestoreRecovery(to: &lines, result: result)
+    }
+
+    private static func appendBlockedPlan(to lines: inout [String], result: OfficialArchivePreflightResult) {
+        lines.append("")
+        lines.append("Validation failed.")
+        lines.append("Reason: \(result.reason ?? "unknown")")
+        lines.append("No experiment plan printed.")
+    }
+
+    private static func appendRestoreRecovery(to lines: inout [String], result: OfficialArchivePreflightResult) {
+        if let manualRestoreCommand = result.manualRestoreCommand {
+            lines.append("")
+            lines.append("Manual restore command:")
+            lines.append(manualRestoreCommand)
+        } else {
+            lines.append("")
+            lines.append("Manual restore command: unavailable")
+        }
+
+        lines.append("")
+        lines.append("After manual restore:")
+        lines.append(restoreCommand(backupID: result.newestBackupID, mode: "--verify"))
+        lines.append(preflightCommand(relativePath: result.relativeArchivePath))
+    }
+
+    private static func appendWarnings(to lines: inout [String]) {
+        lines.append("")
+        lines.append("Warnings:")
+        lines.append("- Do not test clothing yet.")
+        lines.append("- Do not test large gameplay archives yet.")
+        lines.append("- Do not patch basegame_4_appearance.archive or gamedata archives yet.")
+        lines.append("- Keep this first experiment limited to basegame_2_mainmenu.archive.")
+        lines.append("- CyberMac should not automate WolvenKit or sudo copy operations.")
+    }
+
+    private static func backupCommand(relativePath: String) -> String {
+        "swift run cybermac archive-patch backup-official \(relativePath)"
+    }
+
+    private static func preflightCommand(relativePath: String) -> String {
+        "swift run cybermac archive-patch preflight \(relativePath)"
+    }
+
+    private static func restoreCommand(backupID: String?, mode: String) -> String {
+        guard let backupID else {
+            return "swift run cybermac archive-patch restore-official <backup-id> \(mode)"
+        }
+        return "swift run cybermac archive-patch restore-official \(backupID) \(mode)"
+    }
+}
+
 public struct OfficialArchiveBackupManager: Sendable {
     private static let metadataFileName = "metadata.json"
 
