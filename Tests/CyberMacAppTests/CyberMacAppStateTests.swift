@@ -134,6 +134,10 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
     func restoreInputConfigCommand(id: String) throws -> [String] { throw FakeError.unexpectedCall }
     func verifyInputConfigRestore(id: String) throws -> InputConfigRestoreVerificationResult { throw FakeError.unexpectedCall }
     func backupDirectoryPath(id: String) -> String { "/tmp/\(id)" }
+    func inputStatus() throws -> InputPatchStatus { throw FakeError.unexpectedCall }
+    func listInputBackups() throws -> [InputConfigBackupManifest] { throw FakeError.unexpectedCall }
+    func inputBackupDirectoryPath(id: String) -> String { "/tmp/input/\(id)" }
+    func invalidateGameInstall() { }
     func setMod(_ id: String, enabled: Bool) throws -> InstalledModManifest { throw FakeError.unexpectedCall }
     func renameMod(_ id: String, displayName: String) throws -> InstalledModManifest { throw FakeError.unexpectedCall }
     func uninstallMod(_ id: String) throws -> InstalledModManifest { throw FakeError.unexpectedCall }
@@ -205,7 +209,8 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
             mods: [],
             backups: [],
             inputStatus: nil,
-            inputBackups: []
+            inputBackups: [],
+            warnings: []
         )
     }
 }

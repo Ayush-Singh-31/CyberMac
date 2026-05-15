@@ -2,6 +2,12 @@ import AppKit
 import CyberMacCore
 import Foundation
 
+struct SnapshotWarning: Sendable, Identifiable {
+    let id = UUID()
+    let area: String
+    let message: String
+}
+
 struct AppSnapshot: Sendable {
     let doctor: DoctorReport
     let cache: BundleCacheClassification?
@@ -9,10 +15,12 @@ struct AppSnapshot: Sendable {
     let backups: [BundleBackupManifest]
     let inputStatus: InputPatchStatus?
     let inputBackups: [InputConfigBackupManifest]
+    let warnings: [SnapshotWarning]
 }
 
 protocol AppServiceProviding: Sendable {
     func loadSnapshot() throws -> AppSnapshot
+    func invalidateGameInstall()
     func makeLaunchPlan() throws -> LaunchGamePlan
     func launchGame(plan: LaunchGamePlan) throws
     func activationDryRun() throws -> ActivationDryRunResult
@@ -26,6 +34,9 @@ protocol AppServiceProviding: Sendable {
     func restoreInputConfigCommand(id: String) throws -> [String]
     func verifyInputConfigRestore(id: String) throws -> InputConfigRestoreVerificationResult
     func backupDirectoryPath(id: String) -> String
+    func inputStatus() throws -> InputPatchStatus
+    func listInputBackups() throws -> [InputConfigBackupManifest]
+    func inputBackupDirectoryPath(id: String) -> String
     func setMod(_ id: String, enabled: Bool) throws -> InstalledModManifest
     func renameMod(_ id: String, displayName: String) throws -> InstalledModManifest
     func uninstallMod(_ id: String) throws -> InstalledModManifest
@@ -41,22 +52,102 @@ protocol AppServiceProviding: Sendable {
     func clearTemporaryActivationOutputs() throws
 }
 
+final class GameInstallCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cached: GameInstall?
+    private let detector: GameInstallDetector
+
+    init(detector: GameInstallDetector = GameInstallDetector()) {
+        self.detector = detector
+    }
+
+    func resolve() throws -> GameInstall {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached { return cached }
+        let install = try detector.detect()
+        cached = install
+        return install
+    }
+
+    func invalidate() {
+        lock.lock()
+        defer { lock.unlock() }
+        cached = nil
+    }
+}
+
 struct AppServiceContainer: AppServiceProviding {
     let home: CyberMacHomeManager
+    private let gameInstallCache: GameInstallCache
 
     init(home: CyberMacHomeManager = CyberMacHomeManager()) {
         self.home = home
+        self.gameInstallCache = GameInstallCache()
+    }
+
+    func invalidateGameInstall() {
+        gameInstallCache.invalidate()
+    }
+
+    private func currentGameInstall() throws -> GameInstall {
+        try gameInstallCache.resolve()
+    }
+
+    private func currentGameInstallIfAvailable() -> GameInstall? {
+        try? gameInstallCache.resolve()
     }
 
     func loadSnapshot() throws -> AppSnapshot {
         try home.bootstrap()
         let report = try DoctorReporter(home: home).makeReport()
-        let game = try? GameInstallDetector().detect()
-        let cache = try game.map { try BundleStateResolver(home: home).classify(gameInstall: $0) }
-        let mods = (try? ModStateManager(home: home).list()) ?? []
-        let backups = (try? BundleBackupManager(home: home).list()) ?? []
-        let inputStatus = try? InputMappingManager(home: home).status(gameInstall: game)
-        let inputBackups = (try? InputConfigBackupManager(home: home).list()) ?? []
+        let game = currentGameInstallIfAvailable()
+
+        var warnings: [SnapshotWarning] = []
+
+        let cache: BundleCacheClassification?
+        if let game {
+            do {
+                cache = try BundleStateResolver(home: home).classify(gameInstall: game)
+            } catch {
+                cache = nil
+                warnings.append(SnapshotWarning(area: "cache", message: String(describing: error)))
+            }
+        } else {
+            cache = nil
+        }
+
+        let mods: [InstalledModManifest]
+        do {
+            mods = try ModStateManager(home: home).list()
+        } catch {
+            mods = []
+            warnings.append(SnapshotWarning(area: "mods", message: String(describing: error)))
+        }
+
+        let backups: [BundleBackupManifest]
+        do {
+            backups = try BundleBackupManager(home: home).list()
+        } catch {
+            backups = []
+            warnings.append(SnapshotWarning(area: "backups", message: String(describing: error)))
+        }
+
+        let inputStatus: InputPatchStatus?
+        do {
+            inputStatus = try InputMappingManager(home: home).status(gameInstall: game)
+        } catch {
+            inputStatus = nil
+            warnings.append(SnapshotWarning(area: "input-status", message: String(describing: error)))
+        }
+
+        let inputBackups: [InputConfigBackupManifest]
+        do {
+            inputBackups = try InputConfigBackupManager(home: home).list()
+        } catch {
+            inputBackups = []
+            warnings.append(SnapshotWarning(area: "input-backups", message: String(describing: error)))
+        }
 
         return AppSnapshot(
             doctor: report,
@@ -64,7 +155,8 @@ struct AppServiceContainer: AppServiceProviding {
             mods: mods,
             backups: backups,
             inputStatus: inputStatus,
-            inputBackups: inputBackups
+            inputBackups: inputBackups,
+            warnings: warnings
         )
     }
 
@@ -77,47 +169,50 @@ struct AppServiceContainer: AppServiceProviding {
     }
 
     func activationDryRun() throws -> ActivationDryRunResult {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try ActivationManager(home: home).dryRun(gameInstall: game)
     }
 
     func generateActivation() throws -> ActivationBundleModeResult {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try ActivationManager(home: home).activateBundleMode(gameInstall: game)
     }
 
     func verifyActivation() throws -> ActivationVerifyResult {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try ActivationManager(home: home).verify(gameInstall: game)
     }
 
     func restoreCommand(id: String) throws -> String {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try BundleBackupManager(home: home).restoreCommand(id: id, gameInstall: game)
     }
 
     func prepareLatestVanillaRestoreCommand() throws -> (backup: BundleBackupManifest, command: String) {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try BundleBackupManager(home: home).latestVanillaRestoreCommand(gameInstall: game)
     }
 
     func verifyRestore(id: String) throws -> RestoreVerificationResult {
-        let game = try GameInstallDetector().detect()
-        return try BundleBackupManager(home: home).verifyRestore(id: id, gameInstall: game)
+        let game = try currentGameInstall()
+        let manager = BundleBackupManager(home: home)
+        let result = try manager.verifyRestore(id: id, gameInstall: game)
+        try manager.reconcileAfterVerifiedRestore(id: id, gameInstall: game, result: result)
+        return result
     }
 
     func inputStatus() throws -> InputPatchStatus {
-        let game = try? GameInstallDetector().detect()
+        let game = currentGameInstallIfAvailable()
         return try InputMappingManager(home: home).status(gameInstall: game)
     }
 
     func prepareInputPatch(modID: String?) throws -> InputPatchPrepareResult {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try InputMappingManager(home: home).preparePatch(gameInstall: game, modIDs: modID.map { [$0] })
     }
 
     func verifyInputPatch() throws -> InputPatchVerifyResult {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try InputMappingManager(home: home).verifyPatch(gameInstall: game)
     }
 
@@ -126,12 +221,12 @@ struct AppServiceContainer: AppServiceProviding {
     }
 
     func restoreInputConfigCommand(id: String) throws -> [String] {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try InputConfigBackupManager(home: home).restoreCommands(id: id, gameInstall: game)
     }
 
     func verifyInputConfigRestore(id: String) throws -> InputConfigRestoreVerificationResult {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try InputConfigBackupManager(home: home).verifyRestore(id: id, gameInstall: game)
     }
 
@@ -165,7 +260,7 @@ struct AppServiceContainer: AppServiceProviding {
     }
 
     func installMod(url: URL) throws -> InstalledModManifest {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         return try RedscriptModInstaller(home: home).install(zipURL: url, gameInstall: game)
     }
 
@@ -182,7 +277,7 @@ struct AppServiceContainer: AppServiceProviding {
     }
 
     func exportDiagnostics() throws -> URL {
-        let game = try? GameInstallDetector().detect()
+        let game = currentGameInstallIfAvailable()
         return try DiagnosticsExporter(home: home).export(gameInstall: game)
     }
 
@@ -192,7 +287,7 @@ struct AppServiceContainer: AppServiceProviding {
     }
 
     func revealGameApp() throws {
-        let game = try GameInstallDetector().detect()
+        let game = try currentGameInstall()
         NSWorkspace.shared.activateFileViewerSelecting([game.appURL])
     }
 

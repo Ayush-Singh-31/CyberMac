@@ -93,6 +93,7 @@ final class CyberMacAppState: ObservableObject {
     @Published var commandToRun: ManualCommand?
     @Published var pendingRestoreBackupID: String?
     @Published var pendingInputConfigBackupID: String?
+    @Published var snapshotWarnings: [SnapshotWarning] = []
     @Published var developerMode: Bool {
         didSet {
             UserDefaults.standard.set(developerMode, forKey: Self.developerModeKey)
@@ -717,7 +718,12 @@ final class CyberMacAppState: ObservableObject {
         backups = snapshot.backups
         inputStatus = snapshot.inputStatus
         inputBackups = snapshot.inputBackups
+        snapshotWarnings = snapshot.warnings
         lastError = nil
+    }
+
+    func invalidateGameInstall() {
+        container.invalidateGameInstall()
     }
 
     @discardableResult

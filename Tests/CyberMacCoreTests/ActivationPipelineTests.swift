@@ -191,6 +191,7 @@ final class ActivationPipelineTests: XCTestCase {
 
         let verified = try backupManager.verifyRestore(id: backup.id, gameInstall: game)
         XCTAssertEqual(verified.status, .verified(target: target.path))
+        try backupManager.reconcileAfterVerifiedRestore(id: backup.id, gameInstall: game, result: verified)
         let state = StateStore(home: home).load()
         XCTAssertEqual(state.activationState, .requiresBundleActivation)
         XCTAssertFalse(state.bundleChangedSinceLastActivation)
@@ -245,6 +246,7 @@ final class ActivationPipelineTests: XCTestCase {
 
         let result = try backupManager.verifyRestore(id: backup.id, gameInstall: game)
         XCTAssertEqual(result.status, .verified(target: target.path))
+        try backupManager.reconcileAfterVerifiedRestore(id: backup.id, gameInstall: game, result: result)
         let state = StateStore(home: home).load()
         XCTAssertEqual(state.activationState, .outOfSync)
         XCTAssertFalse(state.bundleChangedSinceLastActivation)

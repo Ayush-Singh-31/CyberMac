@@ -180,18 +180,6 @@ public struct BundleBackupManager: Sendable {
                     verifyCommand: verifyCommand
                 )
             }
-            if let gameInstall,
-               let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall),
-               actual == baseSnapshotHash {
-                var state = stateStore.load()
-                let enabledMods = (try? manifestStore.list().filter { $0.status == .enabled }) ?? []
-                state.activationState = enabledMods.isEmpty ? .requiresBundleActivation : .outOfSync
-                state.bundleChangedSinceLastActivation = false
-                state.activeBundleTargetHashes = [:]
-                state.pendingExpectedHashes = [:]
-                state.pendingActivation = nil
-                try stateStore.save(state)
-            }
             return RestoreVerificationResult(
                 backupID: id,
                 status: .verified(target: targetURL.path),
@@ -199,6 +187,25 @@ public struct BundleBackupManager: Sendable {
                 verifyCommand: verifyCommand
             )
         }
+    }
+
+    public func reconcileAfterVerifiedRestore(id: String, gameInstall: GameInstall, result: RestoreVerificationResult) throws {
+        guard case .verified = result.status else { return }
+        let manifest = try load(id: id)
+        guard manifest.priorState == .present,
+              let expected = manifest.sha256,
+              let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall),
+              expected == baseSnapshotHash else {
+            return
+        }
+        var state = stateStore.load()
+        let enabledMods = (try? manifestStore.list().filter { $0.status == .enabled }) ?? []
+        state.activationState = enabledMods.isEmpty ? .requiresBundleActivation : .outOfSync
+        state.bundleChangedSinceLastActivation = false
+        state.activeBundleTargetHashes = [:]
+        state.pendingExpectedHashes = [:]
+        state.pendingActivation = nil
+        try stateStore.save(state)
     }
 
     public func backupDirectory(id: String) -> URL {

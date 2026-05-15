@@ -31,6 +31,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
 struct RootView: View {
     @StateObject private var appState = CyberMacAppState()
     @State private var selection: AppScreen? = .home
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationSplitView {
@@ -38,19 +39,40 @@ struct RootView: View {
         } detail: {
             ZStack {
                 background
-                selectedView
-                    .padding(28)
-                    .id(selection ?? .home)
-                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                VStack(spacing: 12) {
+                    if !appState.snapshotWarnings.isEmpty {
+                        VStack(spacing: 8) {
+                            ForEach(appState.snapshotWarnings) { warning in
+                                WarningBanner(
+                                    message: warning.message,
+                                    title: "Couldn't load \(warning.area)",
+                                    kind: .warning,
+                                    onDismiss: nil
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 28)
+                    }
+                    selectedView
+                        .padding(28)
+                        .id(selection ?? .home)
+                        .transition(.opacity)
+                }
             }
-            .animation(.easeOut(duration: 0.18), value: selection)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: selection)
         }
-        .alert(item: $appState.lastError) { error in
-            Alert(
-                title: Text(error.title),
-                message: Text(error.message),
-                dismissButton: .default(Text("OK"))
-            )
+        .alert(
+            appState.lastError?.title ?? "",
+            isPresented: Binding(
+                get: { appState.lastError != nil },
+                set: { if !$0 { appState.lastError = nil } }
+            ),
+            presenting: appState.lastError
+        ) { _ in
+            Button("OK", role: .cancel) { }
+        } message: { error in
+            Text(error.message)
         }
         .overlay {
             if let task = appState.currentTask {
