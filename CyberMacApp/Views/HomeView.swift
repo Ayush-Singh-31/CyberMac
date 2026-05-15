@@ -2,7 +2,7 @@ import CyberMacCore
 import SwiftUI
 
 struct HomeView: View {
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     private let columns = [
         GridItem(.flexible(), spacing: 14),

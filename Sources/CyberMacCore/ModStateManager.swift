@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let modStateLog = Logger(subsystem: "com.cybermac.core", category: "mod-state")
 
 public struct ModDeleteResult: Sendable, Equatable {
     public let modID: String
@@ -50,52 +53,76 @@ public struct ModStateManager: Sendable {
     }
 
     public func disable(id: String) throws -> InstalledModManifest {
-        var manifest = try manifestStore.load(id: id)
-        guard manifest.status == .enabled else { return manifest }
+        let originalManifest = try manifestStore.load(id: id)
+        guard originalManifest.status == .enabled else { return originalManifest }
         try home.bootstrap()
-        let files = try managedFiles(for: manifest)
-        try move(files: files, from: \.enabledURL, to: \.disabledURL)
-        manifest.status = .disabled
-        if manifest.requiresInputMappingPatch {
-            manifest.inputPatchState = .outOfSync
+        let files = try managedFiles(for: originalManifest)
+        let originalState = stateStore.load()
+        var moved: [(from: URL, to: URL)] = []
+
+        do {
+            try move(files: files, from: \.enabledURL, to: \.disabledURL, accumulating: &moved)
+            var manifest = originalManifest
+            manifest.status = .disabled
+            if manifest.requiresInputMappingPatch {
+                manifest.inputPatchState = .outOfSync
+            }
+            try manifestStore.save(manifest)
+            try stateStore.markActivationOutOfSync()
+            if manifest.requiresInputMappingPatch {
+                try stateStore.markInputPatchOutOfSync()
+                try markInputPatchManifestsOutOfSync(overrides: [manifest.id: .outOfSync])
+            }
+            return manifest
+        } catch {
+            try? stateStore.save(originalState)
+            try? manifestStore.save(originalManifest)
+            rollback(moved: moved)
+            throw error
         }
-        try manifestStore.save(manifest)
-        try stateStore.markActivationOutOfSync()
-        if manifest.requiresInputMappingPatch {
-            try stateStore.markInputPatchOutOfSync()
-            try markInputPatchManifestsOutOfSync(overrides: [manifest.id: .outOfSync])
-        }
-        return manifest
     }
 
     public func enable(id: String) throws -> InstalledModManifest {
-        var manifest = try manifestStore.load(id: id)
-        guard manifest.status == .disabled else { return manifest }
+        let originalManifest = try manifestStore.load(id: id)
+        guard originalManifest.status == .disabled else { return originalManifest }
         try home.bootstrap()
-        let files = try managedFiles(for: manifest)
-        try move(files: files, from: \.disabledURL, to: \.enabledURL)
-        manifest.status = .enabled
-        if manifest.requiresInputMappingPatch {
-            manifest.inputPatchState = .required
+        let files = try managedFiles(for: originalManifest)
+        let originalState = stateStore.load()
+        var moved: [(from: URL, to: URL)] = []
+
+        do {
+            try move(files: files, from: \.disabledURL, to: \.enabledURL, accumulating: &moved)
+            var manifest = originalManifest
+            manifest.status = .enabled
+            if manifest.requiresInputMappingPatch {
+                manifest.inputPatchState = .required
+            }
+            try manifestStore.save(manifest)
+            try stateStore.markActivationOutOfSync()
+            if manifest.requiresInputMappingPatch {
+                try stateStore.markInputPatchOutOfSync()
+                try markInputPatchManifestsOutOfSync(overrides: [manifest.id: .required])
+            }
+            return manifest
+        } catch {
+            try? stateStore.save(originalState)
+            try? manifestStore.save(originalManifest)
+            rollback(moved: moved)
+            throw error
         }
-        try manifestStore.save(manifest)
-        try stateStore.markActivationOutOfSync()
-        if manifest.requiresInputMappingPatch {
-            try stateStore.markInputPatchOutOfSync()
-            try markInputPatchManifestsOutOfSync(overrides: [manifest.id: .required])
-        }
-        return manifest
     }
 
     public func uninstall(id: String) throws -> InstalledModManifest {
-        var manifest = try manifestStore.load(id: id)
-        guard manifest.status != .uninstalled else { return manifest }
+        let originalManifest = try manifestStore.load(id: id)
+        guard originalManifest.status != .uninstalled else { return originalManifest }
         try home.bootstrap()
-        let files = try managedFiles(for: manifest)
-        let source: KeyPath<ManagedFile, URL> = manifest.status == .disabled ? \.disabledURL : \.enabledURL
+        let files = try managedFiles(for: originalManifest)
+        let source: KeyPath<ManagedFile, URL> = originalManifest.status == .disabled ? \.disabledURL : \.enabledURL
         let trashRoot = home.homeURL
             .appendingPathComponent("tmp", isDirectory: true)
             .appendingPathComponent("uninstall-\(id)-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: trashRoot) }
+        let originalState = stateStore.load()
         var moved: [(from: URL, to: URL)] = []
 
         do {
@@ -111,6 +138,7 @@ public struct ModStateManager: Sendable {
                 moved.append((from: trashURL, to: sourceURL))
                 pruneEmptyDirectories(startingAt: sourceURL.deletingLastPathComponent(), stopAt: file.root(for: sourceURL))
             }
+            var manifest = originalManifest
             manifest.status = .uninstalled
             if manifest.requiresInputMappingPatch {
                 manifest.inputPatchState = .outOfSync
@@ -121,12 +149,13 @@ public struct ModStateManager: Sendable {
                 try stateStore.markInputPatchOutOfSync()
                 try markInputPatchManifestsOutOfSync(overrides: [manifest.id: .outOfSync])
             }
-            try? FileManager.default.removeItem(at: trashRoot)
+            return manifest
         } catch {
+            try? stateStore.save(originalState)
+            try? manifestStore.save(originalManifest)
             rollback(moved: moved)
             throw error
         }
-        return manifest
     }
 
     public func deletePermanently(id: String) throws -> ModDeleteResult {
@@ -297,33 +326,36 @@ public struct ModStateManager: Sendable {
         state.pendingInputPatch?.modIDs.contains(manifest.id) == true
     }
 
-    private func move(files: [ManagedFile], from source: KeyPath<ManagedFile, URL>, to destination: KeyPath<ManagedFile, URL>) throws {
-        var moved: [(from: URL, to: URL)] = []
-        do {
-            for file in files {
-                let sourceURL = file[keyPath: source]
-                let destinationURL = file[keyPath: destination]
-                guard FileManager.default.fileExists(atPath: sourceURL.path) else {
-                    throw CyberMacError.fileSystem("Managed file is missing; refusing to desync manifest: \(sourceURL.path)")
-                }
-                guard !FileManager.default.fileExists(atPath: destinationURL.path) else {
-                    throw CyberMacError.fileSystem("Destination already exists for managed file: \(destinationURL.path)")
-                }
-                try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
-                moved.append((from: destinationURL, to: sourceURL))
-                pruneEmptyDirectories(startingAt: sourceURL.deletingLastPathComponent(), stopAt: file.root(for: sourceURL))
+    private func move(
+        files: [ManagedFile],
+        from source: KeyPath<ManagedFile, URL>,
+        to destination: KeyPath<ManagedFile, URL>,
+        accumulating moved: inout [(from: URL, to: URL)]
+    ) throws {
+        for file in files {
+            let sourceURL = file[keyPath: source]
+            let destinationURL = file[keyPath: destination]
+            guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+                throw CyberMacError.fileSystem("Managed file is missing; refusing to desync manifest: \(sourceURL.path)")
             }
-        } catch {
-            rollback(moved: moved)
-            throw error
+            guard !FileManager.default.fileExists(atPath: destinationURL.path) else {
+                throw CyberMacError.fileSystem("Destination already exists for managed file: \(destinationURL.path)")
+            }
+            try FileManager.default.createDirectory(at: destinationURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: sourceURL, to: destinationURL)
+            moved.append((from: destinationURL, to: sourceURL))
+            pruneEmptyDirectories(startingAt: sourceURL.deletingLastPathComponent(), stopAt: file.root(for: sourceURL))
         }
     }
 
     private func rollback(moved: [(from: URL, to: URL)]) {
         for item in moved.reversed() where FileManager.default.fileExists(atPath: item.from.path) {
-            try? FileManager.default.createDirectory(at: item.to.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? FileManager.default.moveItem(at: item.from, to: item.to)
+            do {
+                try FileManager.default.createDirectory(at: item.to.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: item.from, to: item.to)
+            } catch {
+                modStateLog.error("Rollback failed for \(item.from.path, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
     }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ActivationView: View {
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     var body: some View {
         ScrollView {
@@ -150,13 +150,11 @@ struct ActivationView: View {
     }
 
     private var primaryTitle: String {
-        if appState.doctor?.activation.state == .active { return "Launch game" }
+        if appState.doctor?.activation.state == .active { return "Regenerate activation" }
         return "Generate activation"
     }
 
-    private var primaryIcon: String {
-        primaryTitle == "Launch game" ? "play.fill" : "bolt.fill"
-    }
+    private var primaryIcon: String { "bolt.fill" }
 
     private var primaryDisabled: Bool {
         if isBusy { return true }
@@ -206,11 +204,7 @@ struct ActivationView: View {
 
     private func runPrimaryAction() async {
         guard !isBusy else { return }
-        if appState.doctor?.activation.state == .active {
-            await appState.launchGame()
-        } else {
-            await appState.generateActivation()
-        }
+        await appState.generateActivation()
     }
 
     private func modCountText(_ count: Int, active: Bool) -> String {

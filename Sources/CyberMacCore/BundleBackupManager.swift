@@ -1,6 +1,22 @@
 import Foundation
+import os
 
 public struct BundleBackupManager: Sendable {
+    /// Per-fingerprint retention: keep the oldest backup + the 10 newest.
+    private static let maxCurrentFingerprintBackups = 11
+    /// Stale-fingerprint backups (different game build) trimmed when total size exceeds this budget.
+    private static let staleBackupByteBudget: UInt64 = 1_000_000_000
+
+    private static let idDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        return formatter
+    }()
+
+    private static let log = Logger(subsystem: "com.cybermac.core", category: "backups")
+
     private let home: CyberMacHomeManager
     private let baseCacheManager: BaseCacheManager
     private let manifestStore: ManifestStore
@@ -180,18 +196,6 @@ public struct BundleBackupManager: Sendable {
                     verifyCommand: verifyCommand
                 )
             }
-            if let gameInstall,
-               let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall),
-               actual == baseSnapshotHash {
-                var state = stateStore.load()
-                let enabledMods = (try? manifestStore.list().filter { $0.status == .enabled }) ?? []
-                state.activationState = enabledMods.isEmpty ? .requiresBundleActivation : .outOfSync
-                state.bundleChangedSinceLastActivation = false
-                state.activeBundleTargetHashes = [:]
-                state.pendingExpectedHashes = [:]
-                state.pendingActivation = nil
-                try stateStore.save(state)
-            }
             return RestoreVerificationResult(
                 backupID: id,
                 status: .verified(target: targetURL.path),
@@ -199,6 +203,25 @@ public struct BundleBackupManager: Sendable {
                 verifyCommand: verifyCommand
             )
         }
+    }
+
+    public func reconcileAfterVerifiedRestore(id: String, gameInstall: GameInstall, result: RestoreVerificationResult) throws {
+        guard case .verified = result.status else { return }
+        let manifest = try load(id: id)
+        guard manifest.priorState == .present,
+              let expected = manifest.sha256,
+              let baseSnapshotHash = try? baseCacheManager.currentSnapshotHash(for: gameInstall),
+              expected == baseSnapshotHash else {
+            return
+        }
+        var state = stateStore.load()
+        let enabledMods = (try? manifestStore.list().filter { $0.status == .enabled }) ?? []
+        state.activationState = enabledMods.isEmpty ? .requiresBundleActivation : .outOfSync
+        state.bundleChangedSinceLastActivation = false
+        state.activeBundleTargetHashes = [:]
+        state.pendingExpectedHashes = [:]
+        state.pendingActivation = nil
+        try stateStore.save(state)
     }
 
     public func backupDirectory(id: String) -> URL {
@@ -231,12 +254,13 @@ public struct BundleBackupManager: Sendable {
     private func pruneRetention(currentFingerprintID: String) throws {
         let manifests = try list()
         let current = manifests.filter { $0.gameFingerprintID == currentFingerprintID }.sorted { $0.createdAt < $1.createdAt }
-        if current.count > 11 {
+        if current.count > Self.maxCurrentFingerprintBackups {
+            let keepNewest = Self.maxCurrentFingerprintBackups - 1
             let oldest: Set<String> = current.first.map { Set([$0.id]) } ?? []
-            let newest = Set(current.suffix(10).map(\.id))
+            let newest = Set(current.suffix(keepNewest).map(\.id))
             let keep = oldest.union(newest)
             for manifest in current where !keep.contains(manifest.id) {
-                try? FileManager.default.removeItem(at: backupDirectory(id: manifest.id))
+                removeBackupDirectoryLogging(id: manifest.id)
             }
         }
 
@@ -247,13 +271,20 @@ public struct BundleBackupManager: Sendable {
         var staleBytes = try stale.reduce(UInt64(0)) { partial, manifest in
             partial + (try directorySize(backupDirectory(id: manifest.id)))
         }
-        let limit: UInt64 = 1_000_000_000
-        while staleBytes > limit, let manifest = stale.first {
-            let directory = backupDirectory(id: manifest.id)
-            let size = (try? directorySize(directory)) ?? 0
-            try? FileManager.default.removeItem(at: directory)
+        while staleBytes > Self.staleBackupByteBudget, let manifest = stale.first {
+            let size = (try? directorySize(backupDirectory(id: manifest.id))) ?? 0
+            removeBackupDirectoryLogging(id: manifest.id)
             staleBytes = staleBytes > size ? staleBytes - size : 0
             stale.removeFirst()
+        }
+    }
+
+    private func removeBackupDirectoryLogging(id: String) {
+        let url = backupDirectory(id: id)
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            Self.log.error("Failed to prune backup \(id, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -271,9 +302,6 @@ public struct BundleBackupManager: Sendable {
     }
 
     private static func makeID(date: Date = Date()) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
-        formatter.timeZone = TimeZone.current
-        return "\(formatter.string(from: date))-\(UUID().uuidString.prefix(8))"
+        "\(idDateFormatter.string(from: date))-\(UUID().uuidString.prefix(8))"
     }
 }

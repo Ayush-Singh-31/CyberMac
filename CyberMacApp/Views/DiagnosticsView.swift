@@ -3,7 +3,7 @@ import CyberMacCore
 import SwiftUI
 
 struct DiagnosticsView: View {
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
     @State private var copied = false
 
     var body: some View {

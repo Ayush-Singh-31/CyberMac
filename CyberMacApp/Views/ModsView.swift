@@ -2,7 +2,7 @@ import CyberMacCore
 import SwiftUI
 
 struct ModsView: View {
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     var body: some View {
         ScrollView {
@@ -86,8 +86,18 @@ struct ModsView: View {
                     Text("Installed")
                         .font(.title2.weight(.semibold))
                     if appState.mods.isEmpty {
-                        Text("No CyberMac-managed mods installed.")
-                            .foregroundStyle(.secondary)
+                        VStack(spacing: 8) {
+                            Image(systemName: "shippingbox")
+                                .font(.system(size: 32, weight: .regular))
+                                .foregroundStyle(.secondary)
+                            Text("No mods installed")
+                                .font(.callout.weight(.semibold))
+                            Text("Drop a .zip above to get started.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
                     } else {
                         LazyVStack(alignment: .leading, spacing: 14) {
                             ForEach(appState.mods, id: \.id) { mod in
@@ -122,7 +132,7 @@ struct ModsView: View {
 
 private struct ModRow: View {
     let mod: InstalledModManifest
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
     @State private var showingDeleteConfirmation = false
     @State private var showingScriptEditor = false
     @State private var showingRenameSheet = false
@@ -401,7 +411,7 @@ private struct ModRow: View {
 
 private struct RenameModView: View {
     let mod: InstalledModManifest
-    @ObservedObject var appState: CyberMacAppState
+    let appState: CyberMacAppState
 
     @Environment(\.dismiss) private var dismiss
     @State private var draftName: String

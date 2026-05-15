@@ -19,12 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         setDockIcon()
-        NSApp.activate(ignoringOtherApps: true)
-
-        Task { @MainActor in
-            self.setDockIcon()
-            NSApp.dockTile.display()
-        }
+        NSApp.activate()
     }
 
     private func setDockIcon() {
