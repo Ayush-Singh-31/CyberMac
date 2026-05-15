@@ -59,6 +59,100 @@ public struct OfficialArchiveRestoreVerificationResult: Equatable, Sendable {
     }
 }
 
+public enum OfficialArchivePreflightStatus: String, Equatable, Sendable {
+    case pristine = "PRISTINE"
+    case modified = "MODIFIED"
+    case missing = "MISSING"
+    case noBackup = "NO_BACKUP"
+    case blocked = "BLOCKED"
+}
+
+public struct OfficialArchivePreflightResult: Equatable, Sendable {
+    public let status: OfficialArchivePreflightStatus
+    public let reason: String?
+    public let relativeArchivePath: String
+    public let gameAppPath: String?
+    public let destinationPath: String?
+    public let codeResourcesListed: Bool
+    public let currentSize: UInt64?
+    public let currentSHA256: String?
+    public let newestBackupID: String?
+    public let expectedOriginalSize: UInt64?
+    public let expectedOriginalSHA256: String?
+    public let manualRestoreCommand: String?
+    public let suggestedBackupCommand: String?
+
+    public init(
+        status: OfficialArchivePreflightStatus,
+        reason: String? = nil,
+        relativeArchivePath: String,
+        gameAppPath: String?,
+        destinationPath: String?,
+        codeResourcesListed: Bool,
+        currentSize: UInt64? = nil,
+        currentSHA256: String? = nil,
+        newestBackupID: String? = nil,
+        expectedOriginalSize: UInt64? = nil,
+        expectedOriginalSHA256: String? = nil,
+        manualRestoreCommand: String? = nil,
+        suggestedBackupCommand: String? = nil
+    ) {
+        self.status = status
+        self.reason = reason
+        self.relativeArchivePath = relativeArchivePath
+        self.gameAppPath = gameAppPath
+        self.destinationPath = destinationPath
+        self.codeResourcesListed = codeResourcesListed
+        self.currentSize = currentSize
+        self.currentSHA256 = currentSHA256
+        self.newestBackupID = newestBackupID
+        self.expectedOriginalSize = expectedOriginalSize
+        self.expectedOriginalSHA256 = expectedOriginalSHA256
+        self.manualRestoreCommand = manualRestoreCommand
+        self.suggestedBackupCommand = suggestedBackupCommand
+    }
+}
+
+public enum OfficialArchivePreflightFormatter {
+    public static func format(_ result: OfficialArchivePreflightResult) -> String {
+        var lines: [String] = [
+            "Official archive preflight",
+            "Status: \(result.status.rawValue)"
+        ]
+        if let reason = result.reason {
+            lines.append("Reason: \(reason)")
+        }
+        lines.append("Relative path: \(result.relativeArchivePath)")
+        lines.append("Game app: \(result.gameAppPath ?? "unresolved")")
+        lines.append("Destination: \(result.destinationPath ?? "unresolved")")
+        lines.append("CodeResources listed: \(result.codeResourcesListed ? "yes" : "no")")
+        if let currentSize = result.currentSize {
+            lines.append("Current size: \(currentSize) bytes")
+        }
+        if let currentSHA256 = result.currentSHA256 {
+            lines.append("Current SHA-256: \(currentSHA256)")
+        }
+        lines.append("Newest backup: \(result.newestBackupID ?? "none")")
+        if let expectedOriginalSize = result.expectedOriginalSize {
+            lines.append("Expected size: \(expectedOriginalSize) bytes")
+        }
+        if let expectedOriginalSHA256 = result.expectedOriginalSHA256 {
+            lines.append("Expected SHA-256: \(expectedOriginalSHA256)")
+        }
+        if let manualRestoreCommand = result.manualRestoreCommand {
+            lines.append("")
+            lines.append("Manual restore command:")
+            lines.append(manualRestoreCommand)
+        }
+        if let suggestedBackupCommand = result.suggestedBackupCommand {
+            lines.append("")
+            lines.append("Suggested backup command:")
+            lines.append(suggestedBackupCommand)
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 public struct OfficialArchiveBackupManager: Sendable {
     private static let metadataFileName = "metadata.json"
 
@@ -163,6 +257,118 @@ public struct OfficialArchiveBackupManager: Sendable {
             currentSHA256: currentSHA256,
             matched: currentSHA256 == context.metadata.originalSHA256
         )
+    }
+
+    public func preflight(
+        relativeArchivePath rawRelativeArchivePath: String,
+        preferredGameAppPath: String? = nil
+    ) -> OfficialArchivePreflightResult {
+        do {
+            let gameInstall = try GameInstallDetector().detect(preferredAppPath: preferredGameAppPath)
+            return preflight(relativeArchivePath: rawRelativeArchivePath, gameInstall: gameInstall)
+        } catch {
+            let trimmedGameAppPath = preferredGameAppPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return OfficialArchivePreflightResult(
+                status: .blocked,
+                reason: String(describing: error),
+                relativeArchivePath: rawRelativeArchivePath,
+                gameAppPath: trimmedGameAppPath?.isEmpty == false ? preferredGameAppPath : nil,
+                destinationPath: nil,
+                codeResourcesListed: false
+            )
+        }
+    }
+
+    public func preflight(
+        relativeArchivePath rawRelativeArchivePath: String,
+        gameInstall: GameInstall
+    ) -> OfficialArchivePreflightResult {
+        let contentsURL = gameInstall.appURL.appendingPathComponent("Contents", isDirectory: true)
+        var relativeArchivePath = rawRelativeArchivePath
+        var destinationPath: String?
+        var codeResourcesListed = false
+        var currentSize: UInt64?
+        var currentSHA256: String?
+        var newestBackup: OfficialArchiveBackupMetadata?
+
+        func makeResult(
+            status: OfficialArchivePreflightStatus,
+            reason: String? = nil,
+            manualRestoreCommand: String? = nil,
+            suggestedBackupCommand: String? = nil
+        ) -> OfficialArchivePreflightResult {
+            OfficialArchivePreflightResult(
+                status: status,
+                reason: reason,
+                relativeArchivePath: relativeArchivePath,
+                gameAppPath: gameInstall.appURL.path,
+                destinationPath: destinationPath,
+                codeResourcesListed: codeResourcesListed,
+                currentSize: currentSize,
+                currentSHA256: currentSHA256,
+                newestBackupID: newestBackup?.backupID,
+                expectedOriginalSize: newestBackup?.originalSize,
+                expectedOriginalSHA256: newestBackup?.originalSHA256,
+                manualRestoreCommand: manualRestoreCommand,
+                suggestedBackupCommand: suggestedBackupCommand
+            )
+        }
+
+        do {
+            relativeArchivePath = try Self.validatedOfficialRelativeArchivePath(rawRelativeArchivePath)
+            let destinationURL = appending(relativePath: relativeArchivePath, to: contentsURL)
+            destinationPath = destinationURL.path
+
+            try validateResolvedContainedPath(destinationURL, in: contentsURL, description: "Official archive destination")
+            try validateAllowedOfficialArchiveLocation(destinationURL, contentsURL: contentsURL, relativeArchivePath: relativeArchivePath)
+
+            codeResourcesListed = try codeResourcesLists(relativeArchivePath: relativeArchivePath, contentsURL: contentsURL)
+            guard codeResourcesListed else {
+                return makeResult(
+                    status: .blocked,
+                    reason: CyberMacError.unsupported("Official archive destination is not listed in _CodeSignature/CodeResources: \(relativeArchivePath)").description
+                )
+            }
+
+            let archiveExists = FileManager.default.fileExists(atPath: destinationURL.path)
+            if archiveExists {
+                try validateRegularFile(destinationURL, description: "Official archive destination")
+                currentSize = try PathSafety.fileSize(url: destinationURL)
+                currentSHA256 = try PathSafety.sha256(url: destinationURL)
+            }
+
+            newestBackup = try list()
+                .filter { $0.relativeArchivePath == relativeArchivePath }
+                .sorted { lhs, rhs in
+                    lhs.createdAt == rhs.createdAt ? lhs.backupID > rhs.backupID : lhs.createdAt > rhs.createdAt
+                }
+                .first
+
+            guard let newestBackup else {
+                if archiveExists {
+                    return makeResult(
+                        status: .noBackup,
+                        suggestedBackupCommand: "swift run cybermac archive-patch backup-official \(relativeArchivePath)"
+                    )
+                }
+                return makeResult(status: .missing)
+            }
+
+            try validateMetadata(newestBackup, relativeArchivePath: relativeArchivePath)
+            let backupFileURL = try validatedBackupFileURL(from: newestBackup)
+            let manualRestoreCommand = "sudo cp \(PathSafety.shellQuoted(backupFileURL.path)) \(PathSafety.shellQuoted(destinationURL.path))"
+
+            guard archiveExists else {
+                return makeResult(status: .missing, manualRestoreCommand: manualRestoreCommand)
+            }
+
+            if currentSHA256 == newestBackup.originalSHA256 {
+                return makeResult(status: .pristine)
+            }
+            return makeResult(status: .modified, manualRestoreCommand: manualRestoreCommand)
+        } catch {
+            return makeResult(status: .blocked, reason: String(describing: error))
+        }
     }
 
     public func backupDirectory(backupID: String) -> URL {
