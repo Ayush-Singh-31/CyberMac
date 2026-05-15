@@ -52,6 +52,10 @@ struct CyberMacCLI {
             try archiveProbe()
         case "archive-research":
             try archiveResearch()
+        case "archive-patch":
+            try archivePatch()
+        case "mod-lab":
+            try modLab()
         case "install":
             try install()
         case "cache-status":
@@ -118,6 +122,10 @@ struct CyberMacCLI {
           cybermac archive-research report [--game-app /path/to/Cyberpunk.app]
           cybermac archive-research strings [--game-app /path/to/Cyberpunk.app]
           cybermac archive-research seal [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-patch list-backups
+          cybermac archive-patch restore-official <backup-id> [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
+          cybermac mod-lab assess <mod.zip> [--goal clothing|skin|ui|unknown]
           cybermac install /path/to/mod.zip [--game-app /path/to/Cyberpunk.app]
           cybermac cache-status [--game-app /path/to/Cyberpunk.app]
           cybermac refresh-base-cache [--dry-run] [--game-app /path/to/Cyberpunk.app]
@@ -437,6 +445,129 @@ struct CyberMacCLI {
         let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
         let report = ArchiveSealResearchReporter(home: home).makeReport(gameInstall: game)
         print(ArchiveSealResearchReportFormatter.format(report))
+    }
+
+    private func archivePatch() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing archive-patch subcommand")
+        }
+
+        switch arguments[1] {
+        case "backup-official":
+            try archivePatchBackupOfficial()
+        case "list-backups":
+            try archivePatchListBackups()
+        case "restore-official":
+            try archivePatchRestoreOfficial()
+        default:
+            throw CyberMacError.invalidInput("Unknown archive-patch subcommand: \(arguments[1])")
+        }
+    }
+
+    private func archivePatchBackupOfficial() throws {
+        let positionals = archivePatchPositionals(valueFlags: ["--game-app"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let metadata = try OfficialArchiveBackupManager(home: home).backup(
+            relativeArchivePath: positionals[0],
+            gameInstall: game
+        )
+
+        print("Official archive backup created.")
+        print("Backup ID: \(metadata.backupID)")
+        print("Source path: \(metadata.originalArchivePath)")
+        print("Backup path: \(metadata.backupFilePath)")
+        print("Size: \(metadata.originalSize) bytes")
+        print("SHA-256: \(metadata.originalSHA256)")
+        print("CodeResources listed: \(yesNo(metadata.codeResourcesListed))")
+    }
+
+    private func archivePatchListBackups() throws {
+        let positionals = archivePatchPositionals(valueFlags: ["--game-app"])
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch list-backups")
+        }
+
+        let backups = try OfficialArchiveBackupManager(home: home).list()
+        guard !backups.isEmpty else {
+            print("No CyberMac official archive backups found.")
+            return
+        }
+
+        for backup in backups {
+            print("\(backup.backupID) | \(backup.createdAt) | \(backup.relativeArchivePath) | \(backup.originalSize) bytes | \(backup.originalSHA256) | \(backup.gameAppPath)")
+        }
+    }
+
+    private func archivePatchRestoreOfficial() throws {
+        let modes = ["--dry-run", "--verify"].filter(hasFlag)
+        if modes.isEmpty {
+            print("Usage: cybermac archive-patch restore-official <backup-id> [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]")
+            print("Restore requires either --dry-run to print the manual sudo cp command or --verify to verify a manual restore.")
+            return
+        }
+        guard modes.count == 1 else {
+            throw CyberMacError.invalidInput("Use exactly one restore mode: --dry-run or --verify")
+        }
+
+        let positionals = archivePatchPositionals(valueFlags: ["--game-app"], excludingFlags: ["--dry-run", "--verify"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch restore-official <backup-id> [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let manager = OfficialArchiveBackupManager(home: home)
+        if hasFlag("--dry-run") {
+            print(try manager.restoreDryRunCommand(backupID: positionals[0], preferredGameAppPath: optionValue("--game-app")))
+        } else {
+            let result = try manager.verifyRestore(backupID: positionals[0], preferredGameAppPath: optionValue("--game-app"))
+            if result.matched {
+                print("PASS")
+                print("Destination: \(result.destinationPath)")
+                print("SHA-256: \(result.currentSHA256)")
+            } else {
+                print("FAIL")
+                print("Destination: \(result.destinationPath)")
+                print("Current SHA-256: \(result.currentSHA256)")
+                print("Expected SHA-256: \(result.expectedSHA256)")
+            }
+        }
+    }
+
+    private func modLab() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing mod-lab subcommand")
+        }
+
+        switch arguments[1] {
+        case "assess":
+            try modLabAssess()
+        default:
+            throw CyberMacError.invalidInput("Unknown mod-lab subcommand: \(arguments[1])")
+        }
+    }
+
+    private func modLabAssess() throws {
+        let positionals = modLabPositionals(valueFlags: ["--goal"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac mod-lab assess <mod.zip> [--goal clothing|skin|ui|unknown]")
+        }
+
+        let goal: ModConversionGoal
+        if let goalValue = optionValue("--goal") {
+            guard let parsed = ModConversionGoal(rawValue: goalValue) else {
+                throw CyberMacError.invalidInput("Unknown mod-lab goal: \(goalValue). Expected one of: \(ModConversionGoal.acceptedValuesDescription)")
+            }
+            goal = parsed
+        } else {
+            goal = .unknown
+        }
+
+        let zipURL = PathSafety.expandedURL(from: positionals[0])
+        let assessment = try ModConversionAssessor().assess(zipURL: zipURL, goal: goal)
+        print(ModConversionAssessmentFormatter.format(assessment))
     }
 
     private func install() throws {
@@ -969,6 +1100,49 @@ struct CyberMacCLI {
     }
 
     private func archiveResearchPositionals(valueFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
+    }
+
+    private func archivePatchPositionals(valueFlags: Set<String>, excludingFlags: Set<String> = []) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if excludingFlags.contains(argument) {
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
+    }
+
+    private func modLabPositionals(valueFlags: Set<String>) -> [String] {
         var values: [String] = []
         var skipNext = false
         for argument in arguments.dropFirst(2) {

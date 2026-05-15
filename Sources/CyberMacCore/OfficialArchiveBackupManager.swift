@@ -1,0 +1,366 @@
+import Foundation
+
+public struct OfficialArchiveBackupMetadata: Codable, Equatable, Sendable {
+    public let backupID: String
+    public let createdAt: Date
+    public let gameAppPath: String
+    public let relativeArchivePath: String
+    public let originalArchivePath: String
+    public let originalFileName: String
+    public let originalSize: UInt64
+    public let originalSHA256: String
+    public let codeResourcesListed: Bool
+    public let backupFilePath: String
+
+    public init(
+        backupID: String,
+        createdAt: Date,
+        gameAppPath: String,
+        relativeArchivePath: String,
+        originalArchivePath: String,
+        originalFileName: String,
+        originalSize: UInt64,
+        originalSHA256: String,
+        codeResourcesListed: Bool,
+        backupFilePath: String
+    ) {
+        self.backupID = backupID
+        self.createdAt = createdAt
+        self.gameAppPath = gameAppPath
+        self.relativeArchivePath = relativeArchivePath
+        self.originalArchivePath = originalArchivePath
+        self.originalFileName = originalFileName
+        self.originalSize = originalSize
+        self.originalSHA256 = originalSHA256
+        self.codeResourcesListed = codeResourcesListed
+        self.backupFilePath = backupFilePath
+    }
+}
+
+public struct OfficialArchiveRestoreVerificationResult: Equatable, Sendable {
+    public let backupID: String
+    public let destinationPath: String
+    public let expectedSHA256: String
+    public let currentSHA256: String
+    public let matched: Bool
+
+    public init(
+        backupID: String,
+        destinationPath: String,
+        expectedSHA256: String,
+        currentSHA256: String,
+        matched: Bool
+    ) {
+        self.backupID = backupID
+        self.destinationPath = destinationPath
+        self.expectedSHA256 = expectedSHA256
+        self.currentSHA256 = currentSHA256
+        self.matched = matched
+    }
+}
+
+public struct OfficialArchiveBackupManager: Sendable {
+    private static let metadataFileName = "metadata.json"
+
+    private let home: CyberMacHomeManager
+
+    public init(home: CyberMacHomeManager) {
+        self.home = home
+    }
+
+    public func backup(relativeArchivePath rawRelativeArchivePath: String, gameInstall: GameInstall) throws -> OfficialArchiveBackupMetadata {
+        let relativeArchivePath = try Self.validatedOfficialRelativeArchivePath(rawRelativeArchivePath)
+        let contentsURL = gameInstall.appURL.appendingPathComponent("Contents", isDirectory: true)
+        let sourceURL = appending(relativePath: relativeArchivePath, to: contentsURL)
+
+        try validateResolvedContainedPath(sourceURL, in: contentsURL, description: "Official archive source")
+        try validateRegularFile(sourceURL, description: "Official archive source")
+        try validateAllowedOfficialArchiveLocation(sourceURL, contentsURL: contentsURL, relativeArchivePath: relativeArchivePath)
+
+        let codeResourcesListed = try codeResourcesLists(relativeArchivePath: relativeArchivePath, contentsURL: contentsURL)
+        guard codeResourcesListed else {
+            throw CyberMacError.unsupported("Official archive is not listed in _CodeSignature/CodeResources: \(relativeArchivePath)")
+        }
+
+        try home.bootstrap()
+
+        let createdAt = Date()
+        let originalSHA256 = try PathSafety.sha256(url: sourceURL)
+        let originalSize = try PathSafety.fileSize(url: sourceURL)
+        let backupID = try uniqueBackupID(createdAt: createdAt, sha256: originalSHA256)
+        let directory = backupDirectory(backupID: backupID)
+        let backupFileURL = directory.appendingPathComponent(sourceURL.lastPathComponent)
+        try validateResolvedContainedPath(backupFileURL, in: home.officialArchiveBackupsURL, description: "Official archive backup file")
+
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: sourceURL, to: backupFileURL)
+
+            let metadata = OfficialArchiveBackupMetadata(
+                backupID: backupID,
+                createdAt: createdAt,
+                gameAppPath: gameInstall.appURL.path,
+                relativeArchivePath: relativeArchivePath,
+                originalArchivePath: sourceURL.path,
+                originalFileName: sourceURL.lastPathComponent,
+                originalSize: originalSize,
+                originalSHA256: originalSHA256,
+                codeResourcesListed: codeResourcesListed,
+                backupFilePath: backupFileURL.path
+            )
+            try save(metadata)
+            return metadata
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    public func list() throws -> [OfficialArchiveBackupMetadata] {
+        guard FileManager.default.fileExists(atPath: home.officialArchiveBackupsURL.path) else { return [] }
+        let directories = try FileManager.default.contentsOfDirectory(
+            at: home.officialArchiveBackupsURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        return try directories.compactMap { directory in
+            let values = try directory.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else { return nil }
+            let metadataURL = directory.appendingPathComponent(Self.metadataFileName)
+            guard FileManager.default.fileExists(atPath: metadataURL.path) else { return nil }
+            return try JSONDecoder.cybermac.decode(OfficialArchiveBackupMetadata.self, from: Data(contentsOf: metadataURL))
+        }
+        .sorted { lhs, rhs in
+            lhs.createdAt == rhs.createdAt ? lhs.backupID > rhs.backupID : lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    public func load(backupID: String) throws -> OfficialArchiveBackupMetadata {
+        let url = backupDirectory(backupID: backupID).appendingPathComponent(Self.metadataFileName)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CyberMacError.notFound("Official archive backup not found: \(backupID)")
+        }
+        let metadata = try JSONDecoder.cybermac.decode(OfficialArchiveBackupMetadata.self, from: Data(contentsOf: url))
+        guard metadata.backupID == backupID else {
+            throw CyberMacError.fileSystem("Official archive backup metadata id mismatch. Expected \(backupID), found \(metadata.backupID).")
+        }
+        return metadata
+    }
+
+    public func restoreDryRunCommand(backupID: String, preferredGameAppPath: String? = nil) throws -> String {
+        let context = try validatedRestoreContext(backupID: backupID, preferredGameAppPath: preferredGameAppPath)
+        return "sudo cp \(PathSafety.shellQuoted(context.backupFileURL.path)) \(PathSafety.shellQuoted(context.destinationURL.path))"
+    }
+
+    public func verifyRestore(backupID: String, preferredGameAppPath: String? = nil) throws -> OfficialArchiveRestoreVerificationResult {
+        let context = try validatedRestoreContext(backupID: backupID, preferredGameAppPath: preferredGameAppPath)
+        try validateRegularFile(context.destinationURL, description: "Official archive destination")
+        let currentSHA256 = try PathSafety.sha256(url: context.destinationURL)
+        return OfficialArchiveRestoreVerificationResult(
+            backupID: context.metadata.backupID,
+            destinationPath: context.destinationURL.path,
+            expectedSHA256: context.metadata.originalSHA256,
+            currentSHA256: currentSHA256,
+            matched: currentSHA256 == context.metadata.originalSHA256
+        )
+    }
+
+    public func backupDirectory(backupID: String) -> URL {
+        home.officialArchiveBackupsURL.appendingPathComponent(backupID, isDirectory: true)
+    }
+
+    private struct RestoreContext {
+        let metadata: OfficialArchiveBackupMetadata
+        let backupFileURL: URL
+        let destinationURL: URL
+    }
+
+    private func validatedRestoreContext(backupID: String, preferredGameAppPath: String?) throws -> RestoreContext {
+        let metadata = try load(backupID: backupID)
+        let relativeArchivePath = try Self.validatedOfficialRelativeArchivePath(metadata.relativeArchivePath)
+        try validateMetadata(metadata, relativeArchivePath: relativeArchivePath)
+
+        let backupFileURL = try validatedBackupFileURL(from: metadata)
+        let gameAppPath = preferredGameAppPath?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? preferredGameAppPath
+            : metadata.gameAppPath
+        guard let gameAppPath, !gameAppPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CyberMacError.invalidInput("Official archive backup metadata does not contain a game app path.")
+        }
+
+        let gameInstall = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let contentsURL = gameInstall.appURL.appendingPathComponent("Contents", isDirectory: true)
+        let destinationURL = appending(relativePath: relativeArchivePath, to: contentsURL)
+        try validateResolvedContainedPath(destinationURL, in: contentsURL, description: "Official archive destination")
+        try validateAllowedOfficialArchiveLocation(destinationURL, contentsURL: contentsURL, relativeArchivePath: relativeArchivePath)
+
+        guard try codeResourcesLists(relativeArchivePath: relativeArchivePath, contentsURL: contentsURL) else {
+            throw CyberMacError.unsupported("Official archive destination is not listed in _CodeSignature/CodeResources: \(relativeArchivePath)")
+        }
+
+        return RestoreContext(metadata: metadata, backupFileURL: backupFileURL, destinationURL: destinationURL)
+    }
+
+    private static func validatedOfficialRelativeArchivePath(_ rawPath: String) throws -> String {
+        guard !rawPath.isEmpty else {
+            throw CyberMacError.unsafePath("Official archive path is empty.")
+        }
+        guard !rawPath.hasPrefix("/") else {
+            throw CyberMacError.unsafePath("Official archive path must be relative to Contents, not absolute: \(rawPath)")
+        }
+        guard !rawPath.contains("\\") else {
+            throw CyberMacError.unsafePath("Official archive path must use forward slashes: \(rawPath)")
+        }
+        guard !rawPath.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            throw CyberMacError.unsafePath("Official archive path contains control characters.")
+        }
+
+        let components = rawPath.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard components.count == 5, !components.contains(where: { $0.isEmpty }) else {
+            throw CyberMacError.unsafePath("Official archive path must be Data/archive/Mac/content/*.archive or Data/archive/Mac/ep1/*.archive: \(rawPath)")
+        }
+        guard !components.contains(".."), !components.contains(".") else {
+            throw CyberMacError.unsafePath("Official archive path contains traversal: \(rawPath)")
+        }
+        guard Array(components.prefix(3)) == ["Data", "archive", "Mac"],
+              ["content", "ep1"].contains(components[3])
+        else {
+            throw CyberMacError.unsafePath("Official archive path is outside supported Mac official archive directories: \(rawPath)")
+        }
+
+        let fileName = components[4]
+        guard fileName.lowercased().hasSuffix(".archive") else {
+            throw CyberMacError.unsafePath("Official archive path must end in .archive: \(rawPath)")
+        }
+        guard URL(fileURLWithPath: fileName).lastPathComponent == fileName,
+              fileName != ".",
+              fileName != ".."
+        else {
+            throw CyberMacError.unsafePath("Official archive file name is invalid: \(fileName)")
+        }
+
+        return components.joined(separator: "/")
+    }
+
+    private func validateMetadata(_ metadata: OfficialArchiveBackupMetadata, relativeArchivePath: String) throws {
+        guard !metadata.originalSHA256.isEmpty else {
+            throw CyberMacError.fileSystem("Official archive backup metadata has an empty original SHA-256.")
+        }
+        guard metadata.codeResourcesListed else {
+            throw CyberMacError.fileSystem("Official archive backup metadata does not record CodeResources membership.")
+        }
+        let expectedFileName = URL(fileURLWithPath: relativeArchivePath).lastPathComponent
+        guard metadata.originalFileName == expectedFileName else {
+            throw CyberMacError.fileSystem("Official archive backup metadata file name mismatch. Expected \(expectedFileName), found \(metadata.originalFileName).")
+        }
+    }
+
+    private func validatedBackupFileURL(from metadata: OfficialArchiveBackupMetadata) throws -> URL {
+        try validateAbsolutePersistedPath(metadata.backupFilePath, description: "Official archive backup file path")
+        let backupFileURL = URL(fileURLWithPath: metadata.backupFilePath)
+        try validateResolvedContainedPath(backupFileURL, in: home.officialArchiveBackupsURL, description: "Official archive backup file")
+        try validateRegularFile(backupFileURL, description: "Official archive backup file")
+        return backupFileURL
+    }
+
+    private func validateAbsolutePersistedPath(_ path: String, description: String) throws {
+        guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CyberMacError.unsafePath("\(description) is empty.")
+        }
+        guard path.hasPrefix("/") else {
+            throw CyberMacError.unsafePath("\(description) must be absolute: \(path)")
+        }
+        guard !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            throw CyberMacError.unsafePath("\(description) contains control characters.")
+        }
+        let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+        guard !components.contains("..") else {
+            throw CyberMacError.unsafePath("\(description) contains traversal: \(path)")
+        }
+    }
+
+    private func validateAllowedOfficialArchiveLocation(_ url: URL, contentsURL: URL, relativeArchivePath: String) throws {
+        let components = relativeArchivePath.split(separator: "/").map(String.init)
+        let allowedDirectory = components[3]
+        let allowedRoot = contentsURL
+            .appendingPathComponent("Data", isDirectory: true)
+            .appendingPathComponent("archive", isDirectory: true)
+            .appendingPathComponent("Mac", isDirectory: true)
+            .appendingPathComponent(allowedDirectory, isDirectory: true)
+        try validateResolvedContainedPath(url, in: allowedRoot, description: "Official archive path")
+    }
+
+    private func validateRegularFile(_ url: URL, description: String) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw CyberMacError.notFound("\(description) does not exist: \(url.path)")
+        }
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard values.isSymbolicLink != true else {
+            throw CyberMacError.unsafePath("\(description) is a symlink, not a regular file: \(url.path)")
+        }
+        guard values.isRegularFile == true else {
+            throw CyberMacError.invalidInput("\(description) is not a regular file: \(url.path)")
+        }
+    }
+
+    private func codeResourcesLists(relativeArchivePath: String, contentsURL: URL) throws -> Bool {
+        let codeResourcesURL = contentsURL
+            .appendingPathComponent("_CodeSignature", isDirectory: true)
+            .appendingPathComponent("CodeResources")
+        guard FileManager.default.fileExists(atPath: codeResourcesURL.path) else {
+            throw CyberMacError.notFound("CodeResources file missing: \(codeResourcesURL.path)")
+        }
+
+        let data = try Data(contentsOf: codeResourcesURL)
+        let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        guard let dictionary = plist as? [String: Any] else {
+            throw CyberMacError.invalidInput("CodeResources is not a property-list dictionary: \(codeResourcesURL.path)")
+        }
+
+        for key in ["files", "files2"] {
+            guard let files = dictionary[key] as? [String: Any] else { continue }
+            if files.keys.contains(relativeArchivePath) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func validateResolvedContainedPath(_ targetURL: URL, in rootURL: URL, description: String) throws {
+        let rootPath = rootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let targetPath = targetURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard targetPath == rootPath || targetPath.hasPrefix(prefix) else {
+            throw CyberMacError.unsafePath("\(description) escapes expected root: \(targetPath)")
+        }
+    }
+
+    private func appending(relativePath: String, to rootURL: URL) -> URL {
+        relativePath.split(separator: "/").reduce(rootURL) { partial, component in
+            partial.appendingPathComponent(String(component))
+        }
+    }
+
+    private func save(_ metadata: OfficialArchiveBackupMetadata) throws {
+        let directory = backupDirectory(backupID: metadata.backupID)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try JSONEncoder.cybermac.encode(metadata)
+        try data.write(to: directory.appendingPathComponent(Self.metadataFileName), options: [.atomic])
+    }
+
+    private func uniqueBackupID(createdAt: Date, sha256: String) throws -> String {
+        let base = Self.makeBackupID(date: createdAt, sha256: sha256)
+        if !FileManager.default.fileExists(atPath: backupDirectory(backupID: base).path) {
+            return base
+        }
+        return "\(base)-\(UUID().uuidString.prefix(8))"
+    }
+
+    private static func makeBackupID(date: Date = Date(), sha256: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        return "official-archive-\(formatter.string(from: date))-\(sha256.prefix(12))"
+    }
+}

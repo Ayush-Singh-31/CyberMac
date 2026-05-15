@@ -49,6 +49,13 @@ let package = Package(
                 "CyberMacCore",
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
             ]
+        ),
+        .testTarget(
+            name: "CyberMacAppTests",
+            dependencies: [
+                "CyberMacApp",
+                "CyberMacCore"
+            ]
         )
     ]
 )

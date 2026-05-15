@@ -215,6 +215,7 @@ struct HomeView: View {
     }
 
     private var primaryButtonDisabled: Bool {
+        if isBusy { return true }
         guard let report = appState.doctor else { return true }
         if report.activation.state == .active { return false }
         if primaryButtonTitle == "Activate mods" { return !report.activation.safeToProceedToActivation }
@@ -223,6 +224,7 @@ struct HomeView: View {
     }
 
     private func runPrimaryAction() async {
+        guard !isBusy else { return }
         if primaryButtonTitle == "Verify input patch" {
             await appState.verifyInputPatch()
         } else if primaryButtonTitle == "Prepare input patch" {
@@ -234,6 +236,10 @@ struct HomeView: View {
         } else {
             await appState.refresh()
         }
+    }
+
+    private var isBusy: Bool {
+        appState.currentTask != nil
     }
 
     private var inputNeedsPatch: Bool {

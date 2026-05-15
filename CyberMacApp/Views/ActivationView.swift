@@ -39,12 +39,12 @@ struct ActivationView: View {
                 inputMappingsPanel
                 CyberPanel {
                     HStack(spacing: 12) {
-                        PrimaryButton(title: "Verify activation", systemImage: "checkmark.seal", disabled: false, variant: .secondary, accent: .blue) {
+                        PrimaryButton(title: "Verify activation", systemImage: "checkmark.seal", disabled: isBusy, variant: .secondary, accent: .blue) {
                             Task { await appState.verifyActivation() }
                         }
                         .help("Verify that the activation command was applied")
                         if appState.developerMode {
-                            PrimaryButton(title: "Dry run", systemImage: "checklist", disabled: false, variant: .secondary, accent: .cyan) {
+                            PrimaryButton(title: "Dry run", systemImage: "checklist", disabled: isBusy, variant: .secondary, accent: .cyan) {
                                 Task { await appState.showActivationDryRun() }
                             }
                             .help("Preview activation commands")
@@ -88,7 +88,7 @@ struct ActivationView: View {
                     PrimaryButton(
                         title: inputPrepareTitle,
                         systemImage: "keyboard",
-                        disabled: appState.inputStatus?.requiredModCount ?? 0 == 0,
+                        disabled: isBusy || (appState.inputStatus?.requiredModCount ?? 0) == 0,
                         variant: .secondary,
                         accent: inputStateText == "Active" ? .blue : .amber
                     ) {
@@ -97,7 +97,7 @@ struct ActivationView: View {
                     PrimaryButton(
                         title: "Verify input patch",
                         systemImage: "checkmark.seal",
-                        disabled: appState.inputStatus?.pendingInputPatch == nil,
+                        disabled: isBusy || (appState.inputStatus?.pendingInputPatch == nil),
                         variant: .secondary,
                         accent: .green
                     ) {
@@ -159,9 +159,14 @@ struct ActivationView: View {
     }
 
     private var primaryDisabled: Bool {
+        if isBusy { return true }
         guard let report = appState.doctor else { return true }
         if report.activation.state == .active { return false }
         return activationBlocked || report.activation.enabledMods == 0
+    }
+
+    private var isBusy: Bool {
+        appState.currentTask != nil
     }
 
     private var inputDetail: String {
@@ -200,6 +205,7 @@ struct ActivationView: View {
     }
 
     private func runPrimaryAction() async {
+        guard !isBusy else { return }
         if appState.doctor?.activation.state == .active {
             await appState.launchGame()
         } else {

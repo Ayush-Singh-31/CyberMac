@@ -109,13 +109,13 @@ final class CyberMacAppState: ObservableObject {
         }
     }
 
-    private let container: AppServiceContainer
+    private let container: any AppServiceProviding
     private var activeTasks: [(id: UUID, task: AppTask)] = []
     private static let developerModeKey = "CyberMacDeveloperMode"
     private static let inputLoaderWarningDismissedKey = "CyberMacInputLoaderWarningDismissed"
     private static let showRawHashesKey = "CyberMacShowRawHashes"
 
-    init(container: AppServiceContainer = AppServiceContainer()) {
+    init(container: any AppServiceProviding = AppServiceContainer()) {
         self.container = container
         self.developerMode = UserDefaults.standard.bool(forKey: Self.developerModeKey)
         self.inputLoaderWarningDismissed = UserDefaults.standard.bool(forKey: Self.inputLoaderWarningDismissedKey)
@@ -196,6 +196,11 @@ final class CyberMacAppState: ObservableObject {
     }
 
     func generateActivation() async {
+        clearStaleCurrentTaskIfNeeded()
+        guard currentTask == nil else {
+            activationDebugLog("[ActivationUI] ignored duplicate generate while \(currentTask?.title ?? "busy")")
+            return
+        }
         activationDebugLog("[ActivationUI] start generate")
         do {
             let result = try await withCurrentTask(.preparingActivation) {

@@ -363,6 +363,22 @@ final class ActivationPipelineTests: XCTestCase {
         XCTAssertEqual(state.activeBundleTargetHashes[BaseCacheManager(home: home).bundleCacheURL(gameInstall: game).path], activated.generatedSHA256)
     }
 
+    func testRepeatedActivationGenerationUsesUniqueOutputsAndBackups() throws {
+        let game = try makeGameApp(cacheContents: "vanilla-cache")
+        try installFakeSCC()
+        try saveEnabledManifest(id: "example_mod")
+        _ = try BaseCacheManager(home: home).refreshBaseCache(gameInstall: game, dryRun: false)
+        let manager = ActivationManager(home: home)
+
+        let first = try manager.activateBundleMode(gameInstall: game)
+        let second = try manager.activateBundleMode(gameInstall: game)
+
+        XCTAssertNotEqual(first.tempOutputPath, second.tempOutputPath)
+        XCTAssertNotEqual(first.backup.id, second.backup.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.tempOutputPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: second.tempOutputPath))
+    }
+
     func testActivationDryRunClearsBundleChangedFlagWhenBundleMatchesBaseSnapshot() throws {
         let game = try makeGameApp(cacheContents: "vanilla-cache")
         try installFakeSCC()

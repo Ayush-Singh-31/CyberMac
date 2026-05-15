@@ -33,17 +33,20 @@ public struct ActivationCompiler: Sendable {
 
     public func compile(outputURL: URL, timeoutSeconds: TimeInterval = 60) throws -> ActivationCompileResult {
         let sccURL = try sccToolURL()
+        let workingDirectory = sccURL.deletingLastPathComponent()
         try preflight(outputURL: outputURL, sccURL: sccURL)
         do {
             _ = try runner.run(
                 executableURL: sccURL,
                 arguments: ["-compile", "-h"],
+                currentDirectoryURL: workingDirectory,
                 timeoutSeconds: 10,
                 allowFailure: false
             )
             let result = try runner.run(
                 executableURL: sccURL,
                 arguments: ["-compile", home.overlayScriptsURL.path, "-outputCacheFile", outputURL.path],
+                currentDirectoryURL: workingDirectory,
                 timeoutSeconds: timeoutSeconds,
                 allowFailure: true
             )

@@ -11,7 +11,37 @@ struct AppSnapshot: Sendable {
     let inputBackups: [InputConfigBackupManifest]
 }
 
-struct AppServiceContainer: Sendable {
+protocol AppServiceProviding: Sendable {
+    func loadSnapshot() throws -> AppSnapshot
+    func makeLaunchPlan() throws -> LaunchGamePlan
+    func launchGame(plan: LaunchGamePlan) throws
+    func activationDryRun() throws -> ActivationDryRunResult
+    func generateActivation() throws -> ActivationBundleModeResult
+    func verifyActivation() throws -> ActivationVerifyResult
+    func restoreCommand(id: String) throws -> String
+    func prepareLatestVanillaRestoreCommand() throws -> (backup: BundleBackupManifest, command: String)
+    func verifyRestore(id: String) throws -> RestoreVerificationResult
+    func prepareInputPatch(modID: String?) throws -> InputPatchPrepareResult
+    func verifyInputPatch() throws -> InputPatchVerifyResult
+    func restoreInputConfigCommand(id: String) throws -> [String]
+    func verifyInputConfigRestore(id: String) throws -> InputConfigRestoreVerificationResult
+    func backupDirectoryPath(id: String) -> String
+    func setMod(_ id: String, enabled: Bool) throws -> InstalledModManifest
+    func renameMod(_ id: String, displayName: String) throws -> InstalledModManifest
+    func uninstallMod(_ id: String) throws -> InstalledModManifest
+    func deleteMod(_ id: String) throws -> ModDeleteResult
+    func scanMod(url: URL) throws -> ModScanResult
+    func installMod(url: URL) throws -> InstalledModManifest
+    func listEditableScripts(modID: String) throws -> [EditableScriptFile]
+    func loadScript(modID: String, relativePath: String) throws -> String
+    func saveScript(modID: String, relativePath: String, contents: String) throws -> ScriptSaveResult
+    func exportDiagnostics() throws -> URL
+    func revealCyberMacFolder() throws
+    func revealGameApp() throws
+    func clearTemporaryActivationOutputs() throws
+}
+
+struct AppServiceContainer: AppServiceProviding {
     let home: CyberMacHomeManager
 
     init(home: CyberMacHomeManager = CyberMacHomeManager()) {

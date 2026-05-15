@@ -59,9 +59,11 @@ public struct ProcessRunner: Sendable {
                 if waitGroup.wait(timeout: .now() + 2) == .timedOut {
                     Darwin.kill(process.processIdentifier, SIGKILL)
                 }
-                waitGroup.wait()
-                _ = try stdoutReader.wait()
-                _ = try stderrReader.wait()
+                _ = waitGroup.wait(timeout: .now() + 2)
+                stdoutReader.close()
+                stderrReader.close()
+                _ = try stdoutReader.wait(until: .now() + 1)
+                _ = try stderrReader.wait(until: .now() + 1)
                 let command = ([executableURL.path] + arguments).joined(separator: " ")
                 throw CyberMacError.processTimedOut(command: command, timeoutSeconds: timeoutSeconds)
             }
@@ -122,6 +124,21 @@ private final class PipeReader: @unchecked Sendable {
 
     func wait() throws -> Data {
         group.wait()
+        return try result()
+    }
+
+    func wait(until deadline: DispatchTime) throws -> Data? {
+        guard group.wait(timeout: deadline) == .success else {
+            return nil
+        }
+        return try result()
+    }
+
+    func close() {
+        try? fileHandle.close()
+    }
+
+    private func result() throws -> Data {
         lock.lock()
         defer { lock.unlock() }
         if let readError {

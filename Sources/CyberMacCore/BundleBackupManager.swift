@@ -272,8 +272,8 @@ public struct BundleBackupManager: Sendable {
 
     private static func makeID(date: Date = Date()) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
         formatter.timeZone = TimeZone.current
-        return formatter.string(from: date)
+        return "\(formatter.string(from: date))-\(UUID().uuidString.prefix(8))"
     }
 }

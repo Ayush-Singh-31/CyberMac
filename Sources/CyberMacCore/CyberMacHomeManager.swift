@@ -25,6 +25,7 @@ public struct CyberMacHomeManager: Sendable {
     public var baseCacheURL: URL { homeURL.appendingPathComponent("base-cache", isDirectory: true) }
     public var backupsURL: URL { homeURL.appendingPathComponent("backups", isDirectory: true) }
     public var inputPatchBackupsURL: URL { backupsURL.appendingPathComponent("input-config", isDirectory: true) }
+    public var officialArchiveBackupsURL: URL { backupsURL.appendingPathComponent("official-archives", isDirectory: true) }
     public var tmpURL: URL { homeURL.appendingPathComponent("tmp", isDirectory: true) }
     public var generatedURL: URL { homeURL.appendingPathComponent("generated", isDirectory: true) }
     public var launchScriptURL: URL { generatedURL.appendingPathComponent("launch_modded.sh") }
@@ -52,6 +53,7 @@ public struct CyberMacHomeManager: Sendable {
             baseCacheURL,
             backupsURL,
             inputPatchBackupsURL,
+            officialArchiveBackupsURL,
             tmpURL,
             archiveProbeTmpURL,
             generatedURL,
