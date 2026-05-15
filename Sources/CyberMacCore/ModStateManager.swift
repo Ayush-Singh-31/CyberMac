@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let modStateLog = Logger(subsystem: "com.cybermac.core", category: "mod-state")
 
 public struct ModDeleteResult: Sendable, Equatable {
     public let modID: String
@@ -347,8 +350,12 @@ public struct ModStateManager: Sendable {
 
     private func rollback(moved: [(from: URL, to: URL)]) {
         for item in moved.reversed() where FileManager.default.fileExists(atPath: item.from.path) {
-            try? FileManager.default.createDirectory(at: item.to.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? FileManager.default.moveItem(at: item.from, to: item.to)
+            do {
+                try FileManager.default.createDirectory(at: item.to.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: item.from, to: item.to)
+            } catch {
+                modStateLog.error("Rollback failed for \(item.from.path, privacy: .public): \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
