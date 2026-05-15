@@ -30,12 +30,15 @@ enum AppScreen: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @State private var appState = CyberMacAppState()
-    @State private var selection: AppScreen? = .home
+    @State private var selection: AppScreen = .home
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(selection: $selection)
+            SidebarView(selection: Binding(
+                get: { selection },
+                set: { newValue in if let newValue { selection = newValue } }
+            ))
         } detail: {
             ZStack {
                 background
@@ -56,7 +59,7 @@ struct RootView: View {
                     }
                     selectedView
                         .padding(28)
-                        .id(selection ?? .home)
+                        .id(selection)
                         .transition(.opacity)
                 }
             }
@@ -86,7 +89,7 @@ struct RootView: View {
 
     @ViewBuilder
     private var selectedView: some View {
-        switch selection ?? .home {
+        switch selection {
         case .home:
             HomeView(appState: appState)
         case .mods:

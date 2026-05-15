@@ -52,8 +52,19 @@ struct BackupsView: View {
 
                 if appState.backups.isEmpty {
                     GlassPanel {
-                        Text("No CyberMac bundle backups found.")
-                            .foregroundStyle(.secondary)
+                        VStack(spacing: 8) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 28))
+                                .foregroundStyle(.secondary)
+                            Text("No backups yet")
+                                .font(.callout.weight(.semibold))
+                            Text("CyberMac creates one automatically before each activation.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
                     }
                 } else {
                     ForEach(appState.backups, id: \.id) { backup in
@@ -90,8 +101,19 @@ struct BackupsView: View {
                     }
                     if appState.inputBackups.isEmpty {
                         GlassPanel {
-                            Text("No CyberMac input config backups found.")
-                                .foregroundStyle(.secondary)
+                            VStack(spacing: 8) {
+                                Image(systemName: "keyboard")
+                                    .font(.system(size: 26))
+                                    .foregroundStyle(.secondary)
+                                Text("No input config backups yet")
+                                    .font(.callout.weight(.semibold))
+                                Text("Created automatically when input mappings change.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
                         }
                     } else {
                         ForEach(appState.inputBackups, id: \.id) { backup in

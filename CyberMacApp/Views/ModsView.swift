@@ -86,8 +86,18 @@ struct ModsView: View {
                     Text("Installed")
                         .font(.title2.weight(.semibold))
                     if appState.mods.isEmpty {
-                        Text("No CyberMac-managed mods installed.")
-                            .foregroundStyle(.secondary)
+                        VStack(spacing: 8) {
+                            Image(systemName: "shippingbox")
+                                .font(.system(size: 32, weight: .regular))
+                                .foregroundStyle(.secondary)
+                            Text("No mods installed")
+                                .font(.callout.weight(.semibold))
+                            Text("Drop a .zip above to get started.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
                     } else {
                         LazyVStack(alignment: .leading, spacing: 14) {
                             ForEach(appState.mods, id: \.id) { mod in

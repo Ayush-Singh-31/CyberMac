@@ -131,20 +131,9 @@ private struct SidebarRowButtonStyle: ButtonStyle {
 }
 
 private extension AppScreen {
-    var sidebarAccent: CyberAccent {
-        switch self {
-        case .home:
-            return .cyan
-        case .mods:
-            return .green
-        case .activation:
-            return .amber
-        case .backups:
-            return .blue
-        case .diagnostics:
-            return .red
-        case .settings:
-            return .purple
-        }
-    }
+    /// Single primary accent for all sidebar rows. Per the design guideline,
+    /// six different per-screen colors diluted meaning; cyan is the primary
+    /// accent (matching the existing Launch CTA), red is reserved for
+    /// destructive actions, and status pills retain semantic color.
+    var sidebarAccent: CyberAccent { .cyan }
 }
