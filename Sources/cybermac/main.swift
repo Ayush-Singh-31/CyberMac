@@ -125,6 +125,9 @@ struct CyberMacCLI {
           cybermac archive-research strings [--game-app /path/to/Cyberpunk.app]
           cybermac archive-research seal [--game-app /path/to/Cyberpunk.app]
           cybermac archive-catalog search <query> --catalog-dir <path> [--ext xbm] [--archive <relative-archive-path>] [--limit 50]
+          cybermac archive-catalog index build --catalog-dir <path> [--out <path>]
+          cybermac archive-catalog index search <query> [--db <path>] [--ext xbm] [--archive <relative-archive-path>] [--category ui] [--limit 50]
+          cybermac archive-catalog index stats [--db <path>]
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
@@ -463,6 +466,8 @@ struct CyberMacCLI {
         switch arguments[1] {
         case "search":
             try archiveCatalogSearch()
+        case "index":
+            try archiveCatalogIndex()
         default:
             throw CyberMacError.invalidInput("Unknown archive-catalog subcommand: \(arguments[1])")
         }
@@ -492,6 +497,77 @@ struct CyberMacCLI {
             limit: limit
         ))
         print(ArchiveCatalogSearchFormatter.format(report))
+    }
+
+    private func archiveCatalogIndex() throws {
+        guard arguments.count >= 3 else {
+            throw CyberMacError.invalidInput("Missing archive-catalog index subcommand")
+        }
+
+        switch arguments[2] {
+        case "build":
+            try archiveCatalogIndexBuild()
+        case "search":
+            try archiveCatalogIndexSearch()
+        case "stats":
+            try archiveCatalogIndexStats()
+        default:
+            throw CyberMacError.invalidInput("Unknown archive-catalog index subcommand: \(arguments[2])")
+        }
+    }
+
+    private func archiveCatalogIndexBuild() throws {
+        let positionals = archiveCatalogIndexPositionals(valueFlags: ["--catalog-dir", "--out"])
+        guard positionals.isEmpty, let catalogDirectoryPath = optionValue("--catalog-dir") else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-catalog index build --catalog-dir <path> [--out <path>]")
+        }
+
+        let outputDatabase = optionValue("--out").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let report = try ArchiveCatalogIndexBuilder().build(options: ArchiveCatalogIndexBuildOptions(
+            catalogDirectory: PathSafety.expandedURL(from: catalogDirectoryPath),
+            outputDatabase: outputDatabase
+        ))
+        print(ArchiveCatalogIndexBuildFormatter.format(report))
+    }
+
+    private func archiveCatalogIndexSearch() throws {
+        let positionals = archiveCatalogIndexPositionals(valueFlags: ["--db", "--ext", "--archive", "--category", "--limit"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-catalog index search <query> [--db <path>] [--ext xbm] [--archive <relative-archive-path>] [--category ui] [--limit 50]")
+        }
+
+        let limit = try archiveCatalogIndexLimit()
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let report = try ArchiveCatalogIndexStore().search(options: ArchiveCatalogIndexSearchOptions(
+            query: positionals[0],
+            databaseURL: databaseURL,
+            extensionFilter: optionValue("--ext"),
+            archiveFilter: optionValue("--archive"),
+            categoryFilter: optionValue("--category"),
+            limit: limit
+        ))
+        print(ArchiveCatalogIndexSearchFormatter.format(report))
+    }
+
+    private func archiveCatalogIndexStats() throws {
+        let positionals = archiveCatalogIndexPositionals(valueFlags: ["--db"])
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-catalog index stats [--db <path>]")
+        }
+
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let report = try ArchiveCatalogIndexStore().stats(databaseURL: databaseURL)
+        print(ArchiveCatalogIndexStatsFormatter.format(report))
+    }
+
+    private func archiveCatalogIndexLimit() throws -> Int {
+        guard let rawLimit = optionValue("--limit") else {
+            return 50
+        }
+        guard let parsedLimit = Int(rawLimit) else {
+            throw CyberMacError.invalidInput("Archive catalog index limit must be an integer: \(rawLimit)")
+        }
+        return parsedLimit
     }
 
     private func archivePatch() throws {
@@ -1269,6 +1345,26 @@ struct CyberMacCLI {
         var values: [String] = []
         var skipNext = false
         for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
+    }
+
+    private func archiveCatalogIndexPositionals(valueFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(3) {
             if skipNext {
                 skipNext = false
                 continue

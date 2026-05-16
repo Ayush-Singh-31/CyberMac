@@ -29,6 +29,9 @@ let package = Package(
             name: "CyberMacCore",
             dependencies: [
                 .product(name: "ZIPFoundation", package: "ZIPFoundation")
+            ],
+            linkerSettings: [
+                .linkedLibrary("sqlite3")
             ]
         ),
         .executableTarget(

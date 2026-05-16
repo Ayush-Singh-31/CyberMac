@@ -38,6 +38,8 @@ public struct CyberMacHomeManager: Sendable {
     public var inputPatchStateURL: URL { configURL.appendingPathComponent("input-patches.json") }
     public var archiveProbeStateURL: URL { configURL.appendingPathComponent("archive-probe-state.json") }
     public var archiveProbeTmpURL: URL { tmpURL.appendingPathComponent("archive-probe", isDirectory: true) }
+    public var archiveIndexURL: URL { homeURL.appendingPathComponent("archive-index", isDirectory: true) }
+    public var archiveIndexDatabaseURL: URL { archiveIndexURL.appendingPathComponent("archive-index.sqlite") }
 
     public func bootstrap() throws {
         let directories = [
@@ -61,7 +63,8 @@ public struct CyberMacHomeManager: Sendable {
             disabledURL,
             logsURL,
             scanCacheURL,
-            diagnosticsURL
+            diagnosticsURL,
+            archiveIndexURL
         ]
         for directory in directories {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
