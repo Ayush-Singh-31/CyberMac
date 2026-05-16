@@ -129,6 +129,8 @@ struct CyberMacCLI {
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch manual-plan <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-patch stage-swap <relative-archive-path> --target-asset <asset-path> --donor-asset <asset-path> --work-dir <path> --out <output.archive> --cp77tools <path>
+          cybermac archive-patch stage-merge <relative-archive-path> --mod-archive <path> --work-dir <path> --out <output.archive> --cp77tools <path>
           cybermac archive-patch list-backups
           cybermac archive-patch restore-official <backup-id> [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
           cybermac mod-lab assess <mod.zip> [--goal clothing|skin|ui|unknown]
@@ -506,6 +508,10 @@ struct CyberMacCLI {
             try archivePatchPreflight()
         case "manual-plan":
             try archivePatchManualPlan()
+        case "stage-swap":
+            try archivePatchStageSwap()
+        case "stage-merge":
+            try archivePatchStageMerge()
         case "list-backups":
             try archivePatchListBackups()
         case "restore-official":
@@ -573,6 +579,56 @@ struct CyberMacCLI {
             preferredGameAppPath: optionValue("--game-app")
         )
         print(OfficialArchiveManualPlanFormatter.format(result))
+    }
+
+    private func archivePatchStageSwap() throws {
+        let valueFlags: Set<String> = ["--target-asset", "--donor-asset", "--work-dir", "--out", "--cp77tools"]
+        let positionals = archivePatchPositionals(valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let targetAsset = optionValue("--target-asset"),
+              let donorAsset = optionValue("--donor-asset"),
+              let workDirectoryPath = optionValue("--work-dir"),
+              let outputArchivePath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch stage-swap <relative-archive-path> --target-asset <asset-path> --donor-asset <asset-path> --work-dir <path> --out <output.archive> --cp77tools <path>")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: nil)
+        let request = OfficialArchiveSwapStageRequest(
+            relativeArchivePath: positionals[0],
+            targetAssetPath: targetAsset,
+            donorAssetPath: donorAsset,
+            workDirectoryURL: PathSafety.expandedURL(from: workDirectoryPath),
+            outputArchiveURL: PathSafety.expandedURL(from: outputArchivePath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath)
+        )
+        let result = try OfficialArchiveSwapStager(home: home).stage(request: request, gameInstall: game)
+        print(OfficialArchiveSwapStageFormatter.format(result))
+    }
+
+    private func archivePatchStageMerge() throws {
+        let valueFlags: Set<String> = ["--mod-archive", "--work-dir", "--out", "--cp77tools"]
+        let positionals = archivePatchPositionals(valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let modArchivePath = optionValue("--mod-archive"),
+              let workDirectoryPath = optionValue("--work-dir"),
+              let outputArchivePath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch stage-merge <relative-archive-path> --mod-archive <path> --work-dir <path> --out <output.archive> --cp77tools <path>")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: nil)
+        let request = OfficialArchiveMergeStageRequest(
+            relativeArchivePath: positionals[0],
+            modArchiveURL: PathSafety.expandedURL(from: modArchivePath),
+            workDirectoryURL: PathSafety.expandedURL(from: workDirectoryPath),
+            outputArchiveURL: PathSafety.expandedURL(from: outputArchivePath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath)
+        )
+        let result = try OfficialArchiveMergeStager(home: home).stage(request: request, gameInstall: game)
+        print(OfficialArchiveMergeStageFormatter.format(result))
     }
 
     private func archivePatchListBackups() throws {
