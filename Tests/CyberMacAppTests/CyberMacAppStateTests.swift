@@ -61,6 +61,77 @@ final class CyberMacAppStateTests: XCTestCase {
         XCTAssertEqual(service.generateActivationCallCount, 1)
     }
 
+    func testSearchArchiveIndexPassesFiltersToService() async throws {
+        let service = FakeAppService()
+        let expected = AssetPreviewSearchReport(
+            query: "crosshair",
+            databasePath: "/tmp/archive-index.sqlite",
+            extensionFilter: "xbm",
+            archiveFilter: "Data/archive/Mac/content/basegame_1_engine.archive",
+            categoryFilter: "ui",
+            excludedCategoryFilter: nil,
+            onlyWithPreview: true,
+            limit: 50,
+            matches: []
+        )
+        service.searchArchiveIndexResult = .success(expected)
+        let appState = CyberMacAppState(container: service)
+
+        let report = try await appState.searchArchiveIndex(
+            query: "crosshair",
+            categoryFilter: "ui",
+            excludedCategoryFilter: nil,
+            extensionFilter: "xbm",
+            archiveFilter: "Data/archive/Mac/content/basegame_1_engine.archive",
+            onlyWithPreview: true,
+            limit: 50
+        )
+
+        XCTAssertEqual(report.query, "crosshair")
+        let calls = service.searchArchiveIndexCalls
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first, FakeAppService.RecordedSearch(
+            query: "crosshair",
+            categoryFilter: "ui",
+            excludedCategoryFilter: nil,
+            extensionFilter: "xbm",
+            archiveFilter: "Data/archive/Mac/content/basegame_1_engine.archive",
+            onlyWithPreview: true,
+            limit: 50
+        ))
+    }
+
+    func testSearchArchiveIndexPassesAnyVisualExclusionThrough() async throws {
+        let service = FakeAppService()
+        service.searchArchiveIndexResult = .success(AssetPreviewSearchReport(
+            query: "menu",
+            databasePath: "/tmp/archive-index.sqlite",
+            extensionFilter: nil,
+            archiveFilter: nil,
+            categoryFilter: nil,
+            excludedCategoryFilter: "audio",
+            onlyWithPreview: false,
+            limit: 50,
+            matches: []
+        ))
+        let appState = CyberMacAppState(container: service)
+
+        _ = try await appState.searchArchiveIndex(
+            query: "menu",
+            categoryFilter: nil,
+            excludedCategoryFilter: "audio",
+            extensionFilter: nil,
+            archiveFilter: nil,
+            onlyWithPreview: false,
+            limit: 50
+        )
+
+        let call = try XCTUnwrap(service.searchArchiveIndexCalls.first)
+        XCTAssertNil(call.categoryFilter)
+        XCTAssertEqual(call.excludedCategoryFilter, "audio")
+        XCTAssertFalse(call.onlyWithPreview)
+    }
+
     private func waitForCondition(
         timeoutNanoseconds: UInt64 = 1_000_000_000,
         condition: @escaping @MainActor () -> Bool
@@ -151,6 +222,50 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
     func revealCyberMacFolder() throws { throw FakeError.unexpectedCall }
     func revealGameApp() throws { throw FakeError.unexpectedCall }
     func clearTemporaryActivationOutputs() throws { throw FakeError.unexpectedCall }
+    func archiveIndexStatsIfAvailable() -> ArchiveCatalogIndexStatsReport? { nil }
+    func assetPreviewStatsIfAvailable() -> AssetPreviewStatsReport? { nil }
+
+    struct RecordedSearch: Equatable {
+        let query: String
+        let categoryFilter: String?
+        let excludedCategoryFilter: String?
+        let extensionFilter: String?
+        let archiveFilter: String?
+        let onlyWithPreview: Bool
+        let limit: Int
+    }
+
+    private var _searchArchiveIndexCalls: [RecordedSearch] = []
+    var searchArchiveIndexCalls: [RecordedSearch] {
+        lock.lock()
+        defer { lock.unlock() }
+        return _searchArchiveIndexCalls
+    }
+    var searchArchiveIndexResult: Result<AssetPreviewSearchReport, Error> = .failure(FakeError.unexpectedCall)
+
+    func searchArchiveIndexWithPreviews(
+        query: String,
+        categoryFilter: String?,
+        excludedCategoryFilter: String?,
+        extensionFilter: String?,
+        archiveFilter: String?,
+        onlyWithPreview: Bool,
+        limit: Int
+    ) throws -> AssetPreviewSearchReport {
+        lock.lock()
+        _searchArchiveIndexCalls.append(RecordedSearch(
+            query: query,
+            categoryFilter: categoryFilter,
+            excludedCategoryFilter: excludedCategoryFilter,
+            extensionFilter: extensionFilter,
+            archiveFilter: archiveFilter,
+            onlyWithPreview: onlyWithPreview,
+            limit: limit
+        ))
+        let result = searchArchiveIndexResult
+        lock.unlock()
+        return try result.get()
+    }
 
     private static func snapshot() -> AppSnapshot {
         AppSnapshot(

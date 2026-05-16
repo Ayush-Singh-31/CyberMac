@@ -54,6 +54,8 @@ struct CyberMacCLI {
             try archiveResearch()
         case "archive-catalog":
             try archiveCatalog()
+        case "archive-preview":
+            try archivePreview()
         case "archive-patch":
             try archivePatch()
         case "mod-lab":
@@ -128,12 +130,17 @@ struct CyberMacCLI {
           cybermac archive-catalog index build --catalog-dir <path> [--out <path>]
           cybermac archive-catalog index search <query> [--db <path>] [--ext xbm] [--archive <relative-archive-path>] [--category ui] [--limit 50]
           cybermac archive-catalog index stats [--db <path>]
+          cybermac archive-preview register --asset-path <asset-path> --archive <relative-archive-path> --preview <path> [--kind <preview-kind>] [--source-tool <name>] [--db <path>]
+          cybermac archive-preview import-manifest --manifest <json-path> [--db <path>]
+          cybermac archive-preview search <query> [--category <category>] [--ext <extension>] [--archive <relative-official-archive-path>] [--has-preview] [--limit <n>] [--db <path>]
+          cybermac archive-preview stats [--db <path>]
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch manual-plan <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch stage-swap <relative-archive-path> --target-asset <asset-path> --donor-asset <asset-path> --work-dir <path> --out <output.archive> --cp77tools <path>
           cybermac archive-patch stage-merge <relative-archive-path> --mod-archive <path> --work-dir <path> --out <output.archive> --cp77tools <path>
+          cybermac archive-patch match-mod --mod-archive <path> [--db <path>] [--cp77tools <path>] [--work-dir <path>] [--limit <n>]
           cybermac archive-patch list-backups
           cybermac archive-patch restore-official <backup-id> [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
           cybermac mod-lab assess <mod.zip> [--goal clothing|skin|ui|unknown]
@@ -570,6 +577,106 @@ struct CyberMacCLI {
         return parsedLimit
     }
 
+    private func archivePreview() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing archive-preview subcommand")
+        }
+
+        switch arguments[1] {
+        case "register":
+            try archivePreviewRegister()
+        case "import-manifest":
+            try archivePreviewImportManifest()
+        case "search":
+            try archivePreviewSearch()
+        case "stats":
+            try archivePreviewStats()
+        default:
+            throw CyberMacError.invalidInput("Unknown archive-preview subcommand: \(arguments[1])")
+        }
+    }
+
+    private func archivePreviewRegister() throws {
+        let valueFlags: Set<String> = ["--asset-path", "--archive", "--preview", "--kind", "--source-tool", "--db"]
+        let positionals = archivePreviewPositionals(valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let assetPath = optionValue("--asset-path"),
+              let archivePath = optionValue("--archive"),
+              let previewPath = optionValue("--preview")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-preview register --asset-path <asset-path> --archive <relative-archive-path> --preview <path> [--kind <preview-kind>] [--source-tool <name>] [--db <path>]")
+        }
+
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let previewURL = PathSafety.expandedURL(from: previewPath)
+        let report = try AssetPreviewRegistry().register(options: AssetPreviewRegisterOptions(
+            databaseURL: databaseURL,
+            archivePath: archivePath,
+            assetPath: assetPath,
+            previewURL: previewURL,
+            kind: optionValue("--kind"),
+            sourceTool: optionValue("--source-tool")
+        ))
+        print(AssetPreviewRegisterFormatter.format(report))
+    }
+
+    private func archivePreviewImportManifest() throws {
+        let valueFlags: Set<String> = ["--manifest", "--db"]
+        let positionals = archivePreviewPositionals(valueFlags: valueFlags)
+        guard positionals.isEmpty, let manifestPath = optionValue("--manifest") else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-preview import-manifest --manifest <json-path> [--db <path>]")
+        }
+
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let manifestURL = PathSafety.expandedURL(from: manifestPath)
+        let report = try AssetPreviewRegistry().importManifest(
+            manifestURL: manifestURL,
+            databaseURL: databaseURL
+        )
+        print(AssetPreviewManifestImportFormatter.format(report))
+    }
+
+    private func archivePreviewSearch() throws {
+        let valueFlags: Set<String> = ["--category", "--ext", "--archive", "--limit", "--db"]
+        let excludingFlags: Set<String> = ["--has-preview"]
+        let positionals = archivePreviewPositionals(valueFlags: valueFlags, excludingFlags: excludingFlags)
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-preview search <query> [--category <category>] [--ext <extension>] [--archive <relative-official-archive-path>] [--has-preview] [--limit <n>] [--db <path>]")
+        }
+
+        let limit: Int
+        if let rawLimit = optionValue("--limit") {
+            guard let parsedLimit = Int(rawLimit) else {
+                throw CyberMacError.invalidInput("Archive preview search limit must be an integer: \(rawLimit)")
+            }
+            limit = parsedLimit
+        } else {
+            limit = 50
+        }
+
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let report = try AssetPreviewRegistry().search(options: AssetPreviewSearchOptions(
+            query: positionals[0],
+            databaseURL: databaseURL,
+            extensionFilter: optionValue("--ext"),
+            archiveFilter: optionValue("--archive"),
+            categoryFilter: optionValue("--category"),
+            onlyWithPreview: hasFlag("--has-preview"),
+            limit: limit
+        ))
+        print(AssetPreviewSearchFormatter.format(report))
+    }
+
+    private func archivePreviewStats() throws {
+        let positionals = archivePreviewPositionals(valueFlags: ["--db"])
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-preview stats [--db <path>]")
+        }
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let report = try AssetPreviewRegistry().stats(databaseURL: databaseURL)
+        print(AssetPreviewStatsFormatter.format(report))
+    }
+
     private func archivePatch() throws {
         guard arguments.count >= 2 else {
             throw CyberMacError.invalidInput("Missing archive-patch subcommand")
@@ -588,6 +695,8 @@ struct CyberMacCLI {
             try archivePatchStageSwap()
         case "stage-merge":
             try archivePatchStageMerge()
+        case "match-mod":
+            try archivePatchMatchMod()
         case "list-backups":
             try archivePatchListBackups()
         case "restore-official":
@@ -705,6 +814,39 @@ struct CyberMacCLI {
         )
         let result = try OfficialArchiveMergeStager(home: home).stage(request: request, gameInstall: game)
         print(OfficialArchiveMergeStageFormatter.format(result))
+    }
+
+    private func archivePatchMatchMod() throws {
+        let valueFlags: Set<String> = ["--mod-archive", "--db", "--cp77tools", "--work-dir", "--limit"]
+        let positionals = archivePatchPositionals(valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let modArchivePath = optionValue("--mod-archive"),
+              let workDirectoryPath = optionValue("--work-dir"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch match-mod --mod-archive <path> [--db <path>] --cp77tools <path> --work-dir <path> [--limit <n>]")
+        }
+
+        let limit: Int
+        if let rawLimit = optionValue("--limit") {
+            guard let parsedLimit = Int(rawLimit), parsedLimit >= 0 else {
+                throw CyberMacError.invalidInput("Match-mod limit must be a non-negative integer: \(rawLimit)")
+            }
+            limit = parsedLimit
+        } else {
+            limit = ArchiveMatchAnalysisRequest.defaultUnmatchedLimit
+        }
+
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let request = ArchiveMatchAnalysisRequest(
+            modArchiveURL: PathSafety.expandedURL(from: modArchivePath),
+            workDirectoryURL: PathSafety.expandedURL(from: workDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            databaseURL: databaseURL,
+            unmatchedLimit: limit
+        )
+        let result = try ArchiveMatchAnalyzer().analyze(request: request)
+        print(ArchiveMatchAnalysisFormatter.format(result))
     }
 
     private func archivePatchListBackups() throws {
@@ -1371,6 +1513,29 @@ struct CyberMacCLI {
             }
             if valueFlags.contains(argument) {
                 skipNext = true
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
+    }
+
+    private func archivePreviewPositionals(valueFlags: Set<String>, excludingFlags: Set<String> = []) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if excludingFlags.contains(argument) {
                 continue
             }
             if argument.hasPrefix("--") {

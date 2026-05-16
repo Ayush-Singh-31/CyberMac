@@ -74,22 +74,69 @@ public struct CP77ToolsArchiveSwapTooling: OfficialArchiveSwapTooling, Sendable 
         self.runner = runner
     }
 
+    public static func extractArguments(sourceArchiveURL: URL, outputDirectoryURL: URL) -> [String] {
+        ["unbundle", sourceArchiveURL.path, "--outpath", outputDirectoryURL.path]
+    }
+
+    public static func packArguments(extractedDirectoryURL: URL, outputDirectoryURL: URL) -> [String] {
+        ["pack", extractedDirectoryURL.path, "--outpath", outputDirectoryURL.path]
+    }
+
     public func extractArchive(cp77toolsURL: URL, sourceArchiveURL: URL, outputDirectoryURL: URL) throws {
         try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
-        try runner.run(
-            executableURL: cp77toolsURL,
-            arguments: ["archive", "-e", "-p", sourceArchiveURL.path, "-o", outputDirectoryURL.path],
-            timeoutSeconds: 600
+        try runCP77Tools(
+            cp77toolsURL: cp77toolsURL,
+            arguments: Self.extractArguments(
+                sourceArchiveURL: sourceArchiveURL,
+                outputDirectoryURL: outputDirectoryURL
+            )
         )
     }
 
     public func packArchive(cp77toolsURL: URL, extractedDirectoryURL: URL, outputArchiveURL: URL) throws {
-        try FileManager.default.createDirectory(at: outputArchiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try runner.run(
-            executableURL: cp77toolsURL,
-            arguments: ["archive", "-p", extractedDirectoryURL.path, "-o", outputArchiveURL.path],
-            timeoutSeconds: 600
+        let outputDirectoryURL = outputArchiveURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
+        try runCP77Tools(
+            cp77toolsURL: cp77toolsURL,
+            arguments: Self.packArguments(
+                extractedDirectoryURL: extractedDirectoryURL,
+                outputDirectoryURL: outputDirectoryURL
+            )
         )
+    }
+
+    private func runCP77Tools(cp77toolsURL: URL, arguments: [String]) throws {
+        let result = try runner.run(
+            executableURL: cp77toolsURL,
+            arguments: arguments,
+            timeoutSeconds: 600,
+            allowFailure: true
+        )
+        guard result.exitCode != 0 else { return }
+        throw CyberMacError.processFailed(
+            command: CP77ToolsErrorFormatter.displayCommand(executable: cp77toolsURL, arguments: arguments),
+            exitCode: result.exitCode,
+            stderr: CP77ToolsErrorFormatter.combinedOutput(
+                argv: [cp77toolsURL.path] + arguments,
+                stdout: result.stdout,
+                stderr: result.stderr
+            )
+        )
+    }
+}
+
+enum CP77ToolsErrorFormatter {
+    static func displayCommand(executable: URL, arguments: [String]) -> String {
+        ([executable.path] + arguments).map(PathSafety.shellQuoted).joined(separator: " ")
+    }
+
+    static func combinedOutput(argv: [String], stdout: String, stderr: String) -> String {
+        let argvLine = "argv: " + argv.map { "[\($0)]" }.joined(separator: " ")
+        let trimmedStdout = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedStderr = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stdoutBlock = "stdout:\n\(trimmedStdout.isEmpty ? "(empty)" : trimmedStdout)"
+        let stderrBlock = "stderr:\n\(trimmedStderr.isEmpty ? "(empty)" : trimmedStderr)"
+        return [argvLine, stdoutBlock, stderrBlock].joined(separator: "\n")
     }
 }
 

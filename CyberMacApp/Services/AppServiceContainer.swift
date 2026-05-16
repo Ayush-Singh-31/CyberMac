@@ -50,6 +50,17 @@ protocol AppServiceProviding: Sendable {
     func revealCyberMacFolder() throws
     func revealGameApp() throws
     func clearTemporaryActivationOutputs() throws
+    func archiveIndexStatsIfAvailable() -> ArchiveCatalogIndexStatsReport?
+    func assetPreviewStatsIfAvailable() -> AssetPreviewStatsReport?
+    func searchArchiveIndexWithPreviews(
+        query: String,
+        categoryFilter: String?,
+        excludedCategoryFilter: String?,
+        extensionFilter: String?,
+        archiveFilter: String?,
+        onlyWithPreview: Bool,
+        limit: Int
+    ) throws -> AssetPreviewSearchReport
 }
 
 final class GameInstallCache: @unchecked Sendable {
@@ -322,5 +333,38 @@ struct AppServiceContainer: AppServiceProviding {
         for url in urls {
             try FileManager.default.removeItem(at: url)
         }
+    }
+
+    func archiveIndexStatsIfAvailable() -> ArchiveCatalogIndexStatsReport? {
+        let url = home.archiveIndexDatabaseURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try? ArchiveCatalogIndexStore().stats(databaseURL: url)
+    }
+
+    func assetPreviewStatsIfAvailable() -> AssetPreviewStatsReport? {
+        let url = home.archiveIndexDatabaseURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try? AssetPreviewRegistry().stats(databaseURL: url)
+    }
+
+    func searchArchiveIndexWithPreviews(
+        query: String,
+        categoryFilter: String?,
+        excludedCategoryFilter: String?,
+        extensionFilter: String?,
+        archiveFilter: String?,
+        onlyWithPreview: Bool,
+        limit: Int
+    ) throws -> AssetPreviewSearchReport {
+        try AssetPreviewRegistry().search(options: AssetPreviewSearchOptions(
+            query: query,
+            databaseURL: home.archiveIndexDatabaseURL,
+            extensionFilter: extensionFilter,
+            archiveFilter: archiveFilter,
+            categoryFilter: categoryFilter,
+            excludedCategoryFilter: excludedCategoryFilter,
+            onlyWithPreview: onlyWithPreview,
+            limit: limit
+        ))
     }
 }

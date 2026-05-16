@@ -408,6 +408,39 @@ final class CyberMacAppState {
         container.invalidateGameInstall()
     }
 
+    func loadArchiveIndexStats() async -> ArchiveCatalogIndexStatsReport? {
+        let container = self.container
+        return (try? await BackgroundTaskRunner.run { container.archiveIndexStatsIfAvailable() }) ?? nil
+    }
+
+    func loadAssetPreviewStats() async -> AssetPreviewStatsReport? {
+        let container = self.container
+        return (try? await BackgroundTaskRunner.run { container.assetPreviewStatsIfAvailable() }) ?? nil
+    }
+
+    func searchArchiveIndex(
+        query: String,
+        categoryFilter: String?,
+        excludedCategoryFilter: String?,
+        extensionFilter: String?,
+        archiveFilter: String?,
+        onlyWithPreview: Bool,
+        limit: Int
+    ) async throws -> AssetPreviewSearchReport {
+        let container = self.container
+        return try await BackgroundTaskRunner.run {
+            try container.searchArchiveIndexWithPreviews(
+                query: query,
+                categoryFilter: categoryFilter,
+                excludedCategoryFilter: excludedCategoryFilter,
+                extensionFilter: extensionFilter,
+                archiveFilter: archiveFilter,
+                onlyWithPreview: onlyWithPreview,
+                limit: limit
+            )
+        }
+    }
+
     // MARK: - Internals
 
     private func apply(snapshot: AppSnapshot) {

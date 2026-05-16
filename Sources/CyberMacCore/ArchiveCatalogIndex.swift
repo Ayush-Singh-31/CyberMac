@@ -390,6 +390,9 @@ public struct ArchiveCatalogIndexStore {
     CREATE INDEX assets_basename_idx ON assets(basename);
     CREATE INDEX assets_category_idx ON assets(category);
     CREATE INDEX assets_archive_id_idx ON assets(archive_id);
+
+    \(AssetPreviewSchema.createTableSQL)
+    \(AssetPreviewSchema.createIndexesSQL)
     """
 
     public init() {}
@@ -432,6 +435,61 @@ public struct ArchiveCatalogIndexStore {
             totalMatchCount: totalMatchCount,
             matches: matches
         )
+    }
+
+    public func findExactAssetPathMatches(
+        databaseURL: URL = ArchiveCatalogIndexDefaults.databaseURL,
+        assetPaths: [String]
+    ) throws -> [String: [String]] {
+        let databaseURL = databaseURL.standardizedFileURL
+        guard FileManager.default.fileExists(atPath: databaseURL.path) else {
+            throw CyberMacError.notFound("Archive catalog index database does not exist: \(databaseURL.path)")
+        }
+
+        var normalizedByLookup: [String: [String]] = [:]
+        for path in assetPaths {
+            let lookup = Self.normalizedLookupAssetPath(path)
+            guard !lookup.isEmpty else { continue }
+            normalizedByLookup[lookup, default: []].append(path)
+        }
+        guard !normalizedByLookup.isEmpty else { return [:] }
+
+        let database = try ArchiveCatalogSQLiteDatabase(url: databaseURL, flags: SQLITE_OPEN_READONLY)
+        defer { database.close() }
+
+        let statement = try database.prepare("""
+            SELECT archives.relative_archive_path
+            FROM assets
+            JOIN archives ON archives.id = assets.archive_id
+            WHERE REPLACE(LOWER(assets.asset_path), '\\', '/') = ?
+            ORDER BY archives.relative_archive_path ASC;
+            """)
+
+        var matches: [String: [String]] = [:]
+        for (lookupKey, originalPaths) in normalizedByLookup {
+            try statement.bind([.text(lookupKey)])
+            var archives: [String] = []
+            var seen = Set<String>()
+            while true {
+                let stepResult = try statement.step()
+                if stepResult == SQLITE_DONE { break }
+                if let archivePath = statement.columnString(0), seen.insert(archivePath).inserted {
+                    archives.append(archivePath)
+                }
+            }
+            guard !archives.isEmpty else { continue }
+            for originalPath in originalPaths {
+                matches[originalPath] = archives
+            }
+        }
+        return matches
+    }
+
+    static func normalizedLookupAssetPath(_ assetPath: String) -> String {
+        assetPath
+            .replacingOccurrences(of: "\\", with: "/")
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public func stats(databaseURL: URL = ArchiveCatalogIndexDefaults.databaseURL) throws -> ArchiveCatalogIndexStatsReport {

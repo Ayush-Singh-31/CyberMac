@@ -1,0 +1,23 @@
+[
+  {
+    "archive": "Data/archive/Mac/content/basegame_1_engine.archive",
+    "assetPath": "base\\gameplay\\gui\\widgets\\crosshair\\master_crosshair.xbm",
+    "previewPath": "previews/master_crosshair.png",
+    "kind": "texture_thumbnail",
+    "sourceTool": "manual"
+  },
+  {
+    "archive": "Data/archive/Mac/content/basegame_1_engine.archive",
+    "assetPath": "base\\gameplay\\gui\\main_menu.inkatlas",
+    "previewPath": "previews/main_menu_atlas.png",
+    "kind": "atlas_sheet",
+    "sourceTool": "manual"
+  },
+  {
+    "archive": "Data/archive/Mac/content/basegame_1_engine.archive",
+    "assetPath": "base\\gameplay\\vehicles\\quadra.mesh",
+    "previewPath": "previews/quadra.png",
+    "kind": "mesh_render",
+    "sourceTool": "blender"
+  }
+]
