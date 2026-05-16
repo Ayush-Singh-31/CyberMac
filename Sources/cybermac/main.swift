@@ -56,6 +56,8 @@ struct CyberMacCLI {
             try archiveCatalog()
         case "archive-preview":
             try archivePreview()
+        case "xbm-preview":
+            try xbmPreview()
         case "archive-patch":
             try archivePatch()
         case "mod-lab":
@@ -134,6 +136,9 @@ struct CyberMacCLI {
           cybermac archive-preview import-manifest --manifest <json-path> [--db <path>]
           cybermac archive-preview search <query> [--category <category>] [--ext <extension>] [--archive <relative-official-archive-path>] [--has-preview] [--limit <n>] [--db <path>]
           cybermac archive-preview stats [--db <path>]
+          cybermac xbm-preview probe <xbm-file> [--json]
+          cybermac xbm-preview inspect <xbm-file> [--json] [--dump-strings] [--dump-names] [--dump-chunks] [--limit <n>]
+          cybermac xbm-preview export <xbm-file> --out <png-path> [--register] [--archive <relative-official-archive-path>] [--asset-path <asset-path>] [--db <path>] [--debug]
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
@@ -675,6 +680,124 @@ struct CyberMacCLI {
         let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
         let report = try AssetPreviewRegistry().stats(databaseURL: databaseURL)
         print(AssetPreviewStatsFormatter.format(report))
+    }
+
+    private func xbmPreview() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing xbm-preview subcommand. Usage: cybermac xbm-preview {probe|inspect|export} <xbm-file> ...")
+        }
+        switch arguments[1] {
+        case "probe":
+            try xbmPreviewProbe()
+        case "inspect":
+            try xbmPreviewInspect()
+        case "export":
+            try xbmPreviewExport()
+        default:
+            throw CyberMacError.invalidInput("Unknown xbm-preview subcommand: \(arguments[1])")
+        }
+    }
+
+    private func xbmPreviewExport() throws {
+        let valueFlags: Set<String> = ["--out", "--archive", "--asset-path", "--db"]
+        let excludingFlags: Set<String> = ["export", "--register", "--debug"]
+        let positionals = xbmInspectPositionals(valueFlags: valueFlags, excludingFlags: excludingFlags)
+        guard positionals.count == 1, let outPath = optionValue("--out") else {
+            throw CyberMacError.invalidInput("Usage: cybermac xbm-preview export <xbm-file> --out <png-path> [--register] [--archive <relative-official-archive-path>] [--asset-path <asset-path>] [--db <path>] [--debug]")
+        }
+        let inputURL = PathSafety.expandedURL(from: positionals[0])
+        let outputURL = PathSafety.expandedURL(from: outPath)
+        let debug = hasFlag("--debug")
+        let shouldRegister = hasFlag("--register")
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL)
+
+        let options = CyberpunkXBMExportOptions(
+            outputURL: outputURL,
+            debug: debug,
+            register: shouldRegister,
+            archivePath: optionValue("--archive"),
+            assetPath: optionValue("--asset-path"),
+            databaseURL: databaseURL
+        )
+
+        do {
+            let result = try CyberpunkXBMExporter().export(fileURL: inputURL, options: options)
+            print(CyberpunkXBMExportFormatter.formatSuccess(result, debug: debug))
+        } catch let failure as CyberpunkXBMExportFailure {
+            fputs(CyberpunkXBMExportFormatter.formatFailure(failure, debug: debug) + "\n", stderr)
+            throw SilentExit(code: 1)
+        }
+    }
+
+    private func xbmPreviewProbe() throws {
+        let positionals = positionalArguments(after: "xbm-preview", excludingFlags: ["probe", "--json"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac xbm-preview probe <xbm-file> [--json]")
+        }
+        let url = PathSafety.expandedURL(from: positionals[0])
+        let result = try CyberpunkXBMProbe().probe(fileURL: url)
+        if hasFlag("--json") {
+            print(try CyberpunkXBMProbeFormatter.formatJSON(result))
+        } else {
+            print(CyberpunkXBMProbeFormatter.format(result))
+        }
+    }
+
+    private func xbmPreviewInspect() throws {
+        let valueFlags: Set<String> = ["--limit"]
+        let excludingFlags: Set<String> = ["inspect", "--json", "--dump-strings", "--dump-names", "--dump-chunks"]
+        let positionals = xbmInspectPositionals(valueFlags: valueFlags, excludingFlags: excludingFlags)
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac xbm-preview inspect <xbm-file> [--json] [--dump-strings] [--dump-names] [--dump-chunks] [--limit <n>]")
+        }
+
+        let limit: Int
+        if let rawLimit = optionValue("--limit") {
+            guard let parsed = Int(rawLimit), parsed >= 0 else {
+                throw CyberMacError.invalidInput("xbm-preview inspect --limit must be a non-negative integer: \(rawLimit)")
+            }
+            limit = parsed
+        } else {
+            limit = CyberpunkXBMInspectionFormatOptions.defaultLimit
+        }
+
+        let url = PathSafety.expandedURL(from: positionals[0])
+        let result = try CyberpunkXBMInspector().inspect(fileURL: url)
+
+        if hasFlag("--json") {
+            print(try CyberpunkXBMInspectionFormatter.formatJSON(result))
+        } else {
+            let options = CyberpunkXBMInspectionFormatOptions(
+                dumpStrings: hasFlag("--dump-strings"),
+                dumpNames: hasFlag("--dump-names"),
+                dumpChunks: hasFlag("--dump-chunks"),
+                limit: limit
+            )
+            print(CyberpunkXBMInspectionFormatter.format(result, options: options))
+        }
+    }
+
+    private func xbmInspectPositionals(valueFlags: Set<String>, excludingFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if excludingFlags.contains(argument) {
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
     }
 
     private func archivePatch() throws {
