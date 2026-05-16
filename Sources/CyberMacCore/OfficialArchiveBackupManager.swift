@@ -67,6 +67,13 @@ public enum OfficialArchivePreflightStatus: String, Equatable, Sendable {
     case blocked = "BLOCKED"
 }
 
+public enum OfficialArchivePatchStatus: String, Equatable, Sendable {
+    case pristine = "PRISTINE"
+    case modified = "MODIFIED"
+    case unknownBackup = "UNKNOWN_BACKUP"
+    case missing = "MISSING"
+}
+
 public struct OfficialArchivePreflightResult: Equatable, Sendable {
     public let status: OfficialArchivePreflightStatus
     public let reason: String?
@@ -503,6 +510,37 @@ public struct OfficialArchiveBackupManager: Sendable {
         } catch {
             return makeResult(status: .blocked, reason: String(describing: error))
         }
+    }
+
+    public func status(
+        relativeArchivePath rawRelativeArchivePath: String,
+        preferredGameAppPath: String? = nil
+    ) throws -> OfficialArchivePatchStatus {
+        let gameInstall = try GameInstallDetector().detect(preferredAppPath: preferredGameAppPath)
+        return try status(relativeArchivePath: rawRelativeArchivePath, gameInstall: gameInstall)
+    }
+
+    public func status(
+        relativeArchivePath rawRelativeArchivePath: String,
+        gameInstall: GameInstall
+    ) throws -> OfficialArchivePatchStatus {
+        let result = preflight(relativeArchivePath: rawRelativeArchivePath, gameInstall: gameInstall)
+        switch result.status {
+        case .pristine:
+            return .pristine
+        case .modified:
+            return .modified
+        case .missing:
+            return .missing
+        case .noBackup:
+            return .unknownBackup
+        case .blocked:
+            throw CyberMacError.invalidInput(result.reason ?? "Official archive status check was blocked.")
+        }
+    }
+
+    public static func validateOfficialRelativeArchivePath(_ rawPath: String) throws -> String {
+        try validatedOfficialRelativeArchivePath(rawPath)
     }
 
     public func backupDirectory(backupID: String) -> URL {

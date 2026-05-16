@@ -52,6 +52,8 @@ struct CyberMacCLI {
             try archiveProbe()
         case "archive-research":
             try archiveResearch()
+        case "archive-catalog":
+            try archiveCatalog()
         case "archive-patch":
             try archivePatch()
         case "mod-lab":
@@ -122,7 +124,9 @@ struct CyberMacCLI {
           cybermac archive-research report [--game-app /path/to/Cyberpunk.app]
           cybermac archive-research strings [--game-app /path/to/Cyberpunk.app]
           cybermac archive-research seal [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-catalog search <query> --catalog-dir <path> [--ext xbm] [--archive <relative-archive-path>] [--limit 50]
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
+          cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch manual-plan <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch list-backups
@@ -449,6 +453,45 @@ struct CyberMacCLI {
         print(ArchiveSealResearchReportFormatter.format(report))
     }
 
+    private func archiveCatalog() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing archive-catalog subcommand")
+        }
+
+        switch arguments[1] {
+        case "search":
+            try archiveCatalogSearch()
+        default:
+            throw CyberMacError.invalidInput("Unknown archive-catalog subcommand: \(arguments[1])")
+        }
+    }
+
+    private func archiveCatalogSearch() throws {
+        let positionals = archiveCatalogPositionals(valueFlags: ["--catalog-dir", "--ext", "--archive", "--limit"])
+        guard positionals.count == 1, let catalogDirectoryPath = optionValue("--catalog-dir") else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-catalog search <query> --catalog-dir <path> [--ext xbm] [--archive <relative-archive-path>] [--limit 50]")
+        }
+
+        let limit: Int
+        if let rawLimit = optionValue("--limit") {
+            guard let parsedLimit = Int(rawLimit) else {
+                throw CyberMacError.invalidInput("Archive catalog limit must be an integer: \(rawLimit)")
+            }
+            limit = parsedLimit
+        } else {
+            limit = 50
+        }
+
+        let report = try ArchiveCatalogSearcher().search(options: ArchiveCatalogSearchOptions(
+            query: positionals[0],
+            catalogDirectory: PathSafety.expandedURL(from: catalogDirectoryPath),
+            extensionFilter: optionValue("--ext"),
+            archiveFilter: optionValue("--archive"),
+            limit: limit
+        ))
+        print(ArchiveCatalogSearchFormatter.format(report))
+    }
+
     private func archivePatch() throws {
         guard arguments.count >= 2 else {
             throw CyberMacError.invalidInput("Missing archive-patch subcommand")
@@ -457,6 +500,8 @@ struct CyberMacCLI {
         switch arguments[1] {
         case "backup-official":
             try archivePatchBackupOfficial()
+        case "status":
+            try archivePatchStatus()
         case "preflight":
             try archivePatchPreflight()
         case "manual-plan":
@@ -489,6 +534,19 @@ struct CyberMacCLI {
         print("Size: \(metadata.originalSize) bytes")
         print("SHA-256: \(metadata.originalSHA256)")
         print("CodeResources listed: \(yesNo(metadata.codeResourcesListed))")
+    }
+
+    private func archivePatchStatus() throws {
+        let positionals = archivePatchPositionals(valueFlags: ["--game-app"])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let status = try OfficialArchiveBackupManager(home: home).status(
+            relativeArchivePath: positionals[0],
+            preferredGameAppPath: optionValue("--game-app")
+        )
+        print(status.rawValue)
     }
 
     private func archivePatchPreflight() throws {
@@ -1132,6 +1190,26 @@ struct CyberMacCLI {
     }
 
     private func archiveResearchPositionals(valueFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
+    }
+
+    private func archiveCatalogPositionals(valueFlags: Set<String>) -> [String] {
         var values: [String] = []
         var skipNext = false
         for argument in arguments.dropFirst(2) {

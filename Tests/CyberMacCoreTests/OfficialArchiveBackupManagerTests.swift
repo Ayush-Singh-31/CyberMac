@@ -440,6 +440,91 @@ final class OfficialArchiveBackupManagerTests: XCTestCase {
         XCTAssertFalse(formatted.contains("sudo cp"))
     }
 
+    func testStatusAcceptsOfficialPath() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+
+        XCTAssertEqual(try manager.status(relativeArchivePath: contentRelativePath, gameInstall: game), .unknownBackup)
+    }
+
+    func testStatusRejectsNonOfficialPaths() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        let rejectedPaths = [
+            "Data/archive/Mac/mod/bad.archive",
+            "Data/archive/pc/mod/bad.archive",
+            "Data/archive/pc/content/bad.archive",
+            "Data/archive/Mac/content/readme.txt",
+            "Data/archive/Mac/content/nested/bad.archive",
+            "Data/archive/Mac/texture/bad.archive"
+        ]
+
+        for relativePath in rejectedPaths {
+            XCTAssertThrowsError(try manager.status(relativeArchivePath: relativePath, gameInstall: game), relativePath)
+        }
+    }
+
+    func testStatusRejectsTraversal() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+
+        XCTAssertThrowsError(try manager.status(relativeArchivePath: "Data/archive/Mac/content/../ep1/bad.archive", gameInstall: game))
+    }
+
+    func testStatusRejectsArchiveNotListedInCodeResources() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: []
+        )
+
+        XCTAssertThrowsError(try manager.status(relativeArchivePath: contentRelativePath, gameInstall: game))
+    }
+
+    func testStatusMissingArchiveReportsMissing() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [:],
+            codeResourcesPaths: [contentRelativePath]
+        )
+
+        XCTAssertEqual(try manager.status(relativeArchivePath: contentRelativePath, gameInstall: game), .missing)
+    }
+
+    func testStatusNoMatchingBackupReportsUnknownBackup() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+
+        XCTAssertEqual(try manager.status(relativeArchivePath: contentRelativePath, gameInstall: game), .unknownBackup)
+    }
+
+    func testStatusMatchingBackupHashReportsPristine() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        _ = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+
+        XCTAssertEqual(try manager.status(relativeArchivePath: contentRelativePath, gameInstall: game), .pristine)
+    }
+
+    func testStatusDifferingHashReportsModified() throws {
+        let game = try makeGameInstall(
+            archiveFiles: [contentRelativePath: "official content archive"],
+            codeResourcesPaths: [contentRelativePath]
+        )
+        _ = try manager.backup(relativeArchivePath: contentRelativePath, gameInstall: game)
+        try "changed archive".write(to: archiveURL(relativePath: contentRelativePath, gameInstall: game), atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(try manager.status(relativeArchivePath: contentRelativePath, gameInstall: game), .modified)
+    }
+
     func testManualPlanRejectsAbsolutePaths() throws {
         let game = try makeGameInstall(
             archiveFiles: [contentRelativePath: "official content archive"],
