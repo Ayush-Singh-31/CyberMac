@@ -4,6 +4,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
     case home = "Home"
     case mods = "Mods"
     case activation = "Activation"
+    case archiveLab = "Archive Lab"
     case backups = "Backups"
     case diagnostics = "Diagnostics"
     case settings = "Settings"
@@ -18,6 +19,8 @@ enum AppScreen: String, CaseIterable, Identifiable {
             return "shippingbox"
         case .activation:
             return "bolt.circle"
+        case .archiveLab:
+            return "archivebox.circle"
         case .backups:
             return "clock.arrow.circlepath"
         case .diagnostics:
@@ -96,6 +99,8 @@ struct RootView: View {
             ModsView(appState: appState)
         case .activation:
             ActivationView(appState: appState)
+        case .archiveLab:
+            ArchiveLabView()
         case .backups:
             BackupsView(appState: appState)
         case .diagnostics:
