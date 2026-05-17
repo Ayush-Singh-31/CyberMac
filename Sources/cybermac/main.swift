@@ -136,9 +136,11 @@ struct CyberMacCLI {
           cybermac archive-preview import-manifest --manifest <json-path> [--db <path>]
           cybermac archive-preview search <query> [--category <category>] [--ext <extension>] [--archive <relative-official-archive-path>] [--has-preview] [--limit <n>] [--db <path>]
           cybermac archive-preview stats [--db <path>]
+          cybermac archive-preview delete --archive <relative-official-archive-path> --asset-path <asset-path> [--id <preview-id>] [--preview <path>] [--kind <preview-kind>] [--source-tool <name>] [--dry-run] [--db <path>]
           cybermac xbm-preview probe <xbm-file> [--json]
           cybermac xbm-preview inspect <xbm-file> [--json] [--dump-strings] [--dump-names] [--dump-chunks] [--limit <n>]
-          cybermac xbm-preview export <xbm-file> --out <png-path> [--register] [--archive <relative-official-archive-path>] [--asset-path <asset-path>] [--db <path>] [--debug]
+          cybermac xbm-preview export <xbm-file> --out <png-path> [--register] [--archive <relative-official-archive-path>] [--asset-path <asset-path>] [--db <path>] [--kraken <libkraken.dylib>] [--debug]
+          cybermac xbm-preview batch-export --archive <relative-official-archive-path> --extracted-root <path> --out-dir <path> [--kraken <libkraken.dylib>] [--query <q>] [--category <c>] [--limit <n>] [--register] [--db <path>] [--skip-existing] [--debug]
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
@@ -596,8 +598,50 @@ struct CyberMacCLI {
             try archivePreviewSearch()
         case "stats":
             try archivePreviewStats()
+        case "delete":
+            try archivePreviewDelete()
         default:
             throw CyberMacError.invalidInput("Unknown archive-preview subcommand: \(arguments[1])")
+        }
+    }
+
+    private func archivePreviewDelete() throws {
+        let valueFlags: Set<String> = ["--archive", "--asset-path", "--id", "--preview", "--kind", "--source-tool", "--db"]
+        let excludingFlags: Set<String> = ["--dry-run"]
+        let positionals = archivePreviewPositionals(valueFlags: valueFlags, excludingFlags: excludingFlags)
+        guard positionals.isEmpty,
+              let archivePath = optionValue("--archive"),
+              let assetPath = optionValue("--asset-path")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac archive-preview delete --archive <relative-official-archive-path> --asset-path <asset-path> [--id <preview-id>] [--preview <path>] [--kind <preview-kind>] [--source-tool <name>] [--dry-run] [--db <path>]")
+        }
+
+        let previewID: Int?
+        if let rawID = optionValue("--id") {
+            guard let parsed = Int(rawID) else {
+                throw CyberMacError.invalidInput("--id must be an integer: \(rawID)")
+            }
+            previewID = parsed
+        } else {
+            previewID = nil
+        }
+
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let previewPath = optionValue("--preview").map { PathSafety.expandedURL(from: $0).path }
+
+        let report = try AssetPreviewRegistry().delete(options: AssetPreviewDeleteOptions(
+            databaseURL: databaseURL,
+            archivePath: archivePath,
+            assetPath: assetPath,
+            previewID: previewID,
+            previewPath: previewPath,
+            kind: optionValue("--kind"),
+            sourceTool: optionValue("--source-tool"),
+            dryRun: hasFlag("--dry-run")
+        ))
+        print(AssetPreviewDeleteFormatter.format(report))
+        if report.ambiguous && !report.dryRun {
+            throw SilentExit(code: 1)
         }
     }
 
@@ -684,7 +728,7 @@ struct CyberMacCLI {
 
     private func xbmPreview() throws {
         guard arguments.count >= 2 else {
-            throw CyberMacError.invalidInput("Missing xbm-preview subcommand. Usage: cybermac xbm-preview {probe|inspect|export} <xbm-file> ...")
+            throw CyberMacError.invalidInput("Missing xbm-preview subcommand. Usage: cybermac xbm-preview {probe|inspect|export|batch-export} <xbm-file> ...")
         }
         switch arguments[1] {
         case "probe":
@@ -693,23 +737,26 @@ struct CyberMacCLI {
             try xbmPreviewInspect()
         case "export":
             try xbmPreviewExport()
+        case "batch-export":
+            try xbmPreviewBatchExport()
         default:
             throw CyberMacError.invalidInput("Unknown xbm-preview subcommand: \(arguments[1])")
         }
     }
 
     private func xbmPreviewExport() throws {
-        let valueFlags: Set<String> = ["--out", "--archive", "--asset-path", "--db"]
+        let valueFlags: Set<String> = ["--out", "--archive", "--asset-path", "--db", "--kraken", "--oodle"]
         let excludingFlags: Set<String> = ["export", "--register", "--debug"]
         let positionals = xbmInspectPositionals(valueFlags: valueFlags, excludingFlags: excludingFlags)
         guard positionals.count == 1, let outPath = optionValue("--out") else {
-            throw CyberMacError.invalidInput("Usage: cybermac xbm-preview export <xbm-file> --out <png-path> [--register] [--archive <relative-official-archive-path>] [--asset-path <asset-path>] [--db <path>] [--debug]")
+            throw CyberMacError.invalidInput("Usage: cybermac xbm-preview export <xbm-file> --out <png-path> [--register] [--archive <relative-official-archive-path>] [--asset-path <asset-path>] [--db <path>] [--kraken <libkraken.dylib>] [--oodle <libkraken.dylib>] [--debug]")
         }
         let inputURL = PathSafety.expandedURL(from: positionals[0])
         let outputURL = PathSafety.expandedURL(from: outPath)
         let debug = hasFlag("--debug")
         let shouldRegister = hasFlag("--register")
         let databaseURL = optionValue("--db").map(PathSafety.expandedURL)
+        let krakenLibraryPath = optionValue("--kraken") ?? optionValue("--oodle")
 
         let options = CyberpunkXBMExportOptions(
             outputURL: outputURL,
@@ -717,7 +764,8 @@ struct CyberMacCLI {
             register: shouldRegister,
             archivePath: optionValue("--archive"),
             assetPath: optionValue("--asset-path"),
-            databaseURL: databaseURL
+            databaseURL: databaseURL,
+            krakenLibraryPath: krakenLibraryPath
         )
 
         do {
@@ -727,6 +775,50 @@ struct CyberMacCLI {
             fputs(CyberpunkXBMExportFormatter.formatFailure(failure, debug: debug) + "\n", stderr)
             throw SilentExit(code: 1)
         }
+    }
+
+    private func xbmPreviewBatchExport() throws {
+        let valueFlags: Set<String> = [
+            "--archive", "--extracted-root", "--out-dir", "--kraken", "--oodle",
+            "--query", "--category", "--limit", "--db"
+        ]
+        let excludingFlags: Set<String> = ["batch-export", "--register", "--skip-existing", "--debug"]
+        let positionals = xbmInspectPositionals(valueFlags: valueFlags, excludingFlags: excludingFlags)
+        guard positionals.isEmpty,
+              let archivePath = optionValue("--archive"),
+              let extractedRoot = optionValue("--extracted-root"),
+              let outDir = optionValue("--out-dir")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac xbm-preview batch-export --archive <relative-official-archive-path> --extracted-root <path> --out-dir <path> [--kraken <libkraken.dylib>] [--query <q>] [--category <c>] [--limit <n>] [--register] [--db <path>] [--skip-existing] [--debug]")
+        }
+
+        let limit: Int
+        if let rawLimit = optionValue("--limit") {
+            guard let parsed = Int(rawLimit), parsed > 0 else {
+                throw CyberMacError.invalidInput("--limit must be a positive integer: \(rawLimit)")
+            }
+            limit = parsed
+        } else {
+            limit = CyberpunkXBMBatchExportOptions.defaultLimit
+        }
+
+        let debug = hasFlag("--debug")
+        let options = CyberpunkXBMBatchExportOptions(
+            archivePath: archivePath,
+            extractedRoot: PathSafety.expandedURL(from: extractedRoot),
+            outputDirectory: PathSafety.expandedURL(from: outDir),
+            krakenLibraryPath: optionValue("--kraken") ?? optionValue("--oodle"),
+            query: optionValue("--query"),
+            category: optionValue("--category"),
+            limit: limit,
+            register: hasFlag("--register"),
+            databaseURL: optionValue("--db").map(PathSafety.expandedURL),
+            skipExisting: hasFlag("--skip-existing"),
+            debug: debug
+        )
+
+        let report = try CyberpunkXBMBatchExporter().run(options: options)
+        print(CyberpunkXBMBatchExportFormatter.format(report, debug: debug))
     }
 
     private func xbmPreviewProbe() throws {

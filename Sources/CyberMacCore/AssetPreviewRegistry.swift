@@ -41,6 +41,14 @@ public enum AssetPreviewStatus {
     public static let failed = "failed"
 }
 
+/// Source-tool names emitted by CyberMac itself. External callers can use
+/// any `source_tool` string; these constants identify the in-house pipelines
+/// so search/ordering can prefer them over hand-imported entries.
+public enum AssetPreviewSourceTool {
+    public static let cybermacXBMPreviewExport = "cybermac-xbm-preview-export"
+    public static let cybermacXBMPreviewBatchExport = "cybermac-xbm-preview-batch-export"
+}
+
 enum AssetPreviewSchema {
     static let createTableSQL = """
     CREATE TABLE IF NOT EXISTS asset_previews (
@@ -170,6 +178,90 @@ public struct AssetPreviewManifestImportReport: Equatable, Sendable {
     }
 }
 
+public struct AssetPreviewDeleteOptions: Equatable, Sendable {
+    public let databaseURL: URL
+    public let archivePath: String
+    public let assetPath: String
+    public let previewID: Int?
+    public let previewPath: String?
+    public let kind: String?
+    public let sourceTool: String?
+    public let dryRun: Bool
+
+    public init(
+        databaseURL: URL = ArchiveCatalogIndexDefaults.databaseURL,
+        archivePath: String,
+        assetPath: String,
+        previewID: Int? = nil,
+        previewPath: String? = nil,
+        kind: String? = nil,
+        sourceTool: String? = nil,
+        dryRun: Bool = false
+    ) {
+        self.databaseURL = databaseURL
+        self.archivePath = archivePath
+        self.assetPath = assetPath
+        self.previewID = previewID
+        self.previewPath = previewPath
+        self.kind = kind
+        self.sourceTool = sourceTool
+        self.dryRun = dryRun
+    }
+}
+
+public struct AssetPreviewDeleteCandidate: Equatable, Sendable {
+    public let id: Int
+    public let previewKind: String
+    public let previewPath: String
+    public let sourceTool: String?
+    public let status: String
+    public let createdAt: String
+
+    public init(
+        id: Int,
+        previewKind: String,
+        previewPath: String,
+        sourceTool: String?,
+        status: String,
+        createdAt: String
+    ) {
+        self.id = id
+        self.previewKind = previewKind
+        self.previewPath = previewPath
+        self.sourceTool = sourceTool
+        self.status = status
+        self.createdAt = createdAt
+    }
+}
+
+public struct AssetPreviewDeleteReport: Equatable, Sendable {
+    public let databasePath: String
+    public let archivePath: String
+    public let assetPath: String
+    public let candidates: [AssetPreviewDeleteCandidate]
+    public let deletedCount: Int
+    public let dryRun: Bool
+    public let ambiguous: Bool
+
+    public init(
+        databasePath: String,
+        archivePath: String,
+        assetPath: String,
+        candidates: [AssetPreviewDeleteCandidate],
+        deletedCount: Int,
+        dryRun: Bool,
+        ambiguous: Bool
+    ) {
+        self.databasePath = databasePath
+        self.archivePath = archivePath
+        self.assetPath = assetPath
+        self.candidates = candidates
+        self.deletedCount = deletedCount
+        self.dryRun = dryRun
+        self.ambiguous = ambiguous
+    }
+}
+
 public struct AssetPreviewSearchOptions: Equatable, Sendable {
     public let query: String
     public let databaseURL: URL
@@ -291,6 +383,20 @@ public struct AssetPreviewStatsReport: Equatable, Sendable {
 public struct AssetPreviewRegistry {
     public static let topArchivesLimit = 20
 
+    /// SQL `ORDER BY` clause used when picking the "first" preview for an
+    /// asset. Prefers texture thumbnails written by the cybermac XBM
+    /// exporter pipelines over generic / hand-imported entries.
+    ///
+    /// Order:
+    ///   1. preview_kind = texture_thumbnail
+    ///   2. source_tool = cybermac-xbm-preview-export (or batch-export)
+    ///   3. alphabetical preview_kind, then preview_path
+    static let preferredPreviewOrderingSQL = """
+        CASE WHEN preview_kind = '\(AssetPreviewKind.textureThumbnail)' THEN 0 ELSE 1 END,
+        CASE WHEN source_tool IN ('\(AssetPreviewSourceTool.cybermacXBMPreviewExport)', '\(AssetPreviewSourceTool.cybermacXBMPreviewBatchExport)') THEN 0 ELSE 1 END,
+        preview_kind ASC, preview_path ASC
+        """
+
     public init() {}
 
     public func register(options: AssetPreviewRegisterOptions) throws -> AssetPreviewRegisterReport {
@@ -338,6 +444,97 @@ public struct AssetPreviewRegistry {
             inserted: upsert.inserted,
             updated: upsert.updated,
             createdAt: now
+        )
+    }
+
+    /// Delete preview rows for a given (archive, asset) pair, optionally
+    /// narrowed by `previewID`, `previewPath`, `kind`, or `sourceTool`.
+    ///
+    /// If more than one row matches and no `previewID` was supplied, this
+    /// method does NOT delete anything; instead it returns a report flagged
+    /// `ambiguous = true` so the caller can list the candidates and ask for
+    /// a more specific selector. `dryRun` skips the DELETE statement entirely
+    /// — the candidate list is the only output.
+    public func delete(options: AssetPreviewDeleteOptions) throws -> AssetPreviewDeleteReport {
+        let archivePath = try OfficialArchiveBackupManager.validateOfficialRelativeArchivePath(options.archivePath)
+        let assetPath = try Self.normalizedAssetPath(options.assetPath)
+        let kind = try AssetPreviewKind.normalized(options.kind)
+        let sourceTool = options.sourceTool?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previewPath = options.previewPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let databaseURL = options.databaseURL.standardizedFileURL
+
+        guard FileManager.default.fileExists(atPath: databaseURL.path) else {
+            throw CyberMacError.notFound("Archive catalog index database does not exist: \(databaseURL.path)")
+        }
+
+        let database = try ArchiveCatalogSQLiteDatabase(url: databaseURL, flags: SQLITE_OPEN_READWRITE)
+        defer { database.close() }
+        try Self.ensureSchema(database: database)
+
+        let assetID = try Self.lookupAssetID(
+            database: database,
+            archivePath: archivePath,
+            assetPath: assetPath
+        )
+
+        var clauses = ["asset_id = ?"]
+        var bindings: [ArchiveCatalogSQLiteValue] = [.int(assetID)]
+        if let id = options.previewID {
+            clauses.append("id = ?")
+            bindings.append(.int(id))
+        }
+        if let previewPath, !previewPath.isEmpty {
+            clauses.append("preview_path = ?")
+            bindings.append(.text(previewPath))
+        }
+        if let kind {
+            clauses.append("preview_kind = ?")
+            bindings.append(.text(kind))
+        }
+        if let sourceTool, !sourceTool.isEmpty {
+            clauses.append("source_tool = ?")
+            bindings.append(.text(sourceTool))
+        }
+        let whereClause = "WHERE " + clauses.joined(separator: " AND ")
+
+        let candidateStatement = try database.prepare("""
+            SELECT id, preview_kind, preview_path, source_tool, status, created_at
+            FROM asset_previews
+            \(whereClause)
+            ORDER BY id ASC;
+            """)
+        try candidateStatement.bind(bindings)
+        var candidates: [AssetPreviewDeleteCandidate] = []
+        while try candidateStatement.step() == SQLITE_ROW {
+            candidates.append(AssetPreviewDeleteCandidate(
+                id: candidateStatement.columnInt(0),
+                previewKind: candidateStatement.columnString(1) ?? "",
+                previewPath: candidateStatement.columnString(2) ?? "",
+                sourceTool: candidateStatement.columnString(3),
+                status: candidateStatement.columnString(4) ?? "",
+                createdAt: candidateStatement.columnString(5) ?? ""
+            ))
+        }
+
+        let ambiguous = candidates.count > 1 && options.previewID == nil
+        var deletedCount = 0
+        if !options.dryRun && !ambiguous && !candidates.isEmpty {
+            let deleteStatement = try database.prepare("""
+                DELETE FROM asset_previews
+                \(whereClause);
+                """)
+            try deleteStatement.run(bindings)
+            deletedCount = database.lastChangeCount
+        }
+
+        return AssetPreviewDeleteReport(
+            databasePath: databaseURL.path,
+            archivePath: archivePath,
+            assetPath: assetPath,
+            candidates: candidates,
+            deletedCount: deletedCount,
+            dryRun: options.dryRun,
+            ambiguous: ambiguous
         )
     }
 
@@ -473,11 +670,11 @@ public struct AssetPreviewRegistry {
                 (SELECT preview_path FROM asset_previews
                     WHERE asset_previews.asset_id = assets.id
                       AND asset_previews.status = '\(AssetPreviewStatus.available)'
-                    ORDER BY preview_kind ASC, preview_path ASC LIMIT 1) AS first_preview_path,
+                    ORDER BY \(Self.preferredPreviewOrderingSQL) LIMIT 1) AS first_preview_path,
                 (SELECT preview_kind FROM asset_previews
                     WHERE asset_previews.asset_id = assets.id
                       AND asset_previews.status = '\(AssetPreviewStatus.available)'
-                    ORDER BY preview_kind ASC, preview_path ASC LIMIT 1) AS first_preview_kind
+                    ORDER BY \(Self.preferredPreviewOrderingSQL) LIMIT 1) AS first_preview_kind
             FROM assets
             JOIN archives ON archives.id = assets.archive_id
             \(whereClause)
@@ -735,6 +932,37 @@ public enum AssetPreviewRegisterFormatter {
         ]
         if let sourceTool = report.sourceTool {
             lines.append("Source tool: \(sourceTool)")
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
+public enum AssetPreviewDeleteFormatter {
+    public static func format(_ report: AssetPreviewDeleteReport) -> String {
+        var lines = [
+            "Asset preview delete",
+            "DB: \(PathSafety.redactUserPath(report.databasePath))",
+            "Archive: \(report.archivePath)",
+            "Asset: \(report.assetPath)",
+            "Matched: \(report.candidates.count)",
+            "Dry run: \(report.dryRun ? "yes" : "no")",
+            "Deleted: \(report.deletedCount)"
+        ]
+        if report.ambiguous {
+            lines.append("Ambiguous: more than one preview matches; re-run with --id <id> (or narrow --kind/--source-tool/--preview).")
+        }
+        if !report.candidates.isEmpty {
+            lines.append("")
+            lines.append("Candidates:")
+            for candidate in report.candidates {
+                lines.append([
+                    "id=\(candidate.id)",
+                    "kind=\(candidate.previewKind)",
+                    "status=\(candidate.status)",
+                    "source=\(candidate.sourceTool ?? "-")",
+                    "path=\(PathSafety.redactUserPath(candidate.previewPath))"
+                ].joined(separator: " | "))
+            }
         }
         return lines.joined(separator: "\n")
     }

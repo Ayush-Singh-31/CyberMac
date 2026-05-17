@@ -26,9 +26,18 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "CyberMacBC7Decoder",
+            path: "Sources/CyberMacBC7Decoder",
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("include")
+            ]
+        ),
+        .target(
             name: "CyberMacCore",
             dependencies: [
-                .product(name: "ZIPFoundation", package: "ZIPFoundation")
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+                "CyberMacBC7Decoder"
             ],
             linkerSettings: [
                 .linkedLibrary("sqlite3")

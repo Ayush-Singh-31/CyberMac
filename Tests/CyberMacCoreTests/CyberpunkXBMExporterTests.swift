@@ -123,7 +123,8 @@ final class CyberpunkXBMExporterTests: XCTestCase {
     // MARK: - Failure paths
 
     func testFailsClearlyOnUnsupportedCompression() throws {
-        let fixture = SyntheticExportableXBM.makeWithCompressionName("TCM_QualityColor", width: 4, height: 4)
+        // TCM_QualityR maps to BC4, which still has no decoder wired up.
+        let fixture = SyntheticExportableXBM.makeWithCompressionName("TCM_QualityR", width: 4, height: 4)
         let xbmURL = tempDir.appendingPathComponent("unsupported.xbm")
         try fixture.data.write(to: xbmURL)
 
@@ -138,10 +139,72 @@ final class CyberpunkXBMExporterTests: XCTestCase {
                 XCTFail("Expected CyberpunkXBMExportFailure, got \(error)")
                 return
             }
-            XCTAssertEqual(failure.detectedCompressionName, "TCM_QualityColor")
+            XCTAssertEqual(failure.detectedCompressionName, "TCM_QualityR")
             XCTAssertTrue(failure.reason.contains("Unsupported compression"))
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: pngURL.path))
+    }
+
+    func testQualityColorMapsToBC7Decoder() throws {
+        XCTAssertEqual(CyberpunkXBMCompression.qualityColor.decoderName, "BC7")
+        XCTAssertEqual(CyberpunkXBMCompression(rawName: "TCM_QualityColor"), .qualityColor)
+    }
+
+    func testExportsSyntheticBC7XBMFixtureToPNG() throws {
+        // 4×4 BC7 block (16 bytes). The pixel content is whatever bcdec
+        // produces for this input; we only check decoder selection, output
+        // shape, and that a PNG lands on disk.
+        let block = Data(repeating: 0x40, count: CyberpunkXBMBC7Decoder.blockByteSize)
+        let fixture = SyntheticExportableXBM.makeWithRawPayload(
+            compressionName: "TCM_QualityColor",
+            width: 4,
+            height: 4,
+            payload: block
+        )
+        let xbmURL = tempDir.appendingPathComponent("synthetic-bc7.xbm")
+        try fixture.data.write(to: xbmURL)
+        let pngURL = tempDir.appendingPathComponent("generated/bc7.png")
+
+        let result = try CyberpunkXBMExporter().export(
+            fileURL: xbmURL,
+            options: CyberpunkXBMExportOptions(outputURL: pngURL, debug: true)
+        )
+
+        XCTAssertEqual(result.width, 4)
+        XCTAssertEqual(result.height, 4)
+        XCTAssertEqual(result.compressionName, "TCM_QualityColor")
+        XCTAssertEqual(result.decoderUsed, "BC7")
+        XCTAssertEqual(result.topMipBytesDecoded, 16)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pngURL.path))
+
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(pngURL as CFURL, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        XCTAssertEqual(image.width, 4)
+        XCTAssertEqual(image.height, 4)
+    }
+
+    func testFailsClearlyOnBC7PayloadSmallerThanTopMip() throws {
+        // Claim 64×64 (needs 4096 bytes for BC7 top mip) but supply only 16.
+        let fixture = SyntheticExportableXBM.makeWithRawPayload(
+            compressionName: "TCM_QualityColor",
+            width: 64,
+            height: 64,
+            payload: Data(count: 16)
+        )
+        let xbmURL = tempDir.appendingPathComponent("bc7-short.xbm")
+        try fixture.data.write(to: xbmURL)
+        XCTAssertThrowsError(
+            try CyberpunkXBMExporter().export(
+                fileURL: xbmURL,
+                options: CyberpunkXBMExportOptions(outputURL: tempDir.appendingPathComponent("out.png"))
+            )
+        ) { error in
+            guard let failure = error as? CyberpunkXBMExportFailure else {
+                XCTFail("Expected CyberpunkXBMExportFailure, got \(error)")
+                return
+            }
+            XCTAssertTrue(failure.reason.contains("BC7 top mip"))
+        }
     }
 
     func testFailsClearlyOnNonCyberpunkInput() throws {
@@ -354,6 +417,17 @@ private struct SyntheticExportableXBM {
 
     static func makeWithCompressionName(_ compressionName: String, width: UInt32, height: UInt32) -> SyntheticExportableXBM {
         let payload = Data(count: 64)
+        return make(
+            width: width,
+            height: height,
+            mipCount: 1,
+            compressionName: compressionName,
+            payload: payload,
+            omittingProperties: false
+        )
+    }
+
+    static func makeWithRawPayload(compressionName: String, width: UInt32, height: UInt32, payload: Data) -> SyntheticExportableXBM {
         return make(
             width: width,
             height: height,

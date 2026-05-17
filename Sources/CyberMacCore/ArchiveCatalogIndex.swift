@@ -57,7 +57,7 @@ public enum ArchiveCatalogIndexCategory: String, CaseIterable, Sendable {
         if normalizedPath.contains("/hair/") {
             return Self.hair.rawValue
         }
-        if normalizedPath.contains("/tattoo/") {
+        if normalizedPath.contains("/tattoo/") || normalizedPath.contains("/tattoos/") {
             return Self.tattoo.rawValue
         }
         if normalizedPath.contains("/weapons/")

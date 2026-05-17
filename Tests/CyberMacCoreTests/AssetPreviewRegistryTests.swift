@@ -307,6 +307,151 @@ final class AssetPreviewRegistryTests: XCTestCase {
         XCTAssertEqual(report.failedCount, report.totalEntries)
     }
 
+    // MARK: - Preview ordering preference
+
+    func testSearchPrefersTextureThumbnailOverExternalReference() throws {
+        let texturePreview = try writePreviewFile(name: "texture.png")
+        let externalPreview = try writePreviewFile(name: "external.png")
+
+        // Register the external_reference FIRST so the old alphabetical order
+        // ("external_reference" < "texture_thumbnail") would have surfaced it.
+        _ = try register(assetPath: firstAssetPath, preview: externalPreview, kind: AssetPreviewKind.externalReference, sourceTool: "manual")
+        _ = try register(assetPath: firstAssetPath, preview: texturePreview, kind: AssetPreviewKind.textureThumbnail, sourceTool: "other-tool")
+
+        let report = try AssetPreviewRegistry().search(options: AssetPreviewSearchOptions(
+            query: "master_crosshair",
+            databaseURL: dbURL,
+            limit: 10
+        ))
+        let match = try XCTUnwrap(report.matches.first)
+        XCTAssertEqual(match.firstPreviewKind, AssetPreviewKind.textureThumbnail)
+        XCTAssertEqual(match.firstPreviewPath, texturePreview.standardizedFileURL.path)
+        XCTAssertEqual(match.previewCount, 2)
+    }
+
+    func testSearchPrefersCybermacXBMSourceToolWhenKindsAreEqual() throws {
+        // Both rows are texture_thumbnail; the cybermac pipeline source tool
+        // should win over an external one even when registered later.
+        let manualPreview = try writePreviewFile(name: "manual.png")
+        let cybermacPreview = try writePreviewFile(name: "cybermac.png")
+
+        _ = try register(assetPath: firstAssetPath, preview: manualPreview, kind: AssetPreviewKind.textureThumbnail, sourceTool: "wolvenkit")
+        _ = try register(assetPath: firstAssetPath, preview: cybermacPreview, kind: AssetPreviewKind.textureThumbnail, sourceTool: AssetPreviewSourceTool.cybermacXBMPreviewExport)
+
+        let report = try AssetPreviewRegistry().search(options: AssetPreviewSearchOptions(
+            query: "master_crosshair",
+            databaseURL: dbURL,
+            limit: 10
+        ))
+        let match = try XCTUnwrap(report.matches.first)
+        XCTAssertEqual(match.firstPreviewPath, cybermacPreview.standardizedFileURL.path)
+    }
+
+    // MARK: - Delete
+
+    func testDeleteByIDRemovesSingleRow() throws {
+        let preview = try writePreviewFile(name: "to-delete.png")
+        _ = try register(assetPath: firstAssetPath, preview: preview, kind: AssetPreviewKind.textureThumbnail)
+        // A second preview that must survive the delete.
+        let preserved = try writePreviewFile(name: "preserved.png")
+        _ = try register(assetPath: firstAssetPath, preview: preserved, kind: AssetPreviewKind.externalReference)
+
+        let registry = AssetPreviewRegistry()
+        let lookup = try registry.delete(options: AssetPreviewDeleteOptions(
+            databaseURL: dbURL,
+            archivePath: archivePath,
+            assetPath: firstAssetPath,
+            dryRun: true
+        ))
+        XCTAssertEqual(lookup.candidates.count, 2)
+        let textureCandidate = try XCTUnwrap(lookup.candidates.first { $0.previewKind == AssetPreviewKind.textureThumbnail })
+
+        let deleteReport = try registry.delete(options: AssetPreviewDeleteOptions(
+            databaseURL: dbURL,
+            archivePath: archivePath,
+            assetPath: firstAssetPath,
+            previewID: textureCandidate.id
+        ))
+        XCTAssertEqual(deleteReport.deletedCount, 1)
+        XCTAssertFalse(deleteReport.ambiguous)
+
+        // Verify the survivor is still there.
+        let stats = try registry.stats(databaseURL: dbURL)
+        XCTAssertEqual(stats.totalPreviewRows, 1)
+    }
+
+    func testDeleteByKindAndSourceToolRemovesAllMatchingRows() throws {
+        let cybermacPreview = try writePreviewFile(name: "cybermac.png")
+        let manualPreview = try writePreviewFile(name: "manual.png")
+        _ = try register(
+            assetPath: firstAssetPath,
+            preview: cybermacPreview,
+            kind: AssetPreviewKind.textureThumbnail,
+            sourceTool: AssetPreviewSourceTool.cybermacXBMPreviewExport
+        )
+        _ = try register(
+            assetPath: firstAssetPath,
+            preview: manualPreview,
+            kind: AssetPreviewKind.externalReference,
+            sourceTool: "manual"
+        )
+
+        let report = try AssetPreviewRegistry().delete(options: AssetPreviewDeleteOptions(
+            databaseURL: dbURL,
+            archivePath: archivePath,
+            assetPath: firstAssetPath,
+            kind: AssetPreviewKind.textureThumbnail,
+            sourceTool: AssetPreviewSourceTool.cybermacXBMPreviewExport
+        ))
+        XCTAssertEqual(report.deletedCount, 1)
+        XCTAssertFalse(report.ambiguous)
+        XCTAssertEqual(report.candidates.count, 1)
+
+        // Manual preview is untouched.
+        let stats = try AssetPreviewRegistry().stats(databaseURL: dbURL)
+        XCTAssertEqual(stats.totalPreviewRows, 1)
+    }
+
+    func testDeleteRefusesAmbiguousMatchWithoutID() throws {
+        let textureA = try writePreviewFile(name: "texture-a.png")
+        let textureB = try writePreviewFile(name: "texture-b.png")
+        _ = try register(assetPath: firstAssetPath, preview: textureA, kind: AssetPreviewKind.textureThumbnail, sourceTool: "tool-a")
+        _ = try register(assetPath: firstAssetPath, preview: textureB, kind: AssetPreviewKind.externalReference, sourceTool: "tool-b")
+
+        let report = try AssetPreviewRegistry().delete(options: AssetPreviewDeleteOptions(
+            databaseURL: dbURL,
+            archivePath: archivePath,
+            assetPath: firstAssetPath
+        ))
+        XCTAssertTrue(report.ambiguous)
+        XCTAssertEqual(report.deletedCount, 0)
+        XCTAssertEqual(report.candidates.count, 2)
+
+        // Nothing was actually removed.
+        let stats = try AssetPreviewRegistry().stats(databaseURL: dbURL)
+        XCTAssertEqual(stats.totalPreviewRows, 2)
+    }
+
+    func testDeleteDryRunNeverDeletesEvenWithExactSelector() throws {
+        let preview = try writePreviewFile(name: "preview.png")
+        _ = try register(assetPath: firstAssetPath, preview: preview, kind: AssetPreviewKind.textureThumbnail, sourceTool: "tool")
+
+        let dryRunReport = try AssetPreviewRegistry().delete(options: AssetPreviewDeleteOptions(
+            databaseURL: dbURL,
+            archivePath: archivePath,
+            assetPath: firstAssetPath,
+            kind: AssetPreviewKind.textureThumbnail,
+            sourceTool: "tool",
+            dryRun: true
+        ))
+        XCTAssertEqual(dryRunReport.candidates.count, 1)
+        XCTAssertEqual(dryRunReport.deletedCount, 0)
+        XCTAssertTrue(dryRunReport.dryRun)
+
+        let stats = try AssetPreviewRegistry().stats(databaseURL: dbURL)
+        XCTAssertEqual(stats.totalPreviewRows, 1)
+    }
+
     // MARK: - Helpers
 
     private func writePreviewFile(name: String) throws -> URL {

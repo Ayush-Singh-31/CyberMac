@@ -124,6 +124,25 @@ final class ArchiveCatalogIndexTests: XCTestCase {
         XCTAssertEqual(audioReport.matches.first?.category, "audio")
     }
 
+    func testTattooCategoryRecognizesBothSingularAndPluralPaths() throws {
+        // The category guess used to match only "/tattoo/"; real CDPR paths
+        // also use "/tattoos/" (plural). Both should classify as tattoo.
+        try writeCatalog(
+            "Data_archive_Mac_content_basegame_1_engine.archive.txt",
+            contents: """
+            base\\characters\\common\\character_customisation_items\\tattoos\\body\\textures\\tattoo_body__customisation_01_d01.xbm
+            base\\characters\\common\\tattoo\\arm\\arm_tattoo.xbm
+            """
+        )
+        try buildIndex()
+
+        let tattooReport = try search(query: "tattoo", categoryFilter: "tattoo")
+        XCTAssertEqual(tattooReport.matches.count, 2)
+        for match in tattooReport.matches {
+            XCTAssertEqual(match.category, "tattoo")
+        }
+    }
+
     func testStatsReturnsExpectedCounts() throws {
         try writeCatalog(
             "Data_archive_Mac_content_basegame_1_engine.archive.txt",

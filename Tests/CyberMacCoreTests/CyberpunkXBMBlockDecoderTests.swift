@@ -104,4 +104,54 @@ final class CyberpunkXBMBlockDecoderTests: XCTestCase {
     func testBC3RejectsTruncatedPayload() {
         XCTAssertThrowsError(try CyberpunkXBMBC3Decoder.decode(blockData: Data([0xFF, 0xFF]), width: 4, height: 4))
     }
+
+    // MARK: - BC7
+
+    func testBC7DecodesSingleBlockToCorrectByteCount() throws {
+        // 16-byte input is one BC7 block. We don't assert pixel values here
+        // (the bcdec implementation is exercised by integration tests against
+        // real .xbm fixtures); we just verify the wrapper produces a full
+        // 4×4 RGBA8 buffer and the call doesn't fail.
+        let block = Data(repeating: 0x40, count: CyberpunkXBMBC7Decoder.blockByteSize)
+        let rgba = try CyberpunkXBMBC7Decoder.decode(blockData: block, width: 4, height: 4)
+        XCTAssertEqual(rgba.count, 4 * 4 * 4)
+    }
+
+    func testBC7ProducesDifferentOutputsForDifferentInputs() throws {
+        // Sanity check: two distinct compressed blocks should not decode to
+        // the same RGBA buffer. Catches the "function silently writes zeros"
+        // regression where the wrapper might not be invoking the decoder.
+        let a = Data(repeating: 0x40, count: CyberpunkXBMBC7Decoder.blockByteSize)
+        var bBytes = [UInt8](repeating: 0x40, count: CyberpunkXBMBC7Decoder.blockByteSize)
+        bBytes[1] = 0xA5
+        bBytes[2] = 0x5A
+        let b = Data(bBytes)
+        let rgbaA = try CyberpunkXBMBC7Decoder.decode(blockData: a, width: 4, height: 4)
+        let rgbaB = try CyberpunkXBMBC7Decoder.decode(blockData: b, width: 4, height: 4)
+        XCTAssertNotEqual(rgbaA, rgbaB)
+    }
+
+    func testBC7HandlesEdgeBlockSmallerThan4x4() throws {
+        // 3×2 destination should still call into bcdec but only copy the
+        // in-bounds region from the 4×4 scratch buffer.
+        let block = Data(repeating: 0x40, count: CyberpunkXBMBC7Decoder.blockByteSize)
+        let rgba = try CyberpunkXBMBC7Decoder.decode(blockData: block, width: 3, height: 2)
+        XCTAssertEqual(rgba.count, 3 * 2 * 4)
+    }
+
+    func testBC7RejectsTruncatedPayload() {
+        XCTAssertThrowsError(try CyberpunkXBMBC7Decoder.decode(blockData: Data([0x00, 0x00]), width: 4, height: 4)) { error in
+            guard case CyberpunkXBMBlockDecoderError.payloadTooSmall(_, _, let format) = error else {
+                XCTFail("Expected payloadTooSmall, got \(error)")
+                return
+            }
+            XCTAssertEqual(format, "BC7")
+        }
+    }
+
+    func testBC7RejectsZeroDimensions() {
+        let block = Data(repeating: 0x00, count: CyberpunkXBMBC7Decoder.blockByteSize)
+        XCTAssertThrowsError(try CyberpunkXBMBC7Decoder.decode(blockData: block, width: 0, height: 4))
+        XCTAssertThrowsError(try CyberpunkXBMBC7Decoder.decode(blockData: block, width: 4, height: 0))
+    }
 }

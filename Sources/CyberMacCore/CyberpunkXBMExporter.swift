@@ -26,6 +26,7 @@ public enum CyberpunkXBMCompression: String, Sendable, Codable, Equatable {
         switch self {
         case .dxtAlpha: return "BC3"
         case .dxtNoAlpha: return "BC1"
+        case .qualityColor: return "BC7"
         default: return nil
         }
     }
@@ -95,6 +96,7 @@ public struct CyberpunkXBMExportOptions: Sendable {
     public let assetPath: String?
     public let databaseURL: URL?
     public let sourceTool: String
+    public let krakenLibraryPath: String?
 
     public static let defaultSourceTool = "cybermac-xbm-preview-export"
 
@@ -105,7 +107,8 @@ public struct CyberpunkXBMExportOptions: Sendable {
         archivePath: String? = nil,
         assetPath: String? = nil,
         databaseURL: URL? = nil,
-        sourceTool: String = CyberpunkXBMExportOptions.defaultSourceTool
+        sourceTool: String = CyberpunkXBMExportOptions.defaultSourceTool,
+        krakenLibraryPath: String? = nil
     ) {
         self.outputURL = outputURL
         self.debug = debug
@@ -114,6 +117,7 @@ public struct CyberpunkXBMExportOptions: Sendable {
         self.assetPath = assetPath
         self.databaseURL = databaseURL
         self.sourceTool = sourceTool
+        self.krakenLibraryPath = krakenLibraryPath
     }
 }
 
@@ -132,6 +136,8 @@ public struct CyberpunkXBMExportResult: Sendable {
     public let registerReport: AssetPreviewRegisterReport?
     public let metadata: CyberpunkXBMTextureMetadata
     public let debugNotes: [String]
+    public let krakenUsed: Bool
+    public let decompressedPayloadSize: UInt64?
 
     public init(
         inputPath: String,
@@ -147,7 +153,9 @@ public struct CyberpunkXBMExportResult: Sendable {
         registered: Bool,
         registerReport: AssetPreviewRegisterReport?,
         metadata: CyberpunkXBMTextureMetadata,
-        debugNotes: [String]
+        debugNotes: [String],
+        krakenUsed: Bool = false,
+        decompressedPayloadSize: UInt64? = nil
     ) {
         self.inputPath = inputPath
         self.outputPath = outputPath
@@ -163,7 +171,23 @@ public struct CyberpunkXBMExportResult: Sendable {
         self.registerReport = registerReport
         self.metadata = metadata
         self.debugNotes = debugNotes
+        self.krakenUsed = krakenUsed
+        self.decompressedPayloadSize = decompressedPayloadSize
     }
+}
+
+/// Structured classification of why a single .xbm export failed. Batch
+/// callers use this to group failures without parsing `reason` text.
+public enum CyberpunkXBMExportFailureKind: String, Sendable, Equatable {
+    /// CR2W parse / metadata / payload-region recovery failed, or PNG write failed.
+    case decodeFailure = "decode_failure"
+    /// Compression maps to a BC variant we don't decode yet.
+    case unsupportedCompression = "unsupported_compression"
+    /// Inline payload decompressed but was smaller than the top mip needed —
+    /// the top mip is in a streamed/side buffer this exporter does not load.
+    case streamedTopMipMissing = "streamed_top_mip_missing"
+    /// Payload is KARK/Kraken-compressed but no Kraken library path was supplied.
+    case missingKrakenLibrary = "missing_kraken_library"
 }
 
 public struct CyberpunkXBMExportFailure: Error, CustomStringConvertible {
@@ -174,6 +198,27 @@ public struct CyberpunkXBMExportFailure: Error, CustomStringConvertible {
     public let metadata: CyberpunkXBMTextureMetadata?
     public let reason: String
     public let debugNotes: [String]
+    public let kind: CyberpunkXBMExportFailureKind
+
+    public init(
+        inputPath: String,
+        outputPath: String?,
+        detectedCompressionName: String?,
+        detectedCompression: CyberpunkXBMCompression,
+        metadata: CyberpunkXBMTextureMetadata?,
+        reason: String,
+        debugNotes: [String],
+        kind: CyberpunkXBMExportFailureKind = .decodeFailure
+    ) {
+        self.inputPath = inputPath
+        self.outputPath = outputPath
+        self.detectedCompressionName = detectedCompressionName
+        self.detectedCompression = detectedCompression
+        self.metadata = metadata
+        self.reason = reason
+        self.debugNotes = debugNotes
+        self.kind = kind
+    }
 
     public var description: String { reason }
 }
@@ -238,8 +283,9 @@ public struct CyberpunkXBMExporter {
                 detectedCompressionName: metadata.compressionName,
                 detectedCompression: compression,
                 metadata: metadata,
-                reason: "Unsupported compression: \(metadata.compressionName ?? "<unknown>"). This exporter currently handles only TCM_DXTAlpha (BC3) and TCM_DXTNoAlpha (BC1).",
-                debugNotes: debugNotes
+                reason: "Unsupported compression: \(metadata.compressionName ?? "<unknown>"). This exporter currently handles TCM_DXTAlpha (BC3), TCM_DXTNoAlpha (BC1), and TCM_QualityColor (BC7).",
+                debugNotes: debugNotes,
+                kind: .unsupportedCompression
             )
         }
 
@@ -269,11 +315,59 @@ public struct CyberpunkXBMExporter {
                 debugNotes: debugNotes
             )
         }
-        let payload = data.subdata(in: payloadStart..<payloadEnd)
+        let rawPayload = data.subdata(in: payloadStart..<payloadEnd)
 
         if options.debug {
-            let head = payload.prefix(64).map { String(format: "%02x", $0) }.joined(separator: " ")
+            let head = rawPayload.prefix(64).map { String(format: "%02x", $0) }.joined(separator: " ")
             debugNotes.append("Payload offset=\(payloadOffset) size=\(payloadSize) first64=\(head)")
+        }
+
+        let payloadIsKARK = CyberpunkKARKDecompressor.payloadHasKARKMagic(rawPayload)
+        var krakenUsed = false
+        var decompressedPayloadSize: UInt64?
+        let payload: Data
+        do {
+            if payloadIsKARK, let krakenPath = options.krakenLibraryPath {
+                if options.debug {
+                    debugNotes.append("Payload begins with KARK magic; decompressing via Kraken library at \(krakenPath).")
+                }
+                let library = try CyberpunkKrakenLibrary(libraryPath: krakenPath)
+                let result = try CyberpunkKARKDecompressor.decompress(
+                    payload: rawPayload,
+                    library: library
+                )
+                payload = result.decompressed
+                krakenUsed = true
+                decompressedPayloadSize = UInt64(result.decompressed.count)
+                if options.debug {
+                    debugNotes.append("KARK header: decompressedSize=\(result.header.decompressedSize); compressed=\(result.compressedByteCount) bytes -> decompressed=\(result.decompressed.count) bytes.")
+                }
+            } else if payloadIsKARK {
+                throw CyberpunkXBMExportFailure(
+                    inputPath: fileURL.path,
+                    outputPath: options.outputURL.path,
+                    detectedCompressionName: metadata.compressionName,
+                    detectedCompression: compression,
+                    metadata: metadata,
+                    reason: "Payload is KARK/Kraken-compressed but no decompressor was supplied. Re-run with --kraken <path-to-libkraken.dylib> (also accepted as --oodle).",
+                    debugNotes: debugNotes,
+                    kind: .missingKrakenLibrary
+                )
+            } else {
+                payload = rawPayload
+            }
+        } catch let failure as CyberpunkXBMExportFailure {
+            throw failure
+        } catch {
+            throw CyberpunkXBMExportFailure(
+                inputPath: fileURL.path,
+                outputPath: options.outputURL.path,
+                detectedCompressionName: metadata.compressionName,
+                detectedCompression: compression,
+                metadata: metadata,
+                reason: "Kraken decompression failed: \(error)",
+                debugNotes: debugNotes
+            )
         }
 
         let blocksWide = (Int(width) + 3) / 4
@@ -288,14 +382,18 @@ public struct CyberpunkXBMExporter {
                     debugNotes.append("BC3 top-mip math: \(blocksWide)x\(blocksHigh) blocks * 16 = \(topMipBytes) bytes; payload=\(payload.count)")
                 }
                 guard payload.count >= topMipBytes else {
+                    let krakenHint = krakenUsed
+                        ? " The Kraken stream decompressed to \(payload.count) bytes — smaller than the BC3 top mip; the file may use a different mip layout."
+                        : (payloadIsKARK ? "" : " The buffer is probably compressed (zlib/oodle/kraken). Re-run with --kraken <libkraken.dylib>.")
                     throw CyberpunkXBMExportFailure(
                         inputPath: fileURL.path,
                         outputPath: options.outputURL.path,
                         detectedCompressionName: metadata.compressionName,
                         detectedCompression: compression,
                         metadata: metadata,
-                        reason: "Payload smaller than uncompressed BC3 top mip (needed \(topMipBytes), have \(payload.count)). The buffer is probably compressed (zlib/oodle/kraken). This exporter doesn't decompress buffers yet.",
-                        debugNotes: debugNotes
+                        reason: "Payload smaller than uncompressed BC3 top mip (needed \(topMipBytes), have \(payload.count)).\(krakenHint)",
+                        debugNotes: debugNotes,
+                        kind: krakenUsed ? .streamedTopMipMissing : .decodeFailure
                     )
                 }
                 rgba = try CyberpunkXBMBC3Decoder.decode(
@@ -309,17 +407,46 @@ public struct CyberpunkXBMExporter {
                     debugNotes.append("BC1 top-mip math: \(blocksWide)x\(blocksHigh) blocks * 8 = \(topMipBytes) bytes; payload=\(payload.count)")
                 }
                 guard payload.count >= topMipBytes else {
+                    let krakenHint = krakenUsed
+                        ? " The Kraken stream decompressed to \(payload.count) bytes — smaller than the BC1 top mip; the file may use a different mip layout."
+                        : (payloadIsKARK ? "" : " The buffer is probably compressed. Re-run with --kraken <libkraken.dylib>.")
                     throw CyberpunkXBMExportFailure(
                         inputPath: fileURL.path,
                         outputPath: options.outputURL.path,
                         detectedCompressionName: metadata.compressionName,
                         detectedCompression: compression,
                         metadata: metadata,
-                        reason: "Payload smaller than uncompressed BC1 top mip (needed \(topMipBytes), have \(payload.count)). The buffer is probably compressed.",
-                        debugNotes: debugNotes
+                        reason: "Payload smaller than uncompressed BC1 top mip (needed \(topMipBytes), have \(payload.count)).\(krakenHint)",
+                        debugNotes: debugNotes,
+                        kind: krakenUsed ? .streamedTopMipMissing : .decodeFailure
                     )
                 }
                 rgba = try CyberpunkXBMBC1Decoder.decode(
+                    blockData: payload.prefix(topMipBytes),
+                    width: Int(width),
+                    height: Int(height)
+                )
+            case "BC7":
+                topMipBytes = blocksWide * blocksHigh * CyberpunkXBMBC7Decoder.blockByteSize
+                if options.debug {
+                    debugNotes.append("BC7 top-mip math: \(blocksWide)x\(blocksHigh) blocks * 16 = \(topMipBytes) bytes; payload=\(payload.count)")
+                }
+                guard payload.count >= topMipBytes else {
+                    let krakenHint = krakenUsed
+                        ? " The Kraken stream decompressed to \(payload.count) bytes — smaller than the BC7 top mip; the file may use a different mip layout."
+                        : (payloadIsKARK ? "" : " The buffer is probably compressed. Re-run with --kraken <libkraken.dylib>.")
+                    throw CyberpunkXBMExportFailure(
+                        inputPath: fileURL.path,
+                        outputPath: options.outputURL.path,
+                        detectedCompressionName: metadata.compressionName,
+                        detectedCompression: compression,
+                        metadata: metadata,
+                        reason: "Payload smaller than uncompressed BC7 top mip (needed \(topMipBytes), have \(payload.count)).\(krakenHint)",
+                        debugNotes: debugNotes,
+                        kind: krakenUsed ? .streamedTopMipMissing : .decodeFailure
+                    )
+                }
+                rgba = try CyberpunkXBMBC7Decoder.decode(
                     blockData: payload.prefix(topMipBytes),
                     width: Int(width),
                     height: Int(height)
@@ -398,7 +525,9 @@ public struct CyberpunkXBMExporter {
             registered: registerReport != nil,
             registerReport: registerReport,
             metadata: metadata,
-            debugNotes: debugNotes
+            debugNotes: debugNotes,
+            krakenUsed: krakenUsed,
+            decompressedPayloadSize: decompressedPayloadSize
         )
     }
 
@@ -644,6 +773,8 @@ public enum CyberpunkXBMExportFormatter {
             "Payload offset: \(result.payloadOffset)",
             "Payload size: \(result.payloadSize)",
             "Top mip bytes decoded: \(result.topMipBytesDecoded)",
+            "Kraken used: \(result.krakenUsed ? "yes" : "no")",
+            "Decompressed payload size: \(result.decompressedPayloadSize.map(String.init) ?? "n/a")",
             "Registered: \(result.registered ? "yes" : "no")"
         ]
         if let report = result.registerReport {
