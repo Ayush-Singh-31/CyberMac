@@ -128,6 +128,7 @@ public struct VisualReplacementStageResult: Equatable, Sendable {
     public let replacementFilePath: String
     public let originalAssetSHA256: String
     public let replacementSHA256: String
+    public let generatedArchivePath: String
     public let outputArchivePath: String
     public let outputArchiveSHA256: String
     public let manualInstallCommand: String
@@ -142,6 +143,7 @@ public struct VisualReplacementStageResult: Equatable, Sendable {
         replacementFilePath: String,
         originalAssetSHA256: String,
         replacementSHA256: String,
+        generatedArchivePath: String,
         outputArchivePath: String,
         outputArchiveSHA256: String,
         manualInstallCommand: String,
@@ -155,6 +157,7 @@ public struct VisualReplacementStageResult: Equatable, Sendable {
         self.replacementFilePath = replacementFilePath
         self.originalAssetSHA256 = originalAssetSHA256
         self.replacementSHA256 = replacementSHA256
+        self.generatedArchivePath = generatedArchivePath
         self.outputArchivePath = outputArchivePath
         self.outputArchiveSHA256 = outputArchiveSHA256
         self.manualInstallCommand = manualInstallCommand
@@ -422,7 +425,7 @@ public struct VisualReplacementStager {
         }
         let extractedDirectory = stageRoot.appendingPathComponent("extracted", isDirectory: true)
         let packedDirectory = stageRoot.appendingPathComponent("packed", isDirectory: true)
-        let generatedArchiveURL = packedDirectory.appendingPathComponent(sourceArchiveURL.lastPathComponent)
+        let requestedPackArchiveURL = packedDirectory.appendingPathComponent(sourceArchiveURL.lastPathComponent)
 
         try FileManager.default.createDirectory(at: extractedDirectory, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: packedDirectory, withIntermediateDirectories: true)
@@ -447,9 +450,12 @@ public struct VisualReplacementStager {
         try tooling.packArchive(
             cp77toolsURL: cp77toolsURL,
             extractedDirectoryURL: extractedDirectory,
-            outputArchiveURL: generatedArchiveURL
+            outputArchiveURL: requestedPackArchiveURL
         )
-        try VisualReplacementPlanner.validateExistingRegularFile(generatedArchiveURL, description: "Generated packed archive")
+        let generatedArchiveURL = try generatedArchive(in: packedDirectory)
+        guard !FileManager.default.fileExists(atPath: outputArchiveURL.path) else {
+            throw CyberMacError.invalidInput("Output archive already exists: \(outputArchiveURL.path)")
+        }
         try FileManager.default.copyItem(at: generatedArchiveURL, to: outputArchiveURL)
         let outputArchiveSHA256 = try PathSafety.sha256(url: outputArchiveURL)
 
@@ -467,6 +473,7 @@ public struct VisualReplacementStager {
             replacementFilePath: replacementFileURL.path,
             originalAssetSHA256: originalAssetSHA256,
             replacementSHA256: replacementSHA256,
+            generatedArchivePath: generatedArchiveURL.path,
             outputArchivePath: outputArchiveURL.path,
             outputArchiveSHA256: outputArchiveSHA256,
             manualInstallCommand: "sudo cp \(PathSafety.shellQuoted(outputArchiveURL.path)) \(PathSafety.shellQuoted(installDestinationPath))",
@@ -585,6 +592,30 @@ public struct VisualReplacementStager {
         return url
     }
 
+    private func generatedArchive(in packedDirectory: URL) throws -> URL {
+        let candidates = try FileManager.default.contentsOfDirectory(
+            at: packedDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { $0.pathExtension.lowercased() == "archive" }
+        .sorted { lhs, rhs in
+            lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
+        }
+
+        guard !candidates.isEmpty else {
+            throw CyberMacError.notFound("No generated .archive files were found in packed output directory: \(packedDirectory.path)")
+        }
+        guard candidates.count == 1 else {
+            let candidateList = candidates.map { "- \($0.path)" }.joined(separator: "\n")
+            throw CyberMacError.invalidInput("cp77tools generated more than one .archive in packed output directory \(packedDirectory.path):\n\(candidateList)")
+        }
+
+        let generatedArchiveURL = candidates[0].standardizedFileURL
+        try VisualReplacementPlanner.validateExistingRegularFile(generatedArchiveURL, description: "Generated packed archive")
+        return generatedArchiveURL
+    }
+
     private func validateContainedPath(_ targetURL: URL, in rootURL: URL, description: String) throws {
         let rootPath = rootURL.resolvingSymlinksInPath().standardizedFileURL.path
         let targetPath = targetURL.resolvingSymlinksInPath().standardizedFileURL.path
@@ -660,7 +691,8 @@ public enum VisualReplacementStageFormatter {
             "Replacement file: \(result.replacementFilePath)",
             "Original asset SHA-256: \(result.originalAssetSHA256)",
             "Replacement SHA-256: \(result.replacementSHA256)",
-            "Output archive: \(result.outputArchivePath)",
+            "Generated archive: \(result.generatedArchivePath)",
+            "Requested output archive: \(result.outputArchivePath)",
             "Output archive SHA-256: \(result.outputArchiveSHA256)",
             "",
             "Manual install command:",

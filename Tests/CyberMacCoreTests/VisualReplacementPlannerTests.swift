@@ -136,11 +136,15 @@ final class VisualReplacementPlannerTests: XCTestCase {
         XCTAssertEqual(tooling.packedFiles[otherAssetPath], "other texture")
         XCTAssertEqual(result.originalAssetSHA256, PathSafety.sha256(string: "original texture"))
         XCTAssertEqual(result.replacementSHA256, PathSafety.sha256(string: "replacement texture"))
+        XCTAssertTrue(result.generatedArchivePath.hasSuffix("/packed/basegame_1_engine.archive"))
         XCTAssertEqual(result.outputArchivePath, outputArchiveURL.path)
         XCTAssertEqual(result.outputArchiveSHA256, try PathSafety.sha256(url: outputArchiveURL))
         XCTAssertEqual(sourceSHABefore, try PathSafety.sha256(url: sourceArchiveURL))
 
         let formatted = VisualReplacementStageFormatter.format(result)
+        XCTAssertTrue(formatted.contains("Generated archive: \(result.generatedArchivePath)"))
+        XCTAssertTrue(formatted.contains("Requested output archive: \(outputArchiveURL.path)"))
+        XCTAssertTrue(formatted.contains("Output archive SHA-256: \(result.outputArchiveSHA256)"))
         XCTAssertTrue(formatted.contains("Manual install command:"))
         XCTAssertTrue(formatted.contains("sudo cp \(PathSafety.shellQuoted(outputArchiveURL.path))"))
         XCTAssertTrue(formatted.contains(PathSafety.shellQuoted(sourceArchiveURL.path)))
@@ -148,6 +152,82 @@ final class VisualReplacementPlannerTests: XCTestCase {
         XCTAssertTrue(formatted.contains("swift run cybermac archive-patch status \(relativeArchivePath)"))
         XCTAssertTrue(formatted.contains("swift run cybermac archive-patch preflight \(relativeArchivePath)"))
         XCTAssertTrue(formatted.contains("swift run cybermac archive-patch restore-official \(backup.backupID) --dry-run"))
+    }
+
+    func testStageUsesSingleGeneratedArchiveRegardlessOfCp77toolsName() throws {
+        let game = try makeGameInstall()
+        let sourceArchiveURL = archiveURL(gameInstall: game)
+        let replacementURL = try writeFile("replacement.xbm", contents: "replacement texture")
+        let planURL = try writePlan(replacementFileURL: replacementURL)
+        let tooling = FakeVisualReplacementTooling(
+            filesByArchivePath: [
+                sourceArchiveURL.path: [
+                    targetAssetPath: "original texture",
+                    otherAssetPath: "other texture"
+                ]
+            ],
+            generatedArchiveNames: ["extracted.archive"]
+        )
+        let outputArchiveURL = tempDir.appendingPathComponent("out/requested-name.archive")
+
+        let result = try makeStager(tooling: tooling).stage(request: makeStageRequest(
+            planURL: planURL,
+            sourceArchiveURL: sourceArchiveURL,
+            outputArchiveURL: outputArchiveURL
+        ))
+
+        XCTAssertTrue(result.generatedArchivePath.hasSuffix("/packed/extracted.archive"))
+        XCTAssertEqual(result.outputArchivePath, outputArchiveURL.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputArchiveURL.path))
+        XCTAssertEqual(try String(contentsOf: outputArchiveURL, encoding: .utf8), [
+            "\(targetAssetPath)=replacement texture",
+            "\(otherAssetPath)=other texture"
+        ].joined(separator: "\n"))
+    }
+
+    func testStageFailsClearlyWhenCp77toolsGeneratesNoArchive() throws {
+        let game = try makeGameInstall()
+        let sourceArchiveURL = archiveURL(gameInstall: game)
+        let replacementURL = try writeFile("replacement.xbm", contents: "replacement texture")
+        let planURL = try writePlan(replacementFileURL: replacementURL)
+        let tooling = FakeVisualReplacementTooling(
+            filesByArchivePath: [
+                sourceArchiveURL.path: [targetAssetPath: "original texture"]
+            ],
+            generatedArchiveNames: []
+        )
+
+        XCTAssertThrowsError(try makeStager(tooling: tooling).stage(request: makeStageRequest(
+            planURL: planURL,
+            sourceArchiveURL: sourceArchiveURL
+        ))) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("No generated .archive files were found"))
+            XCTAssertTrue(message.contains("/packed"))
+        }
+    }
+
+    func testStageFailsClearlyWhenCp77toolsGeneratesMultipleArchives() throws {
+        let game = try makeGameInstall()
+        let sourceArchiveURL = archiveURL(gameInstall: game)
+        let replacementURL = try writeFile("replacement.xbm", contents: "replacement texture")
+        let planURL = try writePlan(replacementFileURL: replacementURL)
+        let tooling = FakeVisualReplacementTooling(
+            filesByArchivePath: [
+                sourceArchiveURL.path: [targetAssetPath: "original texture"]
+            ],
+            generatedArchiveNames: ["first.archive", "second.archive"]
+        )
+
+        XCTAssertThrowsError(try makeStager(tooling: tooling).stage(request: makeStageRequest(
+            planURL: planURL,
+            sourceArchiveURL: sourceArchiveURL
+        ))) { error in
+            let message = String(describing: error)
+            XCTAssertTrue(message.contains("more than one .archive"))
+            XCTAssertTrue(message.contains("first.archive"))
+            XCTAssertTrue(message.contains("second.archive"))
+        }
     }
 
     func testStageRefusesTraversalPathsInPlan() throws {
@@ -306,10 +386,15 @@ final class VisualReplacementPlannerTests: XCTestCase {
 
 private final class FakeVisualReplacementTooling: @unchecked Sendable, OfficialArchiveSwapTooling {
     private let filesByArchivePath: [String: [String: String]]
+    private let generatedArchiveNames: [String]?
     private(set) var packedFiles: [String: String] = [:]
 
-    init(filesByArchivePath: [String: [String: String]] = [:]) {
+    init(
+        filesByArchivePath: [String: [String: String]] = [:],
+        generatedArchiveNames: [String]? = nil
+    ) {
         self.filesByArchivePath = filesByArchivePath
+        self.generatedArchiveNames = generatedArchiveNames
     }
 
     func extractArchive(cp77toolsURL: URL, sourceArchiveURL: URL, outputDirectoryURL: URL) throws {
@@ -328,12 +413,23 @@ private final class FakeVisualReplacementTooling: @unchecked Sendable, OfficialA
 
     func packArchive(cp77toolsURL: URL, extractedDirectoryURL: URL, outputArchiveURL: URL) throws {
         packedFiles = try files(under: extractedDirectoryURL)
-        try FileManager.default.createDirectory(at: outputArchiveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let outputDirectoryURL = outputArchiveURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
         let packedSummary = packedFiles
             .map { "\($0.key)=\($0.value)" }
             .sorted()
             .joined(separator: "\n")
-        try packedSummary.write(to: outputArchiveURL, atomically: true, encoding: .utf8)
+        if let generatedArchiveNames {
+            for archiveName in generatedArchiveNames {
+                try packedSummary.write(
+                    to: outputDirectoryURL.appendingPathComponent(archiveName),
+                    atomically: true,
+                    encoding: .utf8
+                )
+            }
+        } else {
+            try packedSummary.write(to: outputArchiveURL, atomically: true, encoding: .utf8)
+        }
     }
 
     private func files(under rootURL: URL) throws -> [String: String] {
