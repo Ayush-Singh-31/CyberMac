@@ -60,6 +60,8 @@ struct CyberMacCLI {
             try xbmPreview()
         case "visual-replace":
             try visualReplace()
+        case "redscript":
+            try redscript()
         case "archive-patch":
             try archivePatch()
         case "mod-lab":
@@ -145,6 +147,7 @@ struct CyberMacCLI {
           cybermac xbm-preview batch-export --archive <relative-official-archive-path> --extracted-root <path> --out-dir <path> [--kraken <libkraken.dylib>] [--query <q>] [--category <c>] [--limit <n>] [--register] [--db <path>] [--skip-existing] [--debug]
           cybermac visual-replace plan --target-archive <relative-official-archive-path> --target-asset <official-asset-path> --replacement-file <path> --work-dir <path> --out <plan-json-path> [--db <path>]
           cybermac visual-replace stage --plan <plan-json-path> --source-archive <path> --work-dir <path> --out-archive <path> --cp77tools <path>
+          cybermac redscript item-grant create --item <Items.Some_Item_ID> [--item <Items.Other_Item_ID> ...] --out <zip-path> [--mod-name <name>]
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
@@ -966,6 +969,73 @@ struct CyberMacCLI {
         print(VisualReplacementPlanFormatter.format(report))
     }
 
+    private func redscript() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing redscript subcommand. Usage: cybermac redscript item-grant create --item <Items.ID> --out <zip-path>")
+        }
+
+        switch arguments[1] {
+        case "item-grant":
+            try redscriptItemGrant()
+        default:
+            throw CyberMacError.invalidInput("Unknown redscript subcommand: \(arguments[1])")
+        }
+    }
+
+    private func redscriptItemGrant() throws {
+        guard arguments.count >= 3 else {
+            throw CyberMacError.invalidInput("Missing redscript item-grant action. Usage: cybermac redscript item-grant create --item <Items.ID> --out <zip-path>")
+        }
+
+        switch arguments[2] {
+        case "create":
+            try redscriptItemGrantCreate()
+        default:
+            throw CyberMacError.invalidInput("Unknown redscript item-grant action: \(arguments[2])")
+        }
+    }
+
+    private func redscriptItemGrantCreate() throws {
+        let valueFlags: Set<String> = ["--item", "--out", "--mod-name"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Unexpected positional argument: \(positionals[0]). Usage: cybermac redscript item-grant create --item <Items.ID> [--item <Items.OtherID> ...] --out <zip-path> [--mod-name <name>]")
+        }
+
+        let itemIDs = optionValues("--item", after: 3)
+        guard !itemIDs.isEmpty else {
+            throw CyberMacError.invalidInput("At least one --item <Items.Some_Item_ID> is required")
+        }
+        guard let outputPath = optionValue("--out") else {
+            throw CyberMacError.invalidInput("Missing --out <zip-path>")
+        }
+
+        let request = RedscriptItemGrantRequest(
+            itemIDs: itemIDs,
+            outputZipURL: PathSafety.expandedURL(from: outputPath),
+            modName: optionValue("--mod-name")
+        )
+        let result = try RedscriptItemGrantGenerator().generate(request: request)
+
+        print("Generated redscript item-grant helper.")
+        print("Output zip: \(PathSafety.redactUserPath(result.outputZipURL.path))")
+        print("Mod name: \(result.modName)")
+        print("Entry path: \(result.redscriptEntryPath)")
+        print("Item IDs (\(result.normalizedItemIDs.count)):")
+        for itemID in result.normalizedItemIDs {
+            print("  - \(itemID)")
+        }
+        print("Redscript size: \(result.redscriptSizeBytes) bytes")
+        print("")
+        print("Next steps (manual):")
+        print("  swift run cybermac install \(PathSafety.shellQuoted(result.outputZipURL.path)) --game-app /path/to/Cyberpunk.app")
+        print("  swift run cybermac activate --bundle-mode --game-app /path/to/Cyberpunk.app")
+        print("  # Run the printed sudo cp command(s) to copy the generated final.redscripts into the game bundle.")
+        print("  swift run cybermac activate --verify --game-app /path/to/Cyberpunk.app")
+        print("")
+        print("This helper is for test workflows only. It grants items once per game session via vanilla redscript APIs and does not mutate the game bundle.")
+    }
+
     private func visualReplaceStage() throws {
         let valueFlags: Set<String> = ["--plan", "--source-archive", "--work-dir", "--out-archive", "--cp77tools"]
         let positionals = visualReplacePositionals(valueFlags: valueFlags)
@@ -1721,6 +1791,40 @@ struct CyberMacCLI {
 
     private func hasFlag(_ name: String) -> Bool {
         arguments.contains(name)
+    }
+
+    private func optionValues(_ name: String, after dropFirst: Int = 0) -> [String] {
+        var values: [String] = []
+        var index = dropFirst
+        while index < arguments.count {
+            if arguments[index] == name, index + 1 < arguments.count {
+                values.append(arguments[index + 1])
+                index += 2
+            } else {
+                index += 1
+            }
+        }
+        return values
+    }
+
+    private func positionals(after dropFirst: Int, valueFlags: Set<String>) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(dropFirst) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
     }
 
     private func yesNo(_ value: Bool) -> String {
