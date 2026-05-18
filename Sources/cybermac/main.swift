@@ -62,6 +62,8 @@ struct CyberMacCLI {
             try visualReplace()
         case "redscript":
             try redscript()
+        case "outfit-bundle":
+            try outfitBundle()
         case "archive-patch":
             try archivePatch()
         case "mod-lab":
@@ -148,6 +150,11 @@ struct CyberMacCLI {
           cybermac visual-replace plan --target-archive <relative-official-archive-path> --target-asset <official-asset-path> --replacement-file <path> --work-dir <path> --out <plan-json-path> [--db <path>]
           cybermac visual-replace stage --plan <plan-json-path> --source-archive <path> --work-dir <path> --out-archive <path> --cp77tools <path>
           cybermac redscript item-grant create --item <Items.Some_Item_ID> [--item <Items.Other_Item_ID> ...] --out <zip-path> [--mod-name <name>]
+          cybermac outfit-bundle create --name <name> --target-archive <relative-archive-path> --patched-archive <path> --backup-id <id> --item <Items.X> [--item <Items.Y> ...] --asset <asset-path> [--asset <asset-path> ...] --out <bundle.json> [--grant-mod-id <id>]
+          cybermac outfit-bundle show <bundle.json>
+          cybermac outfit-bundle install <bundle.json> [--game-app /path/to/Cyberpunk.app]
+          cybermac outfit-bundle restore <bundle.json> [--game-app /path/to/Cyberpunk.app]
+          cybermac outfit-bundle disable-grant <mod-id>
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
@@ -969,6 +976,136 @@ struct CyberMacCLI {
         print(VisualReplacementPlanFormatter.format(report))
     }
 
+    private func outfitBundle() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing outfit-bundle subcommand. Usage: cybermac outfit-bundle {create|show|install|restore|disable-grant} ...")
+        }
+
+        switch arguments[1] {
+        case "create":
+            try outfitBundleCreate()
+        case "show":
+            try outfitBundleShow()
+        case "install":
+            try outfitBundleInstall()
+        case "restore":
+            try outfitBundleRestore()
+        case "disable-grant":
+            try outfitBundleDisableGrant()
+        default:
+            throw CyberMacError.invalidInput("Unknown outfit-bundle subcommand: \(arguments[1])")
+        }
+    }
+
+    private func outfitBundleCreate() throws {
+        let valueFlags: Set<String> = [
+            "--name", "--target-archive", "--patched-archive",
+            "--backup-id", "--item", "--asset", "--out", "--grant-mod-id"
+        ]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Unexpected positional argument: \(positionals[0]). Run `cybermac help` for usage.")
+        }
+
+        guard let name = optionValue("--name"),
+              let targetArchive = optionValue("--target-archive"),
+              let patchedArchivePath = optionValue("--patched-archive"),
+              let backupID = optionValue("--backup-id"),
+              let outputPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit-bundle create --name <name> --target-archive <relative-archive-path> --patched-archive <path> --backup-id <id> --item <Items.X> [--item ...] --asset <asset-path> [--asset ...] --out <bundle.json> [--grant-mod-id <id>]")
+        }
+
+        let items = optionValues("--item", after: 2)
+        let assets = optionValues("--asset", after: 2)
+
+        let request = OutfitBundleCreateRequest(
+            displayName: name,
+            targetArchive: targetArchive,
+            patchedArchiveURL: PathSafety.expandedURL(from: patchedArchivePath),
+            backupID: backupID,
+            affectedItemIDs: items,
+            affectedAssets: assets,
+            optionalItemGrantModID: optionValue("--grant-mod-id"),
+            outputBundleURL: PathSafety.expandedURL(from: outputPath)
+        )
+        let result = try OutfitBundleManager(home: home).create(request: request)
+        let bundle = result.bundle
+
+        print("Outfit bundle created.")
+        print("ID: \(bundle.id)")
+        print("Name: \(bundle.displayName)")
+        print("Bundle JSON: \(PathSafety.redactUserPath(result.bundleURL.path))")
+        if let registration = result.homeRegistrationURL {
+            print("Registered for app UI: \(PathSafety.redactUserPath(registration.path))")
+        }
+        print("Target archive: \(bundle.targetArchive)")
+        print("Patched archive: \(PathSafety.redactUserPath(bundle.patchedArchivePath))")
+        print("Patched SHA-256: \(bundle.patchedArchiveSHA256)")
+        print("Backup ID: \(bundle.backupID)")
+        print("Items (\(bundle.affectedItemIDs.count)): \(bundle.affectedItemIDs.joined(separator: ", "))")
+        print("Assets (\(bundle.affectedAssets.count)):")
+        for asset in bundle.affectedAssets {
+            print("  - \(asset)")
+        }
+        if let grantModID = bundle.optionalItemGrantModID {
+            print("Item-grant helper mod id: \(grantModID)")
+        }
+        print("")
+        print("Next steps:")
+        print("  swift run cybermac outfit-bundle show \(PathSafety.shellQuoted(result.bundleURL.path))")
+        print("  swift run cybermac outfit-bundle install \(PathSafety.shellQuoted(result.bundleURL.path)) --game-app /path/to/Cyberpunk.app")
+    }
+
+    private func outfitBundleShow() throws {
+        guard arguments.count >= 3 else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit-bundle show <bundle.json>")
+        }
+        let bundleURL = PathSafety.expandedURL(from: arguments[2])
+        let bundle = try OutfitBundleManager(home: home).load(bundleURL: bundleURL)
+        print(OutfitBundleFormatter.formatShow(bundle))
+    }
+
+    private func outfitBundleInstall() throws {
+        let valueFlags: Set<String> = ["--game-app"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard let bundlePath = positionals.first else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit-bundle install <bundle.json> [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let manager = OutfitBundleManager(home: home)
+        let bundle = try manager.load(bundleURL: PathSafety.expandedURL(from: bundlePath))
+        let plan = try manager.installPlan(
+            bundle: bundle,
+            preferredGameAppPath: optionValue("--game-app")
+        )
+        print(OutfitBundleFormatter.formatInstallPlan(plan))
+    }
+
+    private func outfitBundleRestore() throws {
+        let valueFlags: Set<String> = ["--game-app"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard let bundlePath = positionals.first else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit-bundle restore <bundle.json> [--game-app /path/to/Cyberpunk.app]")
+        }
+
+        let manager = OutfitBundleManager(home: home)
+        let bundle = try manager.load(bundleURL: PathSafety.expandedURL(from: bundlePath))
+        let plan = try manager.restorePlan(
+            bundle: bundle,
+            preferredGameAppPath: optionValue("--game-app")
+        )
+        print(OutfitBundleFormatter.formatRestorePlan(plan))
+    }
+
+    private func outfitBundleDisableGrant() throws {
+        guard arguments.count >= 3 else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit-bundle disable-grant <mod-id>")
+        }
+        let plan = try OutfitBundleManager(home: home).disableGrantPlan(modID: arguments[2])
+        print(OutfitBundleFormatter.formatDisableGrantPlan(plan))
+    }
+
     private func redscript() throws {
         guard arguments.count >= 2 else {
             throw CyberMacError.invalidInput("Missing redscript subcommand. Usage: cybermac redscript item-grant create --item <Items.ID> --out <zip-path>")
@@ -1027,13 +1164,30 @@ struct CyberMacCLI {
         }
         print("Redscript size: \(result.redscriptSizeBytes) bytes")
         print("")
-        print("Next steps (manual):")
-        print("  swift run cybermac install \(PathSafety.shellQuoted(result.outputZipURL.path)) --game-app /path/to/Cyberpunk.app")
-        print("  swift run cybermac activate --bundle-mode --game-app /path/to/Cyberpunk.app")
-        print("  # Run the printed sudo cp command(s) to copy the generated final.redscripts into the game bundle.")
-        print("  swift run cybermac activate --verify --game-app /path/to/Cyberpunk.app")
+        print("Helper kind: TEMPORARY one-shot grant")
+        print("This helper grants the listed items once per game session. Leaving it enabled across")
+        print("multiple launches will pile up duplicate items in your inventory.")
         print("")
-        print("This helper is for test workflows only. It grants items once per game session via vanilla redscript APIs and does not mutate the game bundle.")
+        print("Recommended one-shot workflow:")
+        print("  1. Install + activate the grant helper.")
+        print("     swift run cybermac install \(PathSafety.shellQuoted(result.outputZipURL.path)) --game-app /path/to/Cyberpunk.app")
+        print("     swift run cybermac activate --bundle-mode --game-app /path/to/Cyberpunk.app")
+        print("     # Run the printed sudo cp command(s) to copy the generated final.redscripts into the game bundle.")
+        print("     swift run cybermac activate --verify --game-app /path/to/Cyberpunk.app")
+        print("")
+        print("  2. Launch Cyberpunk 2077 once. Confirm the items appeared in your inventory.")
+        print("     swift run cybermac launch-game --game-app /path/to/Cyberpunk.app")
+        print("")
+        print("  3. Quit the game and disable the grant helper so the next launch does not re-grant.")
+        print("     swift run cybermac list-mods   # find the installed mod id")
+        print("     swift run cybermac disable <mod-id>")
+        print("")
+        print("  4. Re-activate without the grant helper, then verify.")
+        print("     swift run cybermac activate --bundle-mode --game-app /path/to/Cyberpunk.app")
+        print("     # Re-run the printed sudo cp command(s).")
+        print("     swift run cybermac activate --verify --game-app /path/to/Cyberpunk.app")
+        print("")
+        print("Uses vanilla redscript APIs only. Does not mutate the game bundle.")
     }
 
     private func visualReplaceStage() throws {

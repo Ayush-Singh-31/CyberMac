@@ -15,7 +15,14 @@ struct AppSnapshot: Sendable {
     let backups: [BundleBackupManifest]
     let inputStatus: InputPatchStatus?
     let inputBackups: [InputConfigBackupManifest]
+    let outfitBundles: [CyberMacOutfitBundle]
     let warnings: [SnapshotWarning]
+}
+
+struct OutfitBundleUIPlans: Sendable {
+    let install: OutfitBundleInstallPlan
+    let restore: OutfitBundleRestorePlan?
+    let disableGrant: OutfitBundleDisableGrantPlan?
 }
 
 protocol AppServiceProviding: Sendable {
@@ -52,6 +59,8 @@ protocol AppServiceProviding: Sendable {
     func clearTemporaryActivationOutputs() throws
     func archiveIndexStatsIfAvailable() -> ArchiveCatalogIndexStatsReport?
     func assetPreviewStatsIfAvailable() -> AssetPreviewStatsReport?
+    func listOutfitBundles() throws -> [CyberMacOutfitBundle]
+    func makeOutfitBundleUIPlans(_ bundle: CyberMacOutfitBundle) throws -> OutfitBundleUIPlans
     func searchArchiveIndexWithPreviews(
         query: String,
         categoryFilter: String?,
@@ -103,6 +112,7 @@ struct AppServiceContainer: AppServiceProviding {
     private let doctor: DoctorReporter
     private let diagnostics: DiagnosticsExporter
     private let bundleState: BundleStateResolver
+    private let outfitBundleManager: OutfitBundleManager
 
     init(home: CyberMacHomeManager = CyberMacHomeManager()) {
         self.home = home
@@ -119,6 +129,7 @@ struct AppServiceContainer: AppServiceProviding {
         self.doctor = DoctorReporter(home: home)
         self.diagnostics = DiagnosticsExporter(home: home)
         self.bundleState = BundleStateResolver(home: home)
+        self.outfitBundleManager = OutfitBundleManager(home: home)
     }
 
     func invalidateGameInstall() {
@@ -184,6 +195,14 @@ struct AppServiceContainer: AppServiceProviding {
             warnings.append(SnapshotWarning(area: "input-backups", message: String(describing: error)))
         }
 
+        let outfitBundles: [CyberMacOutfitBundle]
+        do {
+            outfitBundles = try outfitBundleManager.listRegistered()
+        } catch {
+            outfitBundles = []
+            warnings.append(SnapshotWarning(area: "outfit-bundles", message: String(describing: error)))
+        }
+
         return AppSnapshot(
             doctor: report,
             cache: cache,
@@ -191,8 +210,25 @@ struct AppServiceContainer: AppServiceProviding {
             backups: backups,
             inputStatus: inputStatus,
             inputBackups: inputBackups,
+            outfitBundles: outfitBundles,
             warnings: warnings
         )
+    }
+
+    func listOutfitBundles() throws -> [CyberMacOutfitBundle] {
+        try outfitBundleManager.listRegistered()
+    }
+
+    func makeOutfitBundleUIPlans(_ bundle: CyberMacOutfitBundle) throws -> OutfitBundleUIPlans {
+        let install = try outfitBundleManager.installPlan(bundle: bundle)
+        let restore = try? outfitBundleManager.restorePlan(bundle: bundle)
+        let disableGrant: OutfitBundleDisableGrantPlan?
+        if let modID = bundle.optionalItemGrantModID {
+            disableGrant = try? outfitBundleManager.disableGrantPlan(modID: modID)
+        } else {
+            disableGrant = nil
+        }
+        return OutfitBundleUIPlans(install: install, restore: restore, disableGrant: disableGrant)
     }
 
     func makeLaunchPlan() throws -> LaunchGamePlan {

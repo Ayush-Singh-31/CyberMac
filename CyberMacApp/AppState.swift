@@ -57,6 +57,7 @@ final class CyberMacAppState {
     var backups: [BundleBackupManifest] = []
     var inputStatus: InputPatchStatus?
     var inputBackups: [InputConfigBackupManifest] = []
+    var outfitBundles: [CyberMacOutfitBundle] = []
     var scanResult: ModScanResult?
     var scannedArchiveURL: URL?
     var currentTask: AppTask?
@@ -450,7 +451,113 @@ final class CyberMacAppState {
         backups = snapshot.backups
         inputStatus = snapshot.inputStatus
         inputBackups = snapshot.inputBackups
+        outfitBundles = snapshot.outfitBundles
         snapshotWarnings = snapshot.warnings
+    }
+
+    func showOutfitInstallCommand(for bundle: CyberMacOutfitBundle) async {
+        await runTask(.preparingActivation, failureTitle: "Outfit install command failed") { [container] in
+            try container.makeOutfitBundleUIPlans(bundle)
+        } onSuccess: { plans in
+            self.commandToRun = ManualCommand(
+                title: "Install outfit archive: \(bundle.displayName)",
+                command: Self.outfitInstallCommandText(plans.install)
+            )
+        }
+    }
+
+    func showOutfitRestoreCommand(for bundle: CyberMacOutfitBundle) async {
+        await runTask(.preparingRestore, failureTitle: "Outfit restore command failed") { [container] in
+            try container.makeOutfitBundleUIPlans(bundle)
+        } onSuccess: { plans in
+            if let restore = plans.restore {
+                self.commandToRun = ManualCommand(
+                    title: "Restore official archive: \(bundle.displayName)",
+                    command: Self.outfitRestoreCommandText(restore)
+                )
+            } else {
+                self.lastError = UserFacingError(
+                    title: "Restore unavailable",
+                    message: "No backup metadata found for backup id \(bundle.backupID). Use `cybermac archive-patch list-backups` to confirm."
+                )
+            }
+        }
+    }
+
+    func showOutfitDisableGrantCommand(for bundle: CyberMacOutfitBundle) async {
+        guard let modID = bundle.optionalItemGrantModID else {
+            lastError = UserFacingError(
+                title: "No grant helper recorded",
+                message: "This outfit bundle does not record an item-grant helper mod id. Disable manually from the Mods panel."
+            )
+            return
+        }
+        await runTask(.changingModState, failureTitle: "Outfit disable-grant command failed") { [container] in
+            try container.makeOutfitBundleUIPlans(bundle)
+        } onSuccess: { plans in
+            if let disable = plans.disableGrant {
+                self.commandToRun = ManualCommand(
+                    title: "Disable item-grant helper: \(modID)",
+                    command: Self.outfitDisableGrantCommandText(disable)
+                )
+            } else {
+                self.lastError = UserFacingError(
+                    title: "Disable grant unavailable",
+                    message: "Could not build a disable command for \(modID)."
+                )
+            }
+        }
+    }
+
+    private static func outfitInstallCommandText(_ plan: OutfitBundleInstallPlan) -> String {
+        var lines: [String] = []
+        lines.append("Bundle: \(plan.bundle.displayName) (\(plan.bundle.id))")
+        lines.append("Target archive: \(plan.bundle.targetArchive)")
+        lines.append("Destination: \(plan.destinationPath)")
+        lines.append("Patched SHA-256: \(plan.bundle.patchedArchiveSHA256)")
+        lines.append("Preflight status: \(plan.preflightStatus.rawValue)")
+        if let current = plan.currentDestinationSHA256 {
+            lines.append("Current destination SHA-256: \(current)")
+        }
+        if !plan.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in plan.warnings {
+                lines.append("  - \(warning)")
+            }
+        }
+        lines.append("")
+        lines.append("Run this manually:")
+        lines.append(plan.sudoCommand)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func outfitRestoreCommandText(_ plan: OutfitBundleRestorePlan) -> String {
+        [
+            "Bundle: \(plan.bundle.displayName) (\(plan.bundle.id))",
+            "Backup ID: \(plan.bundle.backupID)",
+            "Target archive: \(plan.bundle.targetArchive)",
+            "",
+            "Run this manually to restore the official archive:",
+            plan.restoreCommand,
+            "",
+            "Then verify:",
+            plan.verifyCommand
+        ].joined(separator: "\n")
+    }
+
+    private static func outfitDisableGrantCommandText(_ plan: OutfitBundleDisableGrantPlan) -> String {
+        [
+            "Mod id: \(plan.modID)",
+            "",
+            "Run this to disable the grant helper:",
+            plan.disableCommand,
+            "",
+            "Then re-activate so the change takes effect:",
+            "  swift run cybermac activate --bundle-mode --game-app /path/to/Cyberpunk.app",
+            "  # Run the printed sudo copy command(s).",
+            "  swift run cybermac activate --verify --game-app /path/to/Cyberpunk.app"
+        ].joined(separator: "\n")
     }
 
     @discardableResult

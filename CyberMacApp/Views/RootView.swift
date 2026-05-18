@@ -3,6 +3,7 @@ import SwiftUI
 enum AppScreen: String, CaseIterable, Identifiable {
     case home = "Home"
     case mods = "Mods"
+    case outfits = "Outfits"
     case activation = "Activation"
     case archiveLab = "Archive Lab"
     case archiveIndex = "Archive Index"
@@ -18,6 +19,8 @@ enum AppScreen: String, CaseIterable, Identifiable {
             return "house"
         case .mods:
             return "shippingbox"
+        case .outfits:
+            return "tshirt"
         case .activation:
             return "bolt.circle"
         case .archiveLab:
@@ -100,6 +103,8 @@ struct RootView: View {
             HomeView(appState: appState)
         case .mods:
             ModsView(appState: appState)
+        case .outfits:
+            OutfitsView(appState: appState)
         case .activation:
             ActivationView(appState: appState)
         case .archiveLab:

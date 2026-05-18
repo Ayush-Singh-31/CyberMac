@@ -224,6 +224,8 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
     func clearTemporaryActivationOutputs() throws { throw FakeError.unexpectedCall }
     func archiveIndexStatsIfAvailable() -> ArchiveCatalogIndexStatsReport? { nil }
     func assetPreviewStatsIfAvailable() -> AssetPreviewStatsReport? { nil }
+    func listOutfitBundles() throws -> [CyberMacOutfitBundle] { [] }
+    func makeOutfitBundleUIPlans(_ bundle: CyberMacOutfitBundle) throws -> OutfitBundleUIPlans { throw FakeError.unexpectedCall }
 
     struct RecordedSearch: Equatable {
         let query: String
@@ -325,6 +327,7 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
             backups: [],
             inputStatus: nil,
             inputBackups: [],
+            outfitBundles: [],
             warnings: []
         )
     }
