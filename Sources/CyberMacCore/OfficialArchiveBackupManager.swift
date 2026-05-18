@@ -382,6 +382,13 @@ public struct OfficialArchiveBackupManager: Sendable {
         return metadata
     }
 
+    public func backupFileURL(backupID: String) throws -> URL {
+        let metadata = try load(backupID: backupID)
+        let relativeArchivePath = try Self.validatedOfficialRelativeArchivePath(metadata.relativeArchivePath)
+        try validateMetadata(metadata, relativeArchivePath: relativeArchivePath)
+        return try validatedBackupFileURL(from: metadata)
+    }
+
     public func restoreDryRunCommand(backupID: String, preferredGameAppPath: String? = nil) throws -> String {
         let context = try validatedRestoreContext(backupID: backupID, preferredGameAppPath: preferredGameAppPath)
         return "sudo cp \(PathSafety.shellQuoted(context.backupFileURL.path)) \(PathSafety.shellQuoted(context.destinationURL.path))"

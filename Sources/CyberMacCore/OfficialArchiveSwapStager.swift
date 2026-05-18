@@ -62,7 +62,7 @@ public struct OfficialArchiveSwapStageResult: Equatable, Sendable {
     }
 }
 
-public protocol OfficialArchiveSwapTooling {
+public protocol OfficialArchiveSwapTooling: Sendable {
     func extractArchive(cp77toolsURL: URL, sourceArchiveURL: URL, outputDirectoryURL: URL) throws
     func packArchive(cp77toolsURL: URL, extractedDirectoryURL: URL, outputArchiveURL: URL) throws
 }

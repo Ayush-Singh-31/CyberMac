@@ -62,6 +62,8 @@ struct CyberMacCLI {
             try visualReplace()
         case "redscript":
             try redscript()
+        case "outfit":
+            try outfit()
         case "outfit-bundle":
             try outfitBundle()
         case "archive-patch":
@@ -150,6 +152,16 @@ struct CyberMacCLI {
           cybermac visual-replace plan --target-archive <relative-official-archive-path> --target-asset <official-asset-path> --replacement-file <path> --work-dir <path> --out <plan-json-path> [--db <path>]
           cybermac visual-replace stage --plan <plan-json-path> --source-archive <path> --work-dir <path> --out-archive <path> --cp77tools <path>
           cybermac redscript item-grant create --item <Items.Some_Item_ID> [--item <Items.Other_Item_ID> ...] --out <zip-path> [--mod-name <name>]
+          cybermac outfit profile create --id <profile-id> --name <display-name> --target-archive <relative-official-archive> --backup-id <official-backup-id>
+          cybermac outfit profile list
+          cybermac outfit profile show --profile <profile-id>
+          cybermac outfit profile build --profile <profile-id> --out <archive-path> --work-dir <work-dir> --cp77tools <path>
+          cybermac outfit profile install --profile <profile-id>
+          cybermac outfit profile grant-items --profile <profile-id> --out <zip-path> --mod-name <name>
+          cybermac outfit piece add --profile <profile-id> --id <piece-id> --name <display-name> --source-archive <path> [--source-archive <path> ...] --cp77tools <path> [--work-dir <path>] [--item <Items.X> ...] [--tag <tag> ...] [--db <path>]
+          cybermac outfit piece list --profile <profile-id>
+          cybermac outfit piece enable --profile <profile-id> --piece <piece-id>
+          cybermac outfit piece disable --profile <profile-id> --piece <piece-id>
           cybermac outfit-bundle create --name <name> --target-archive <relative-archive-path> --patched-archive <path> --backup-id <id> --item <Items.X> [--item <Items.Y> ...] --asset <asset-path> [--asset <asset-path> ...] --out <bundle.json> [--grant-mod-id <id>]
           cybermac outfit-bundle show <bundle.json>
           cybermac outfit-bundle install <bundle.json> [--game-app /path/to/Cyberpunk.app]
@@ -974,6 +986,219 @@ struct CyberMacCLI {
         )
         let report = try VisualReplacementPlanner().plan(request: request)
         print(VisualReplacementPlanFormatter.format(report))
+    }
+
+    private func outfit() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing outfit subcommand. Usage: cybermac outfit {profile|piece} ...")
+        }
+
+        switch arguments[1] {
+        case "profile":
+            try outfitProfile()
+        case "piece":
+            try outfitPiece()
+        default:
+            throw CyberMacError.invalidInput("Unknown outfit subcommand: \(arguments[1])")
+        }
+    }
+
+    private func outfitProfile() throws {
+        guard arguments.count >= 3 else {
+            throw CyberMacError.invalidInput("Missing outfit profile action. Usage: cybermac outfit profile {create|list|show|build|install|grant-items} ...")
+        }
+
+        switch arguments[2] {
+        case "create":
+            try outfitProfileCreate()
+        case "list":
+            try outfitProfileList()
+        case "show":
+            try outfitProfileShow()
+        case "build":
+            try outfitProfileBuild()
+        case "install":
+            try outfitProfileInstall()
+        case "grant-items":
+            try outfitProfileGrantItems()
+        default:
+            throw CyberMacError.invalidInput("Unknown outfit profile action: \(arguments[2])")
+        }
+    }
+
+    private func outfitPiece() throws {
+        guard arguments.count >= 3 else {
+            throw CyberMacError.invalidInput("Missing outfit piece action. Usage: cybermac outfit piece {add|list|enable|disable} ...")
+        }
+
+        switch arguments[2] {
+        case "add":
+            try outfitPieceAdd()
+        case "list":
+            try outfitPieceList()
+        case "enable":
+            try outfitPieceSetEnabled(true)
+        case "disable":
+            try outfitPieceSetEnabled(false)
+        default:
+            throw CyberMacError.invalidInput("Unknown outfit piece action: \(arguments[2])")
+        }
+    }
+
+    private func outfitProfileCreate() throws {
+        let valueFlags: Set<String> = ["--id", "--name", "--target-archive", "--backup-id"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let id = optionValue("--id"),
+              let name = optionValue("--name"),
+              let targetArchive = optionValue("--target-archive"),
+              let backupID = optionValue("--backup-id")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit profile create --id <profile-id> --name <display-name> --target-archive <relative-official-archive> --backup-id <official-backup-id>")
+        }
+
+        let profile = try OutfitRegistryManager(home: home).createProfile(request: OutfitProfileCreateRequest(
+            id: id,
+            displayName: name,
+            targetArchiveRelativePath: targetArchive,
+            backupID: backupID
+        ))
+        print("Outfit profile created.")
+        print("ID: \(profile.id)")
+        print("Name: \(profile.displayName)")
+        print("Target archive: \(profile.targetArchiveRelativePath)")
+        print("Pristine backup: \(profile.pristineBackupId)")
+        if let pristineArchivePath = profile.pristineArchivePath {
+            print("Pristine archive path: \(pristineArchivePath)")
+        }
+    }
+
+    private func outfitProfileList() throws {
+        let positionals = positionals(after: 3, valueFlags: [])
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit profile list")
+        }
+        print(OutfitProfileFormatter.formatList(try OutfitRegistryManager(home: home).listProfiles()))
+    }
+
+    private func outfitProfileShow() throws {
+        let valueFlags: Set<String> = ["--profile"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty, let profileID = optionValue("--profile") else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit profile show --profile <profile-id>")
+        }
+        print(OutfitProfileFormatter.formatShow(try OutfitRegistryManager(home: home).showProfile(id: profileID)))
+    }
+
+    private func outfitProfileBuild() throws {
+        let valueFlags: Set<String> = ["--profile", "--out", "--work-dir", "--cp77tools"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let profileID = optionValue("--profile"),
+              let outputPath = optionValue("--out"),
+              let workDirectoryPath = optionValue("--work-dir"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit profile build --profile <profile-id> --out <archive-path> --work-dir <work-dir> --cp77tools <path>")
+        }
+
+        let result = try OutfitRegistryManager(home: home).buildProfile(request: OutfitProfileBuildRequest(
+            profileID: profileID,
+            outputArchiveURL: PathSafety.expandedURL(from: outputPath),
+            workDirectoryURL: PathSafety.expandedURL(from: workDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath)
+        ))
+        print(OutfitProfileFormatter.formatBuild(result))
+    }
+
+    private func outfitProfileInstall() throws {
+        let valueFlags: Set<String> = ["--profile"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty, let profileID = optionValue("--profile") else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit profile install --profile <profile-id>")
+        }
+        print(OutfitProfileFormatter.formatInstall(try OutfitRegistryManager(home: home).installPlan(profileID: profileID)))
+    }
+
+    private func outfitProfileGrantItems() throws {
+        let valueFlags: Set<String> = ["--profile", "--out", "--mod-name"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let profileID = optionValue("--profile"),
+              let outputPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit profile grant-items --profile <profile-id> --out <zip-path> --mod-name <name>")
+        }
+        let result = try OutfitRegistryManager(home: home).grantItems(request: OutfitGrantItemsRequest(
+            profileID: profileID,
+            outputZipURL: PathSafety.expandedURL(from: outputPath),
+            modName: optionValue("--mod-name")
+        ))
+        print(OutfitProfileFormatter.formatGrantItems(result))
+    }
+
+    private func outfitPieceAdd() throws {
+        let valueFlags: Set<String> = [
+            "--profile", "--id", "--name", "--source-archive",
+            "--item", "--tag", "--cp77tools", "--work-dir", "--db"
+        ]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let profileID = optionValue("--profile"),
+              let pieceID = optionValue("--id"),
+              let name = optionValue("--name"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit piece add --profile <profile-id> --id <piece-id> --name <display-name> --source-archive <path> [--source-archive <path> ...] --cp77tools <path> [--work-dir <path>] [--item <Items.X> ...] [--tag <tag> ...] [--db <path>]")
+        }
+        let sourceArchives = optionValues("--source-archive", after: 3)
+        guard !sourceArchives.isEmpty else {
+            throw CyberMacError.invalidInput("At least one --source-archive <path> is required")
+        }
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let request = OutfitPieceAddRequest(
+            profileID: profileID,
+            pieceID: pieceID,
+            displayName: name,
+            sourceArchiveURLs: sourceArchives.map(PathSafety.expandedURL),
+            itemIDs: optionValues("--item", after: 3),
+            tags: optionValues("--tag", after: 3),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            workDirectoryURL: optionValue("--work-dir").map(PathSafety.expandedURL),
+            databaseURL: databaseURL
+        )
+        let piece = try OutfitRegistryManager(home: home).addPiece(request: request)
+        print(OutfitProfileFormatter.formatPieceAdded(piece, profileID: profileID))
+    }
+
+    private func outfitPieceList() throws {
+        let valueFlags: Set<String> = ["--profile"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty, let profileID = optionValue("--profile") else {
+            throw CyberMacError.invalidInput("Usage: cybermac outfit piece list --profile <profile-id>")
+        }
+        print(OutfitProfileFormatter.formatPieces(try OutfitRegistryManager(home: home).listPieces(profileID: profileID)))
+    }
+
+    private func outfitPieceSetEnabled(_ enabled: Bool) throws {
+        let valueFlags: Set<String> = ["--profile", "--piece"]
+        let positionals = positionals(after: 3, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let profileID = optionValue("--profile"),
+              let pieceID = optionValue("--piece")
+        else {
+            let action = enabled ? "enable" : "disable"
+            throw CyberMacError.invalidInput("Usage: cybermac outfit piece \(action) --profile <profile-id> --piece <piece-id>")
+        }
+        let manager = OutfitRegistryManager(home: home)
+        let profile = enabled
+            ? try manager.enablePiece(profileID: profileID, pieceID: pieceID)
+            : try manager.disablePiece(profileID: profileID, pieceID: pieceID)
+        print("Outfit piece \(enabled ? "enabled" : "disabled").")
+        print("Profile: \(profile.id)")
+        print("Piece: \(pieceID)")
+        print("Enabled pieces: \(profile.enabledPieceIds.joined(separator: ", "))")
+        print("Disabled pieces: \(profile.disabledPieceIds.joined(separator: ", "))")
     }
 
     private func outfitBundle() throws {

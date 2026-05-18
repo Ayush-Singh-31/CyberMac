@@ -57,6 +57,7 @@ final class CyberMacAppState {
     var backups: [BundleBackupManifest] = []
     var inputStatus: InputPatchStatus?
     var inputBackups: [InputConfigBackupManifest] = []
+    var outfitProfiles: [OutfitProfileSummary] = []
     var outfitBundles: [CyberMacOutfitBundle] = []
     var scanResult: ModScanResult?
     var scannedArchiveURL: URL?
@@ -451,8 +452,52 @@ final class CyberMacAppState {
         backups = snapshot.backups
         inputStatus = snapshot.inputStatus
         inputBackups = snapshot.inputBackups
+        outfitProfiles = snapshot.outfitProfiles
         outfitBundles = snapshot.outfitBundles
         snapshotWarnings = snapshot.warnings
+    }
+
+    func setOutfitPiece(profileID: String, pieceID: String, enabled: Bool) async {
+        await runTask(.changingModState, failureTitle: "Outfit piece update failed", refreshAfter: true) { [container] in
+            try container.setOutfitPiece(profileID: profileID, pieceID: pieceID, enabled: enabled)
+        }
+    }
+
+    func showOutfitProfileInstallCommand(profileID: String) async {
+        await runTask(.preparingActivation, failureTitle: "Outfit profile install command failed") { [container] in
+            try container.makeOutfitProfileInstallPlan(profileID: profileID)
+        } onSuccess: { plan in
+            self.commandToRun = ManualCommand(
+                title: "Install outfit profile: \(plan.profile.displayName)",
+                command: Self.outfitProfileInstallCommandText(plan)
+            )
+        }
+    }
+
+    func showOutfitProfileRestoreCommand(profileID: String) async {
+        await runTask(.preparingRestore, failureTitle: "Outfit profile restore command failed") { [container] in
+            try container.outfitProfileRestoreCommand(profileID: profileID)
+        } onSuccess: { command in
+            self.commandToRun = ManualCommand(
+                title: "Restore official archive: \(profileID)",
+                command: command
+            )
+        }
+    }
+
+    func showOutfitProfileGrantCommand(profileID: String, displayName: String) {
+        let safeName = profileID
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        commandToRun = ManualCommand(
+            title: "Generate grant helper: \(displayName)",
+            command: """
+            swift run cybermac outfit profile grant-items \\
+              --profile \(PathSafety.shellQuoted(profileID)) \\
+              --out "$HOME/Desktop/\(safeName)-item-grant.zip" \\
+              --mod-name \(PathSafety.shellQuoted("\(safeName)_grant"))
+            """
+        )
     }
 
     func showOutfitInstallCommand(for bundle: CyberMacOutfitBundle) async {
@@ -530,6 +575,23 @@ final class CyberMacAppState {
         lines.append("Run this manually:")
         lines.append(plan.sudoCommand)
         return lines.joined(separator: "\n")
+    }
+
+    private static func outfitProfileInstallCommandText(_ plan: OutfitInstallPlan) -> String {
+        [
+            "Profile: \(plan.profile.displayName) (\(plan.profile.id))",
+            "Target archive: \(plan.profile.targetArchiveRelativePath)",
+            "Destination: \(plan.destinationArchivePath)",
+            "Built archive: \(plan.builtArchivePath)",
+            "Built SHA-256: \(plan.builtArchiveSHA256)",
+            "",
+            "Run this manually:",
+            plan.manualInstallCommand,
+            "",
+            "Then verify:",
+            plan.statusCommand,
+            plan.preflightCommand
+        ].joined(separator: "\n")
     }
 
     private static func outfitRestoreCommandText(_ plan: OutfitBundleRestorePlan) -> String {

@@ -15,6 +15,7 @@ struct AppSnapshot: Sendable {
     let backups: [BundleBackupManifest]
     let inputStatus: InputPatchStatus?
     let inputBackups: [InputConfigBackupManifest]
+    let outfitProfiles: [OutfitProfileSummary]
     let outfitBundles: [CyberMacOutfitBundle]
     let warnings: [SnapshotWarning]
 }
@@ -61,6 +62,10 @@ protocol AppServiceProviding: Sendable {
     func assetPreviewStatsIfAvailable() -> AssetPreviewStatsReport?
     func listOutfitBundles() throws -> [CyberMacOutfitBundle]
     func makeOutfitBundleUIPlans(_ bundle: CyberMacOutfitBundle) throws -> OutfitBundleUIPlans
+    func listOutfitProfiles() throws -> [OutfitProfileSummary]
+    func setOutfitPiece(profileID: String, pieceID: String, enabled: Bool) throws -> OutfitProfile
+    func makeOutfitProfileInstallPlan(profileID: String) throws -> OutfitInstallPlan
+    func outfitProfileRestoreCommand(profileID: String) throws -> String
     func searchArchiveIndexWithPreviews(
         query: String,
         categoryFilter: String?,
@@ -113,6 +118,7 @@ struct AppServiceContainer: AppServiceProviding {
     private let diagnostics: DiagnosticsExporter
     private let bundleState: BundleStateResolver
     private let outfitBundleManager: OutfitBundleManager
+    private let outfitRegistryManager: OutfitRegistryManager
 
     init(home: CyberMacHomeManager = CyberMacHomeManager()) {
         self.home = home
@@ -130,6 +136,7 @@ struct AppServiceContainer: AppServiceProviding {
         self.diagnostics = DiagnosticsExporter(home: home)
         self.bundleState = BundleStateResolver(home: home)
         self.outfitBundleManager = OutfitBundleManager(home: home)
+        self.outfitRegistryManager = OutfitRegistryManager(home: home)
     }
 
     func invalidateGameInstall() {
@@ -203,6 +210,14 @@ struct AppServiceContainer: AppServiceProviding {
             warnings.append(SnapshotWarning(area: "outfit-bundles", message: String(describing: error)))
         }
 
+        let outfitProfiles: [OutfitProfileSummary]
+        do {
+            outfitProfiles = try outfitRegistryManager.listProfiles().map { try outfitRegistryManager.showProfile(id: $0.id) }
+        } catch {
+            outfitProfiles = []
+            warnings.append(SnapshotWarning(area: "outfit-profiles", message: String(describing: error)))
+        }
+
         return AppSnapshot(
             doctor: report,
             cache: cache,
@@ -210,6 +225,7 @@ struct AppServiceContainer: AppServiceProviding {
             backups: backups,
             inputStatus: inputStatus,
             inputBackups: inputBackups,
+            outfitProfiles: outfitProfiles,
             outfitBundles: outfitBundles,
             warnings: warnings
         )
@@ -217,6 +233,24 @@ struct AppServiceContainer: AppServiceProviding {
 
     func listOutfitBundles() throws -> [CyberMacOutfitBundle] {
         try outfitBundleManager.listRegistered()
+    }
+
+    func listOutfitProfiles() throws -> [OutfitProfileSummary] {
+        try outfitRegistryManager.listProfiles().map { try outfitRegistryManager.showProfile(id: $0.id) }
+    }
+
+    func setOutfitPiece(profileID: String, pieceID: String, enabled: Bool) throws -> OutfitProfile {
+        enabled
+            ? try outfitRegistryManager.enablePiece(profileID: profileID, pieceID: pieceID)
+            : try outfitRegistryManager.disablePiece(profileID: profileID, pieceID: pieceID)
+    }
+
+    func makeOutfitProfileInstallPlan(profileID: String) throws -> OutfitInstallPlan {
+        try outfitRegistryManager.installPlan(profileID: profileID)
+    }
+
+    func outfitProfileRestoreCommand(profileID: String) throws -> String {
+        try outfitRegistryManager.restoreOfficialCommand(profileID: profileID)
     }
 
     func makeOutfitBundleUIPlans(_ bundle: CyberMacOutfitBundle) throws -> OutfitBundleUIPlans {

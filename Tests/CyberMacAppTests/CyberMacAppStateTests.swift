@@ -226,6 +226,10 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
     func assetPreviewStatsIfAvailable() -> AssetPreviewStatsReport? { nil }
     func listOutfitBundles() throws -> [CyberMacOutfitBundle] { [] }
     func makeOutfitBundleUIPlans(_ bundle: CyberMacOutfitBundle) throws -> OutfitBundleUIPlans { throw FakeError.unexpectedCall }
+    func listOutfitProfiles() throws -> [OutfitProfileSummary] { [] }
+    func setOutfitPiece(profileID: String, pieceID: String, enabled: Bool) throws -> OutfitProfile { throw FakeError.unexpectedCall }
+    func makeOutfitProfileInstallPlan(profileID: String) throws -> OutfitInstallPlan { throw FakeError.unexpectedCall }
+    func outfitProfileRestoreCommand(profileID: String) throws -> String { throw FakeError.unexpectedCall }
 
     struct RecordedSearch: Equatable {
         let query: String
@@ -327,6 +331,7 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
             backups: [],
             inputStatus: nil,
             inputBackups: [],
+            outfitProfiles: [],
             outfitBundles: [],
             warnings: []
         )

@@ -41,6 +41,10 @@ public struct CyberMacHomeManager: Sendable {
     public var archiveIndexURL: URL { homeURL.appendingPathComponent("archive-index", isDirectory: true) }
     public var archiveIndexDatabaseURL: URL { archiveIndexURL.appendingPathComponent("archive-index.sqlite") }
     public var outfitBundlesURL: URL { homeURL.appendingPathComponent("outfit-bundles", isDirectory: true) }
+    public var outfitsURL: URL { homeURL.appendingPathComponent("outfits", isDirectory: true) }
+    public var outfitRegistryURL: URL { outfitsURL.appendingPathComponent("registry.json") }
+    public var outfitProfilesURL: URL { outfitsURL.appendingPathComponent("profiles", isDirectory: true) }
+    public var outfitBuildsURL: URL { outfitsURL.appendingPathComponent("builds", isDirectory: true) }
 
     public func bootstrap() throws {
         let directories = [
@@ -66,7 +70,10 @@ public struct CyberMacHomeManager: Sendable {
             scanCacheURL,
             diagnosticsURL,
             archiveIndexURL,
-            outfitBundlesURL
+            outfitBundlesURL,
+            outfitsURL,
+            outfitProfilesURL,
+            outfitBuildsURL
         ]
         for directory in directories {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
