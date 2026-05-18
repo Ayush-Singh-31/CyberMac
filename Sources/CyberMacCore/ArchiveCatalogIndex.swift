@@ -36,6 +36,7 @@ public enum ArchiveCatalogIndexCategory: String, CaseIterable, Sendable {
             .lowercased()
 
         if normalizedPath.contains("/gui/")
+            || normalizedPath.contains("/ui/")
             || normalizedPath.contains("/widgets/")
             || normalizedPath.contains("/ink") {
             return Self.ui.rawValue

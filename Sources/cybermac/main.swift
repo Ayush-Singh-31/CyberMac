@@ -58,6 +58,8 @@ struct CyberMacCLI {
             try archivePreview()
         case "xbm-preview":
             try xbmPreview()
+        case "visual-replace":
+            try visualReplace()
         case "archive-patch":
             try archivePatch()
         case "mod-lab":
@@ -141,6 +143,8 @@ struct CyberMacCLI {
           cybermac xbm-preview inspect <xbm-file> [--json] [--dump-strings] [--dump-names] [--dump-chunks] [--limit <n>]
           cybermac xbm-preview export <xbm-file> --out <png-path> [--register] [--archive <relative-official-archive-path>] [--asset-path <asset-path>] [--db <path>] [--kraken <libkraken.dylib>] [--debug]
           cybermac xbm-preview batch-export --archive <relative-official-archive-path> --extracted-root <path> --out-dir <path> [--kraken <libkraken.dylib>] [--query <q>] [--category <c>] [--limit <n>] [--register] [--db <path>] [--skip-existing] [--debug]
+          cybermac visual-replace plan --target-archive <relative-official-archive-path> --target-asset <official-asset-path> --replacement-file <path> --work-dir <path> --out <plan-json-path> [--db <path>]
+          cybermac visual-replace stage --plan <plan-json-path> --source-archive <path> --work-dir <path> --out-archive <path> --cp77tools <path>
           cybermac archive-patch backup-official <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch status <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
           cybermac archive-patch preflight <relative-archive-path> [--game-app /path/to/Cyberpunk.app]
@@ -919,6 +923,71 @@ struct CyberMacCLI {
         default:
             throw CyberMacError.invalidInput("Unknown archive-patch subcommand: \(arguments[1])")
         }
+    }
+
+    private func visualReplace() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing visual-replace subcommand")
+        }
+
+        switch arguments[1] {
+        case "plan":
+            try visualReplacePlan()
+        case "stage":
+            try visualReplaceStage()
+        default:
+            throw CyberMacError.invalidInput("Unknown visual-replace subcommand: \(arguments[1])")
+        }
+    }
+
+    private func visualReplacePlan() throws {
+        let valueFlags: Set<String> = ["--target-archive", "--target-asset", "--replacement-file", "--work-dir", "--out", "--db"]
+        let positionals = visualReplacePositionals(valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let targetArchivePath = optionValue("--target-archive"),
+              let targetAssetPath = optionValue("--target-asset"),
+              let replacementFilePath = optionValue("--replacement-file"),
+              let workDirectoryPath = optionValue("--work-dir"),
+              let outputPlanPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac visual-replace plan --target-archive <relative-official-archive-path> --target-asset <official-asset-path> --replacement-file <path> --work-dir <path> --out <plan-json-path> [--db <path>]")
+        }
+
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let request = VisualReplacementPlanRequest(
+            targetArchivePath: targetArchivePath,
+            targetAssetPath: targetAssetPath,
+            replacementFileURL: PathSafety.expandedURL(from: replacementFilePath),
+            workDirectoryURL: PathSafety.expandedURL(from: workDirectoryPath),
+            outputPlanURL: PathSafety.expandedURL(from: outputPlanPath),
+            databaseURL: databaseURL
+        )
+        let report = try VisualReplacementPlanner().plan(request: request)
+        print(VisualReplacementPlanFormatter.format(report))
+    }
+
+    private func visualReplaceStage() throws {
+        let valueFlags: Set<String> = ["--plan", "--source-archive", "--work-dir", "--out-archive", "--cp77tools"]
+        let positionals = visualReplacePositionals(valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let planPath = optionValue("--plan"),
+              let sourceArchivePath = optionValue("--source-archive"),
+              let workDirectoryPath = optionValue("--work-dir"),
+              let outputArchivePath = optionValue("--out-archive"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac visual-replace stage --plan <plan-json-path> --source-archive <path> --work-dir <path> --out-archive <path> --cp77tools <path>")
+        }
+
+        let request = VisualReplacementStageRequest(
+            planURL: PathSafety.expandedURL(from: planPath),
+            sourceArchiveURL: PathSafety.expandedURL(from: sourceArchivePath),
+            workDirectoryURL: PathSafety.expandedURL(from: workDirectoryPath),
+            outputArchiveURL: PathSafety.expandedURL(from: outputArchivePath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath)
+        )
+        let result = try VisualReplacementStager(home: home).stage(request: request)
+        print(VisualReplacementStageFormatter.format(result))
     }
 
     private func archivePatchBackupOfficial() throws {
@@ -1739,6 +1808,29 @@ struct CyberMacCLI {
     }
 
     private func archivePreviewPositionals(valueFlags: Set<String>, excludingFlags: Set<String> = []) -> [String] {
+        var values: [String] = []
+        var skipNext = false
+        for argument in arguments.dropFirst(2) {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if valueFlags.contains(argument) {
+                skipNext = true
+                continue
+            }
+            if excludingFlags.contains(argument) {
+                continue
+            }
+            if argument.hasPrefix("--") {
+                continue
+            }
+            values.append(argument)
+        }
+        return values
+    }
+
+    private func visualReplacePositionals(valueFlags: Set<String>, excludingFlags: Set<String> = []) -> [String] {
         var values: [String] = []
         var skipNext = false
         for argument in arguments.dropFirst(2) {
