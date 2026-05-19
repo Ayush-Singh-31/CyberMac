@@ -68,6 +68,8 @@ struct CyberMacCLI {
             try outfitBundle()
         case "archive-patch":
             try archivePatch()
+        case "addon-probe":
+            try addonProbe()
         case "mod-lab":
             try modLab()
         case "install":
@@ -176,6 +178,19 @@ struct CyberMacCLI {
           cybermac archive-patch match-mod --mod-archive <path> [--db <path>] [--cp77tools <path>] [--work-dir <path>] [--limit <n>]
           cybermac archive-patch list-backups
           cybermac archive-patch restore-official <backup-id> [--dry-run|--verify] [--game-app /path/to/Cyberpunk.app]
+          cybermac addon-probe inspect <mod-path> [--json] [--out <dir>]
+          cybermac addon-probe stage-assets <mod-path> --target-archive <relative-archive> --profile <profile-id> --out <dir> [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>]
+          cybermac addon-probe grant-test <Items.Some_Item_ID> --out <zip-path> [--mod-name <name>]
+          cybermac addon-probe grant-test-many <items-file-or-mod-path> --out <zip-path> [--mod-name <name>]
+          cybermac addon-probe atomiic-summary <mod-path> [--json]
+          cybermac addon-probe analyze-xl-factory <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
+          cybermac addon-probe stage-xl-factory-registry <mod-path> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app
+          cybermac addon-probe search-record-layer [--limit 50] [--db <path>]
+          cybermac addon-probe inspect-factory-layer [--out <dir>] [--json] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--try-cr2w-decode]
+          cybermac addon-probe analyze-factory-json <decoded-json-root> [--json]
+          cybermac addon-probe roundtrip-factory-resource <resource-path> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
+          cybermac addon-probe clone-factory-row --resource <resource-path> --source-key <key> --new-key <key> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
+          cybermac addon-probe plan <mod-path> [--json]
           cybermac mod-lab assess <mod.zip> [--goal clothing|skin|ui|unknown]
           cybermac install /path/to/mod.zip [--game-app /path/to/Cyberpunk.app]
           cybermac cache-status [--game-app /path/to/Cyberpunk.app]
@@ -945,6 +960,368 @@ struct CyberMacCLI {
         default:
             throw CyberMacError.invalidInput("Unknown archive-patch subcommand: \(arguments[1])")
         }
+    }
+
+    private func addonProbe() throws {
+        guard arguments.count >= 2 else {
+            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
+        }
+
+        switch arguments[1] {
+        case "inspect":
+            try addonProbeInspect()
+        case "stage-assets":
+            try addonProbeStageAssets()
+        case "grant-test":
+            try addonProbeGrantTest()
+        case "grant-test-many":
+            try addonProbeGrantTestMany()
+        case "atomiic-summary":
+            try addonProbeAtomiicSummary()
+        case "analyze-xl-factory":
+            try addonProbeAnalyzeXLFactory()
+        case "stage-xl-factory-registry":
+            try addonProbeStageXLFactoryRegistry()
+        case "search-record-layer":
+            try addonProbeSearchRecordLayer()
+        case "inspect-factory-layer":
+            try addonProbeInspectFactoryLayer()
+        case "analyze-factory-json":
+            try addonProbeAnalyzeFactoryJSON()
+        case "roundtrip-factory-resource":
+            try addonProbeRoundtripFactoryResource()
+        case "clone-factory-row":
+            try addonProbeCloneFactoryRow()
+        case "plan":
+            try addonProbePlan()
+        default:
+            throw CyberMacError.invalidInput("Unknown addon-probe subcommand: \(arguments[1])")
+        }
+    }
+
+    private func addonProbeInspect() throws {
+        let valueFlags: Set<String> = ["--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe inspect <mod-path> [--json] [--out <dir>]")
+        }
+
+        let report = try AddonProbeManager(home: home).inspect(request: AddonProbeInspectRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            outputDirectoryURL: optionValue("--out").map(PathSafety.expandedURL)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeInspectFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeInspectFormatter.format(report))
+        }
+    }
+
+    private func addonProbeStageAssets() throws {
+        let valueFlags: Set<String> = ["--target-archive", "--profile", "--out", "--cp77tools", "--game-app", "--db"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let targetArchive = optionValue("--target-archive"),
+              let profileID = optionValue("--profile"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-assets <mod-path> --target-archive <relative-archive> --profile <profile-id> --out <dir> [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>]")
+        }
+
+        let cp77toolsURL = try addonProbeCP77ToolsURL()
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let manifest = try AddonProbeManager(home: home).stageAssets(request: AddonProbeStageAssetsRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            targetArchiveRelativePath: targetArchive,
+            profileID: profileID,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: cp77toolsURL,
+            gameInstall: game,
+            databaseURL: optionValue("--db").map(PathSafety.expandedURL)
+        ))
+        print(AddonProbeStageFormatter.format(manifest))
+    }
+
+    private func addonProbeGrantTest() throws {
+        let valueFlags: Set<String> = ["--out", "--mod-name"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let outputPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe grant-test <Items.Some_Item_ID> --out <zip-path> [--mod-name <name>]")
+        }
+
+        let modName = optionValue("--mod-name") ?? AddonProbeManager.defaultGrantModName
+        let result = try RedscriptItemGrantGenerator().generate(request: RedscriptItemGrantRequest(
+            itemIDs: [positionals[0]],
+            outputZipURL: PathSafety.expandedURL(from: outputPath),
+            modName: modName
+        ))
+
+        print("Generated add-on probe grant helper.")
+        print("Status: experimental Path B probe; this does not register TweakDB records.")
+        print("Output zip: \(PathSafety.redactUserPath(result.outputZipURL.path))")
+        print("Mod name: \(result.modName)")
+        print("Entry path: \(result.redscriptEntryPath)")
+        print("Item ID: \(result.normalizedItemIDs.joined(separator: ", "))")
+        print("")
+        print("Warning: if this item ID is not registered in TweakDB, the helper is expected to fail or grant nothing.")
+        print("")
+        let sampleGameApp = PathSafety.shellQuoted("/Applications/Cyberpunk 2077: Ultimate.app")
+        print("Activation workflow:")
+        print("  1. Install generated zip:")
+        print("     swift run cybermac install \(PathSafety.shellQuoted(result.outputZipURL.path)) --game-app \(sampleGameApp)")
+        print("  2. Activate bundle mode:")
+        print("     swift run cybermac activate --bundle-mode --game-app \(sampleGameApp)")
+        print("  3. Copy final.redscripts to the game cache with the manual sudo cp command printed by activate.")
+        print("  4. Launch once and check whether the item appears.")
+        print("  5. Disable the grant helper:")
+        print("     swift run cybermac list-mods")
+        print("     swift run cybermac disable <grant-helper-mod-id>")
+        print("  6. Activate again without the helper and re-run the printed manual copy command:")
+        print("     swift run cybermac activate --bundle-mode --game-app \(sampleGameApp)")
+    }
+
+    private func addonProbeGrantTestMany() throws {
+        let valueFlags: Set<String> = ["--out", "--mod-name"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let outputPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe grant-test-many <items-file-or-mod-path> --out <zip-path> [--mod-name <name>]")
+        }
+
+        let result = try AddonProbeManager(home: home).grantTestMany(request: AddonProbeGrantManyRequest(
+            inputURL: PathSafety.expandedURL(from: positionals[0]),
+            outputZipURL: PathSafety.expandedURL(from: outputPath),
+            modName: optionValue("--mod-name")
+        ))
+        print(AddonProbeGrantManyFormatter.format(result))
+    }
+
+    private func addonProbeAtomiicSummary() throws {
+        let positionals = positionals(after: 2, valueFlags: [])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe atomiic-summary <mod-path> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).atomiicSummary(modURL: PathSafety.expandedURL(from: positionals[0]))
+        if hasFlag("--json") {
+            print(try AddonProbeAtomiicSummaryFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeAtomiicSummaryFormatter.format(report))
+        }
+    }
+
+    private func addonProbeAnalyzeXLFactory() throws {
+        let valueFlags: Set<String> = ["--out", "--cp77tools", "--game-app"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools"),
+              let gameAppPath = optionValue("--game-app")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe analyze-xl-factory <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let report = try AddonProbeManager(home: home).analyzeXLFactory(request: AddonProbeXLFactoryAnalysisRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            gameInstall: game
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeXLFactoryAnalysisFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeXLFactoryAnalysisFormatter.format(report))
+        }
+    }
+
+    private func addonProbeStageXLFactoryRegistry() throws {
+        let valueFlags: Set<String> = ["--archive", "--out", "--cp77tools", "--game-app"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let archivePath = optionValue("--archive"),
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools"),
+              let gameAppPath = optionValue("--game-app")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-xl-factory-registry <mod-path> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let manifest = try AddonProbeManager(home: home).stageXLFactoryRegistry(request: AddonProbeXLFactoryRegistryStageRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            archivePath: archivePath,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            gameInstall: game
+        ))
+        print(AddonProbeXLFactoryRegistryStageFormatter.format(manifest))
+    }
+
+    private func addonProbeSearchRecordLayer() throws {
+        let valueFlags: Set<String> = ["--limit", "--db"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe search-record-layer [--limit 50] [--db <path>]")
+        }
+
+        let limit: Int
+        if let rawLimit = optionValue("--limit") {
+            guard let parsed = Int(rawLimit), parsed > 0 else {
+                throw CyberMacError.invalidInput("addon-probe search-record-layer --limit must be a positive integer: \(rawLimit)")
+            }
+            limit = parsed
+        } else {
+            limit = 50
+        }
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let report = try AddonProbeManager(home: home).searchRecordLayer(databaseURL: databaseURL, limit: limit)
+        print(AddonProbeRecordLayerFormatter.format(report))
+    }
+
+    private func addonProbeInspectFactoryLayer() throws {
+        let valueFlags: Set<String> = ["--out", "--cp77tools", "--game-app", "--db"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe inspect-factory-layer [--out <dir>] [--json] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--try-cr2w-decode]")
+        }
+
+        let cp77toolsURL: URL?
+        if let cp77toolsPath = optionValue("--cp77tools"), !cp77toolsPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            cp77toolsURL = PathSafety.expandedURL(from: cp77toolsPath)
+        } else if optionValue("--game-app") != nil,
+                  let environmentPath = ProcessInfo.processInfo.environment["CP77TOOLS"],
+                  !environmentPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            cp77toolsURL = PathSafety.expandedURL(from: environmentPath)
+        } else {
+            cp77toolsURL = nil
+        }
+
+        let gameInstall = try optionValue("--game-app").map {
+            try GameInstallDetector().detect(preferredAppPath: $0)
+        }
+        let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        let report = try AddonProbeManager(home: home).inspectFactoryLayer(request: AddonProbeFactoryLayerRequest(
+            outputDirectoryURL: optionValue("--out").map(PathSafety.expandedURL),
+            cp77toolsURL: cp77toolsURL,
+            gameInstall: gameInstall,
+            databaseURL: databaseURL,
+            tryCR2WDecode: hasFlag("--try-cr2w-decode")
+        ))
+
+        if hasFlag("--json") {
+            print(try AddonProbeFactoryLayerFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeFactoryLayerFormatter.format(report))
+        }
+    }
+
+    private func addonProbeAnalyzeFactoryJSON() throws {
+        let positionals = positionals(after: 2, valueFlags: [])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe analyze-factory-json <decoded-json-root> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).analyzeFactoryJSON(request: AddonProbeFactoryJSONAnalysisRequest(
+            decodedJSONRootURL: PathSafety.expandedURL(from: positionals[0])
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeFactoryJSONAnalysisFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeFactoryJSONAnalysisFormatter.format(report))
+        }
+    }
+
+    private func addonProbeRoundtripFactoryResource() throws {
+        let valueFlags: Set<String> = ["--archive", "--out", "--cp77tools", "--game-app"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let archivePath = optionValue("--archive"),
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools"),
+              let gameAppPath = optionValue("--game-app")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe roundtrip-factory-resource <resource-path> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let manifest = try AddonProbeManager(home: home).roundtripFactoryResource(request: AddonProbeFactoryRoundtripRequest(
+            resourcePath: positionals[0],
+            archivePath: archivePath,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            gameInstall: game
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeFactoryRoundtripFormatter.formatJSON(manifest))
+        } else {
+            print(AddonProbeFactoryRoundtripFormatter.format(manifest))
+        }
+    }
+
+    private func addonProbeCloneFactoryRow() throws {
+        let valueFlags: Set<String> = ["--resource", "--source-key", "--new-key", "--archive", "--out", "--cp77tools", "--game-app"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let resourcePath = optionValue("--resource"),
+              let sourceKey = optionValue("--source-key"),
+              let newKey = optionValue("--new-key"),
+              let archivePath = optionValue("--archive"),
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools"),
+              let gameAppPath = optionValue("--game-app")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe clone-factory-row --resource <resource-path> --source-key <key> --new-key <key> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let manifest = try AddonProbeManager(home: home).cloneFactoryRow(request: AddonProbeFactoryRowCloneRequest(
+            resourcePath: resourcePath,
+            sourceKey: sourceKey,
+            newKey: newKey,
+            archivePath: archivePath,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            gameInstall: game
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeFactoryRowCloneFormatter.formatJSON(manifest))
+        } else {
+            print(AddonProbeFactoryRowCloneFormatter.format(manifest))
+        }
+    }
+
+    private func addonProbePlan() throws {
+        let positionals = positionals(after: 2, valueFlags: [])
+        guard positionals.count == 1 else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe plan <mod-path> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).plan(modURL: PathSafety.expandedURL(from: positionals[0]))
+        if hasFlag("--json") {
+            print(try AddonProbePlanFormatter.formatJSON(report))
+        } else {
+            print(AddonProbePlanFormatter.format(report))
+        }
+    }
+
+    private func addonProbeCP77ToolsURL() throws -> URL {
+        if let cp77toolsPath = optionValue("--cp77tools"), !cp77toolsPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return PathSafety.expandedURL(from: cp77toolsPath)
+        }
+        if let environmentPath = ProcessInfo.processInfo.environment["CP77TOOLS"],
+           !environmentPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return PathSafety.expandedURL(from: environmentPath)
+        }
+        throw CyberMacError.invalidInput("""
+        Missing cp77tools path. Pass --cp77tools <path> or set CP77TOOLS.
+        Example:
+          export PROBE="$ROOT/Probes/CyberMacArchivePatchTest"
+          export CP77TOOLS="$PROBE/tools/cp77tools-x64"
+        """)
     }
 
     private func visualReplace() throws {

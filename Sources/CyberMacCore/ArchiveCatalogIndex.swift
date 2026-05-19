@@ -140,7 +140,7 @@ public struct ArchiveCatalogIndexSearchOptions: Equatable, Sendable {
     }
 }
 
-public struct ArchiveCatalogIndexSearchMatch: Equatable, Sendable {
+public struct ArchiveCatalogIndexSearchMatch: Codable, Equatable, Sendable {
     public let archivePath: String
     public let assetPath: String
     public let assetExtension: String
