@@ -25,6 +25,7 @@ public struct AddonProbeInspectRequest: Equatable, Sendable {
 
 public struct AddonProbeExpandedItemRecord: Codable, Equatable, Sendable {
     public let templateRecord: String
+    public let recordID: String
     public let itemID: String
     public let instanceVariables: [String: String]
     public let baseRecord: String?
@@ -32,11 +33,17 @@ public struct AddonProbeExpandedItemRecord: Codable, Equatable, Sendable {
     public let appearanceName: String?
     public let entityName: String?
     public let displayName: String?
+    public let localizedDescription: String?
     public let iconAtlasPath: String?
     public let iconAtlasPart: String?
+    public let iconAtlasResourcePath: String?
+    public let iconAtlasPartName: String?
+    public let quality: String?
+    public let statModifiers: [String]
 
     public init(
         templateRecord: String,
+        recordID: String? = nil,
         itemID: String,
         instanceVariables: [String: String],
         baseRecord: String?,
@@ -44,10 +51,16 @@ public struct AddonProbeExpandedItemRecord: Codable, Equatable, Sendable {
         appearanceName: String?,
         entityName: String?,
         displayName: String?,
+        localizedDescription: String? = nil,
         iconAtlasPath: String?,
-        iconAtlasPart: String?
+        iconAtlasPart: String?,
+        iconAtlasResourcePath: String? = nil,
+        iconAtlasPartName: String? = nil,
+        quality: String? = nil,
+        statModifiers: [String] = []
     ) {
         self.templateRecord = templateRecord
+        self.recordID = recordID ?? itemID
         self.itemID = itemID
         self.instanceVariables = instanceVariables
         self.baseRecord = baseRecord
@@ -55,8 +68,13 @@ public struct AddonProbeExpandedItemRecord: Codable, Equatable, Sendable {
         self.appearanceName = appearanceName
         self.entityName = entityName
         self.displayName = displayName
+        self.localizedDescription = localizedDescription
         self.iconAtlasPath = iconAtlasPath
         self.iconAtlasPart = iconAtlasPart
+        self.iconAtlasResourcePath = iconAtlasResourcePath ?? iconAtlasPath
+        self.iconAtlasPartName = iconAtlasPartName ?? iconAtlasPart
+        self.quality = quality
+        self.statModifiers = statModifiers
     }
 }
 
@@ -662,6 +680,301 @@ public struct AddonProbeRecordLayerSearchReport: Codable, Equatable, Sendable {
         self.likelyPatchableRecordLayerFound = likelyPatchableRecordLayerFound
         self.status = status
         self.warnings = warnings
+    }
+}
+
+public struct AddonProbeTweakXLExpandedRecordsReport: Codable, Equatable, Sendable {
+    public let modPath: String
+    public let recordCount: Int
+    public let baseRecordCounts: [String: Int]
+    public let records: [AddonProbeExpandedItemRecord]
+    public let warnings: [String]
+
+    public init(
+        modPath: String,
+        recordCount: Int,
+        baseRecordCounts: [String: Int],
+        records: [AddonProbeExpandedItemRecord],
+        warnings: [String]
+    ) {
+        self.modPath = modPath
+        self.recordCount = recordCount
+        self.baseRecordCounts = baseRecordCounts
+        self.records = records
+        self.warnings = warnings
+    }
+}
+
+public struct AddonProbeRecordLayerProbeRequest: Sendable {
+    public let modURL: URL
+    public let outputDirectoryURL: URL
+    public let cp77toolsURL: URL
+    public let gameInstall: GameInstall
+    public let databaseURL: URL
+
+    public init(
+        modURL: URL,
+        outputDirectoryURL: URL,
+        cp77toolsURL: URL,
+        gameInstall: GameInstall,
+        databaseURL: URL = ArchiveCatalogIndexDefaults.databaseURL
+    ) {
+        self.modURL = modURL
+        self.outputDirectoryURL = outputDirectoryURL
+        self.cp77toolsURL = cp77toolsURL
+        self.gameInstall = gameInstall
+        self.databaseURL = databaseURL
+    }
+}
+
+public struct AddonProbeRecordLayerCandidateResource: Codable, Equatable, Sendable {
+    public let archivePath: String
+    public let assetPath: String
+    public let assetExtension: String
+    public let category: String
+    public let matchedTerms: [String]
+
+    public init(
+        archivePath: String,
+        assetPath: String,
+        assetExtension: String,
+        category: String,
+        matchedTerms: [String]
+    ) {
+        self.archivePath = archivePath
+        self.assetPath = assetPath
+        self.assetExtension = assetExtension
+        self.category = category
+        self.matchedTerms = matchedTerms
+    }
+}
+
+public struct AddonProbeRecordLayerResourceDiagnostic: Codable, Equatable, Sendable {
+    public let archivePath: String
+    public let resourcePath: String
+    public let extractedPath: String?
+    public let exists: Bool
+    public let size: Int?
+    public let first32BytesHex: String
+    public let detectedMagic: AddonProbeFactoryResourceMagic
+    public let parseStatus: AddonProbeFactoryParseStatus
+    public let warnings: [String]
+
+    public init(
+        archivePath: String,
+        resourcePath: String,
+        extractedPath: String?,
+        exists: Bool,
+        size: Int?,
+        first32BytesHex: String,
+        detectedMagic: AddonProbeFactoryResourceMagic,
+        parseStatus: AddonProbeFactoryParseStatus,
+        warnings: [String]
+    ) {
+        self.archivePath = archivePath
+        self.resourcePath = resourcePath
+        self.extractedPath = extractedPath
+        self.exists = exists
+        self.size = size
+        self.first32BytesHex = first32BytesHex
+        self.detectedMagic = detectedMagic
+        self.parseStatus = parseStatus
+        self.warnings = warnings
+    }
+}
+
+public struct AddonProbeRecordLayerTextMatch: Codable, Equatable, Sendable {
+    public let term: String
+    public let archivePath: String?
+    public let resourcePath: String
+    public let sourcePath: String
+    public let lineNumber: Int?
+    public let jsonPath: String?
+    public let matchedString: String
+
+    public init(
+        term: String,
+        archivePath: String?,
+        resourcePath: String,
+        sourcePath: String,
+        lineNumber: Int?,
+        jsonPath: String?,
+        matchedString: String
+    ) {
+        self.term = term
+        self.archivePath = archivePath
+        self.resourcePath = resourcePath
+        self.sourcePath = sourcePath
+        self.lineNumber = lineNumber
+        self.jsonPath = jsonPath
+        self.matchedString = matchedString
+    }
+}
+
+public enum AddonProbeRecordLayerProbeConclusion: String, Codable, Equatable, Sendable {
+    case patchableRecordLayerCandidateFound
+    case candidateResourcesFoundNoRecordDefinitions
+    case noCandidateResources
+    case archiveIndexMissing
+    case unresolved
+}
+
+public struct AddonProbeRecordLayerProbeReport: Codable, Equatable, Sendable {
+    public let modPath: String
+    public let outputDirectoryPath: String
+    public let expandedRecordsPath: String
+    public let expandedRecords: [AddonProbeExpandedItemRecord]
+    public let baseRecordCounts: [String: Int]
+    public let searchTerms: [String]
+    public let indexDatabasePath: String
+    public let indexDatabaseExists: Bool
+    public let indexSearches: [AddonProbeFactoryIndexSearchReport]
+    public let candidateResources: [AddonProbeRecordLayerCandidateResource]
+    public let extractionArchivePaths: [String]
+    public let resourceDiagnostics: [AddonProbeRecordLayerResourceDiagnostic]
+    public let cp77toolsCommandsAttempted: [AddonProbeFactoryRoundtripCommandAttempt]
+    public let decodedTextMatches: [AddonProbeRecordLayerTextMatch]
+    public let likelyPatchableRecordLayerFound: Bool
+    public let conclusion: AddonProbeRecordLayerProbeConclusion
+    public let warnings: [String]
+    public let reportPath: String
+
+    public init(
+        modPath: String,
+        outputDirectoryPath: String,
+        expandedRecordsPath: String,
+        expandedRecords: [AddonProbeExpandedItemRecord],
+        baseRecordCounts: [String: Int],
+        searchTerms: [String],
+        indexDatabasePath: String,
+        indexDatabaseExists: Bool,
+        indexSearches: [AddonProbeFactoryIndexSearchReport],
+        candidateResources: [AddonProbeRecordLayerCandidateResource],
+        extractionArchivePaths: [String],
+        resourceDiagnostics: [AddonProbeRecordLayerResourceDiagnostic],
+        cp77toolsCommandsAttempted: [AddonProbeFactoryRoundtripCommandAttempt],
+        decodedTextMatches: [AddonProbeRecordLayerTextMatch],
+        likelyPatchableRecordLayerFound: Bool,
+        conclusion: AddonProbeRecordLayerProbeConclusion,
+        warnings: [String],
+        reportPath: String
+    ) {
+        self.modPath = modPath
+        self.outputDirectoryPath = outputDirectoryPath
+        self.expandedRecordsPath = expandedRecordsPath
+        self.expandedRecords = expandedRecords
+        self.baseRecordCounts = baseRecordCounts
+        self.searchTerms = searchTerms
+        self.indexDatabasePath = indexDatabasePath
+        self.indexDatabaseExists = indexDatabaseExists
+        self.indexSearches = indexSearches
+        self.candidateResources = candidateResources
+        self.extractionArchivePaths = extractionArchivePaths
+        self.resourceDiagnostics = resourceDiagnostics
+        self.cp77toolsCommandsAttempted = cp77toolsCommandsAttempted
+        self.decodedTextMatches = decodedTextMatches
+        self.likelyPatchableRecordLayerFound = likelyPatchableRecordLayerFound
+        self.conclusion = conclusion
+        self.warnings = warnings
+        self.reportPath = reportPath
+    }
+}
+
+public struct AddonProbeRecordRuntimeProbeRequest: Sendable {
+    public let modURL: URL
+    public let outputZipURL: URL
+    public let modName: String?
+
+    public init(modURL: URL, outputZipURL: URL, modName: String? = nil) {
+        self.modURL = modURL
+        self.outputZipURL = outputZipURL
+        self.modName = modName
+    }
+}
+
+public struct AddonProbeRecordRuntimeProbeResult: Codable, Equatable, Sendable {
+    public let inputPath: String
+    public let outputZipPath: String
+    public let modName: String
+    public let redscriptEntryPath: String
+    public let baseRecordIDs: [String]
+    public let customRecordIDs: [String]
+    public let warnings: [String]
+
+    public init(
+        inputPath: String,
+        outputZipPath: String,
+        modName: String,
+        redscriptEntryPath: String,
+        baseRecordIDs: [String],
+        customRecordIDs: [String],
+        warnings: [String]
+    ) {
+        self.inputPath = inputPath
+        self.outputZipPath = outputZipPath
+        self.modName = modName
+        self.redscriptEntryPath = redscriptEntryPath
+        self.baseRecordIDs = baseRecordIDs
+        self.customRecordIDs = customRecordIDs
+        self.warnings = warnings
+    }
+}
+
+public struct AddonProbeCompareBaseRecordsRequest: Sendable {
+    public let modURL: URL
+    public let outputDirectoryURL: URL
+    public let cp77toolsURL: URL
+    public let gameInstall: GameInstall
+    public let databaseURL: URL
+
+    public init(
+        modURL: URL,
+        outputDirectoryURL: URL,
+        cp77toolsURL: URL,
+        gameInstall: GameInstall,
+        databaseURL: URL = ArchiveCatalogIndexDefaults.databaseURL
+    ) {
+        self.modURL = modURL
+        self.outputDirectoryURL = outputDirectoryURL
+        self.cp77toolsURL = cp77toolsURL
+        self.gameInstall = gameInstall
+        self.databaseURL = databaseURL
+    }
+}
+
+public enum AddonProbeCompareBaseRecordsConclusion: String, Codable, Equatable, Sendable {
+    case decodedBaseRecordReferencesFound
+    case unresolved
+}
+
+public struct AddonProbeCompareBaseRecordsReport: Codable, Equatable, Sendable {
+    public let modPath: String
+    public let baseRecordIDs: [String]
+    public let recordLayerReportPath: String
+    public let matchesByBaseRecord: [String: [AddonProbeRecordLayerTextMatch]]
+    public let conclusion: AddonProbeCompareBaseRecordsConclusion
+    public let summary: String
+    public let warnings: [String]
+    public let reportPath: String
+
+    public init(
+        modPath: String,
+        baseRecordIDs: [String],
+        recordLayerReportPath: String,
+        matchesByBaseRecord: [String: [AddonProbeRecordLayerTextMatch]],
+        conclusion: AddonProbeCompareBaseRecordsConclusion,
+        summary: String,
+        warnings: [String],
+        reportPath: String
+    ) {
+        self.modPath = modPath
+        self.baseRecordIDs = baseRecordIDs
+        self.recordLayerReportPath = recordLayerReportPath
+        self.matchesByBaseRecord = matchesByBaseRecord
+        self.conclusion = conclusion
+        self.summary = summary
+        self.warnings = warnings
+        self.reportPath = reportPath
     }
 }
 
@@ -1420,6 +1733,31 @@ public struct AddonProbeManager: Sendable {
         "equipment",
         "garment"
     ]
+    public static let recordLayerProbeSearchTerms = [
+        "Items.GenericInnerChestClothing",
+        "Items.Skirt",
+        "GenericInnerChestClothing",
+        "OutfitSlots.TorsoInner",
+        "OutfitSlots.LegsOuter",
+        "Quality.Legendary",
+        "IconicItem",
+        "ScaleToPlayerLevel",
+        "TweakDB",
+        "tweakdb",
+        "gamedata",
+        "static_data",
+        "database",
+        "records",
+        "itemRecords",
+        ".tweak",
+        ".tdb",
+        ".json",
+        ".csv"
+    ]
+    public static let baseRecordProbeIDs = [
+        "Items.GenericInnerChestClothing",
+        "Items.Skirt"
+    ]
 
     private struct ResolvedModRoot {
         let sourceURL: URL
@@ -1457,8 +1795,11 @@ public struct AddonProbeManager: Sendable {
         var appearanceName: String?
         var entityName: String?
         var displayName: String?
+        var localizedDescription: String?
         var iconAtlasPath: String?
         var iconAtlasPart: String?
+        var quality: String?
+        var statModifiers: [String] = []
         var instances: [[String: String]] = []
         var unresolvedTemplateExpressions: [String] = []
     }
@@ -2260,6 +2601,119 @@ public struct AddonProbeManager: Sendable {
                 "No likely patchable TweakDB/gamedata resource layer was confirmed. True add-on item registration remains unresolved."
             ]
         )
+    }
+
+    public func recordLayerProbe(request: AddonProbeRecordLayerProbeRequest) throws -> AddonProbeRecordLayerProbeReport {
+        try runRecordLayerProbe(
+            modURL: request.modURL,
+            outputDirectoryURL: request.outputDirectoryURL,
+            cp77toolsURL: request.cp77toolsURL,
+            gameInstall: request.gameInstall,
+            databaseURL: request.databaseURL,
+            searchTerms: Self.recordLayerProbeSearchTerms,
+            reportFileName: "addon-probe-record-layer-probe.json"
+        )
+    }
+
+    public func recordRuntimeProbe(request: AddonProbeRecordRuntimeProbeRequest) throws -> AddonProbeRecordRuntimeProbeResult {
+        try home.bootstrap()
+        let root = try resolveModRoot(request.modURL)
+        let discovery = try discover(root: root)
+        let customRecordIDs = discovery.tweakXLAnalysis.expandedItemIDs
+        guard !customRecordIDs.isEmpty else {
+            throw CyberMacError.invalidInput("record-runtime-probe found no expanded custom Items.* records in TweakXL YAML.")
+        }
+        let generatorResult = try RedscriptRecordRuntimeProbeGenerator().generate(request: RedscriptRecordRuntimeProbeRequest(
+            baseRecordIDs: Self.baseRecordProbeIDs,
+            customRecordIDs: customRecordIDs,
+            outputZipURL: request.outputZipURL,
+            modName: request.modName
+        ))
+        var warnings = discovery.warnings
+        warnings.append("Generated runtime probe is read-only: it queries TweakDB flats with default values and does not grant items.")
+        warnings.append("The script uses CyberMac's existing LogChannel DEBUG pattern; inspect the same redscript/game log location used for other CyberMac redscript helpers after activation.")
+        warnings.append("Compile smoke command: swift run cybermac activate --dry-run")
+        warnings.append("This does not register custom records and does not prove true add-on clothing support.")
+        return AddonProbeRecordRuntimeProbeResult(
+            inputPath: root.sourceURL.path,
+            outputZipPath: generatorResult.outputZipURL.path,
+            modName: generatorResult.modName,
+            redscriptEntryPath: generatorResult.redscriptEntryPath,
+            baseRecordIDs: generatorResult.baseRecordIDs,
+            customRecordIDs: generatorResult.customRecordIDs,
+            warnings: Array(Set(warnings)).sorted()
+        )
+    }
+
+    public func compareBaseRecords(request: AddonProbeCompareBaseRecordsRequest) throws -> AddonProbeCompareBaseRecordsReport {
+        let terms = Self.baseRecordProbeIDs + ["GenericInnerChestClothing", "Skirt"]
+        let layerReport = try runRecordLayerProbe(
+            modURL: request.modURL,
+            outputDirectoryURL: request.outputDirectoryURL,
+            cp77toolsURL: request.cp77toolsURL,
+            gameInstall: request.gameInstall,
+            databaseURL: request.databaseURL,
+            searchTerms: Self.orderedUnique(terms),
+            reportFileName: "addon-probe-compare-base-records-layer.json"
+        )
+
+        var matchesByBaseRecord: [String: [AddonProbeRecordLayerTextMatch]] = [:]
+        for baseRecord in Self.baseRecordProbeIDs {
+            let suffix = baseRecord.replacingOccurrences(of: "Items.", with: "")
+            matchesByBaseRecord[baseRecord] = layerReport.decodedTextMatches.filter { match in
+                match.matchedString.localizedCaseInsensitiveContains(baseRecord) ||
+                    match.matchedString.localizedCaseInsensitiveContains(suffix)
+            }
+        }
+        let found = matchesByBaseRecord.values.contains { !$0.isEmpty }
+        let conclusion: AddonProbeCompareBaseRecordsConclusion = found ? .decodedBaseRecordReferencesFound : .unresolved
+        let summary = found
+            ? "Decoded candidate resources contain base-record references. Review matches to determine whether they are definitions or incidental references."
+            : "Base item records are likely not stored in currently indexed patchable archive resources."
+        var warnings = layerReport.warnings
+        if !found {
+            warnings.append("No decoded resource exposed definitions or references for Items.GenericInnerChestClothing or Items.Skirt.")
+        }
+        warnings.append("compare-base-records is read-only and does not mutate the game app.")
+
+        let outputRootURL = request.outputDirectoryURL.standardizedFileURL
+        let reportURL = outputRootURL.appendingPathComponent("addon-probe-compare-base-records.json")
+        let report = AddonProbeCompareBaseRecordsReport(
+            modPath: layerReport.modPath,
+            baseRecordIDs: Self.baseRecordProbeIDs,
+            recordLayerReportPath: layerReport.reportPath,
+            matchesByBaseRecord: matchesByBaseRecord,
+            conclusion: conclusion,
+            summary: summary,
+            warnings: Array(Set(warnings)).sorted(),
+            reportPath: reportURL.path
+        )
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        return report
+    }
+
+    public func locateTweakDBStorage(request: AddonProbeTweakDBStorageLocatorRequest) throws -> AddonProbeTweakDBStorageLocatorReport {
+        try TweakDBStorageLocator(home: home).locate(request: request)
+    }
+
+    public func redscriptTweakDBAPIScan(request: AddonProbeRedscriptTweakDBAPIScanRequest) throws -> AddonProbeRedscriptTweakDBAPIScanReport {
+        try TweakDBStorageLocator(home: home).redscriptAPIScan(request: request)
+    }
+
+    public func inspectTweakDBBinary(request: AddonProbeTweakDBBinaryInspectRequest) throws -> AddonProbeTweakDBBinaryInspectReport {
+        try TweakDBBinaryInspector().inspect(request: request)
+    }
+
+    public func compareTweakDBBinaries(request: AddonProbeTweakDBBinaryCompareRequest) throws -> AddonProbeTweakDBBinaryCompareReport {
+        try TweakDBBinaryInspector().compare(request: request)
+    }
+
+    public func analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest) throws -> AddonProbeTweakDBPackedStringAnalysisReport {
+        try TweakDBPackedStringAnalyzer().analyze(request: request)
+    }
+
+    public func compareTweakDBPackedStringAnalyses(request: AddonProbeTweakDBPackedStringComparisonRequest) throws -> AddonProbeTweakDBPackedStringComparisonReport {
+        try TweakDBPackedStringAnalyzer().compare(request: request)
     }
 
     public func inspectFactoryLayer(request: AddonProbeFactoryLayerRequest) throws -> AddonProbeFactoryLayerReport {
@@ -4520,6 +4974,13 @@ public struct AddonProbeManager: Sendable {
         sortedMatches(pattern: #"Items\.[A-Za-z0-9_.-]+"#, text: text)
     }
 
+    public static func parseTweakDBRecordReferences(from text: String) -> [String] {
+        sortedMatches(
+            pattern: #"(?:Items|OutfitSlots|Quality|BaseStats|Stats|RPGActionRewards|AttachmentSlots|EquipmentArea|TweakDB)\.[A-Za-z0-9_.-]+"#,
+            text: text
+        )
+    }
+
     public static func parseCandidateBaseRecords(_ text: String) -> [String] {
         var values = Set<String>()
         for line in text.split(whereSeparator: \.isNewline) {
@@ -4595,10 +5056,15 @@ public struct AddonProbeManager: Sendable {
                     continue
                 }
 
-                let appearance = expandedOptionalTemplate(template.appearanceName, variables: instance, unresolved: &unresolvedExpressions)
-                let entity = expandedOptionalTemplate(template.entityName, variables: instance, unresolved: &unresolvedExpressions)
-                let display = expandedOptionalTemplate(template.displayName, variables: instance, unresolved: &unresolvedExpressions)
-                let atlasPart = expandedOptionalTemplate(template.iconAtlasPart, variables: instance, unresolved: &unresolvedExpressions)
+                let appearance = expandedOptionalTemplate(template.appearanceName, variables: instance, unresolved: &unresolvedExpressions, allowBangExpressions: true)
+                let entity = expandedOptionalTemplate(template.entityName, variables: instance, unresolved: &unresolvedExpressions, allowBangExpressions: true)
+                let display = expandedOptionalTemplate(template.displayName, variables: instance, unresolved: &unresolvedExpressions, allowBangExpressions: true)
+                let localizedDescription = expandedOptionalTemplate(template.localizedDescription, variables: instance, unresolved: &unresolvedExpressions, allowBangExpressions: true)
+                let atlasPart = expandedOptionalTemplate(template.iconAtlasPart, variables: instance, unresolved: &unresolvedExpressions, allowBangExpressions: true)
+                let quality = expandedOptionalTemplate(template.quality, variables: instance, unresolved: &unresolvedExpressions, allowBangExpressions: true)
+                let statModifiers = template.statModifiers.map {
+                    expandedTemplate($0, variables: instance, unresolved: &unresolvedExpressions, allowBangExpressions: true)
+                }
                 let atlasPath = template.iconAtlasPath
 
                 if let appearance { appearanceNames.append(appearance) }
@@ -4616,8 +5082,11 @@ public struct AddonProbeManager: Sendable {
                     appearanceName: appearance,
                     entityName: entity,
                     displayName: display,
+                    localizedDescription: localizedDescription,
                     iconAtlasPath: atlasPath,
-                    iconAtlasPart: atlasPart
+                    iconAtlasPart: atlasPart,
+                    quality: quality,
+                    statModifiers: orderedUnique(statModifiers)
                 ))
             }
         }
@@ -4734,6 +5203,7 @@ public struct AddonProbeManager: Sendable {
         var templates: [TweakXLRecordTemplate] = []
         var current: TweakXLRecordTemplate?
         var inInstances = false
+        var currentListKey: String?
 
         func finishCurrent() {
             guard let current else { return }
@@ -4745,6 +5215,7 @@ public struct AddonProbeManager: Sendable {
                 finishCurrent()
                 current = TweakXLRecordTemplate(key: key)
                 inInstances = false
+                currentListKey = nil
                 continue
             }
             guard current != nil else { continue }
@@ -4753,11 +5224,26 @@ public struct AddonProbeManager: Sendable {
 
             if trimmed.hasPrefix("$instances:") {
                 inInstances = true
+                currentListKey = "$instances"
                 continue
             }
             if inInstances, trimmed.hasPrefix("-") {
                 if let instance = parseInlineYAMLMap(trimmed), !instance.isEmpty {
                     current?.instances.append(instance)
+                }
+                continue
+            }
+            if trimmed.hasPrefix("-") {
+                let value = normalizedYAMLScalar(String(trimmed.dropFirst()))
+                if currentListKey?.lowercased().contains("statmodifier") == true {
+                    current?.statModifiers.append(contentsOf: parseTweakDBRecordReferences(from: value))
+                    if parseTweakDBRecordReferences(from: value).isEmpty, !value.isEmpty {
+                        current?.statModifiers.append(value)
+                    }
+                }
+                if currentListKey?.lowercased().contains("placement") == true,
+                   let slot = firstMatch(pattern: #"OutfitSlots\.[A-Za-z0-9_.-]+"#, text: value) {
+                    current?.placementSlots.append(slot)
                 }
                 continue
             }
@@ -4773,24 +5259,50 @@ public struct AddonProbeManager: Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
             let key = rawKey.lowercased()
-            let value = normalizedYAMLScalar(String(trimmed[trimmed.index(after: colonIndex)...]))
+            let rawValue = String(trimmed[trimmed.index(after: colonIndex)...])
+            let value = normalizedYAMLScalar(rawValue)
+            inInstances = false
+            if key.contains("placement") {
+                currentListKey = rawKey
+            } else if key.contains("statmodifier") {
+                currentListKey = rawKey
+            } else {
+                currentListKey = nil
+            }
             guard !value.isEmpty else { continue }
 
+            var knownExpandableScalar = false
             if key == "$base" || key == "base" {
                 current?.baseRecord = value
             } else if key.contains("appearancename") {
                 current?.appearanceName = value
+                knownExpandableScalar = true
             } else if key.contains("entityname") {
                 current?.entityName = value
+                knownExpandableScalar = true
             } else if key.contains("displayname") {
                 current?.displayName = value
+                knownExpandableScalar = true
+            } else if key.contains("localizeddescription") || (key.contains("description") && !key.contains("display")) {
+                current?.localizedDescription = value
+                knownExpandableScalar = true
             } else if key.contains("atlasresourcepath") || key.contains("atlaspath") || (key.contains("atlas") && value.lowercased().hasSuffix(".inkatlas")) {
                 current?.iconAtlasPath = value
             } else if key.contains("atlaspartname") || key.contains("atlaspart") {
                 current?.iconAtlasPart = value
+                knownExpandableScalar = true
+            } else if key == "quality" || key.hasSuffix(".quality") || key.contains("quality") {
+                current?.quality = value
+                knownExpandableScalar = true
+            } else if key.contains("statmodifier") {
+                let modifiers = parseTweakDBRecordReferences(from: value)
+                current?.statModifiers.append(contentsOf: modifiers.isEmpty ? [value] : modifiers)
+                knownExpandableScalar = true
             }
 
-            current?.unresolvedTemplateExpressions.append(contentsOf: unsupportedTemplateExpressions(in: value))
+            if !knownExpandableScalar {
+                current?.unresolvedTemplateExpressions.append(contentsOf: unsupportedTemplateExpressions(in: value))
+            }
         }
         finishCurrent()
         return templates
@@ -4846,15 +5358,29 @@ public struct AddonProbeManager: Sendable {
     private static func expandedOptionalTemplate(
         _ template: String?,
         variables: [String: String],
-        unresolved: inout [String]
+        unresolved: inout [String],
+        allowBangExpressions: Bool = false
     ) -> String? {
         guard let template, !template.isEmpty else { return nil }
-        let expansion = expandTweakXLTemplate(template, variables: variables)
+        return expandedTemplate(template, variables: variables, unresolved: &unresolved, allowBangExpressions: allowBangExpressions)
+    }
+
+    private static func expandedTemplate(
+        _ template: String,
+        variables: [String: String],
+        unresolved: inout [String],
+        allowBangExpressions: Bool = false
+    ) -> String {
+        let expansion = expandTweakXLTemplate(template, variables: variables, allowBangExpressions: allowBangExpressions)
         unresolved.append(contentsOf: expansion.unresolvedExpressions)
         return expansion.value
     }
 
-    private static func expandTweakXLTemplate(_ template: String, variables: [String: String]) -> (value: String, unresolvedExpressions: [String]) {
+    private static func expandTweakXLTemplate(
+        _ template: String,
+        variables: [String: String],
+        allowBangExpressions: Bool = false
+    ) -> (value: String, unresolvedExpressions: [String]) {
         var output = ""
         var unresolved: [String] = []
         var index = template.startIndex
@@ -4869,8 +5395,14 @@ public struct AddonProbeManager: Sendable {
                template[brace] == "{",
                let close = template[brace...].firstIndex(of: "}") {
                 let expression = String(template[index...close])
-                unresolved.append(expression)
-                output.append(contentsOf: expression)
+                let variableStart = template.index(after: brace)
+                let variable = String(template[variableStart..<close])
+                if allowBangExpressions, let value = variables[variable] {
+                    output.append(contentsOf: value)
+                } else {
+                    unresolved.append(expression)
+                    output.append(contentsOf: expression)
+                }
                 index = template.index(after: close)
                 continue
             }
@@ -6797,6 +7329,409 @@ public struct AddonProbeManager: Sendable {
         return manifest
     }
 
+    private func runRecordLayerProbe(
+        modURL: URL,
+        outputDirectoryURL: URL,
+        cp77toolsURL rawCP77ToolsURL: URL,
+        gameInstall: GameInstall,
+        databaseURL rawDatabaseURL: URL,
+        searchTerms: [String],
+        reportFileName: String
+    ) throws -> AddonProbeRecordLayerProbeReport {
+        try home.bootstrap()
+        let cp77toolsURL = rawCP77ToolsURL.standardizedFileURL
+        try validateExecutableFile(cp77toolsURL, description: "cp77tools path")
+        let outputRootURL = outputDirectoryURL.standardizedFileURL
+        try validateOutputDirectory(outputRootURL, description: "Record-layer probe output directory")
+        try validateOutsideGameBundle(outputRootURL, gameInstall: gameInstall, description: "Record-layer probe output directory")
+
+        let root = try resolveModRoot(modURL)
+        let discovery = try discover(root: root)
+        let expandedRecords = discovery.tweakXLAnalysis.expandedItemRecords
+        let baseCounts = Self.baseRecordCounts(expandedRecords)
+        let expandedReportURL = outputRootURL.appendingPathComponent("tweakxl-expanded-records.json")
+        let expandedReport = AddonProbeTweakXLExpandedRecordsReport(
+            modPath: root.sourceURL.path,
+            recordCount: expandedRecords.count,
+            baseRecordCounts: baseCounts,
+            records: expandedRecords,
+            warnings: discovery.warnings
+        )
+        try JSONEncoder.cybermac.encode(expandedReport).write(to: expandedReportURL, options: [.atomic])
+
+        let databaseURL = rawDatabaseURL.standardizedFileURL
+        let databaseExists = FileManager.default.fileExists(atPath: databaseURL.path)
+        let terms = Self.orderedUnique(searchTerms)
+        let reportURL = outputRootURL.appendingPathComponent(reportFileName)
+        let workRoot = outputRootURL.appendingPathComponent("record-layer-probe-\(stageID())", isDirectory: true)
+        var warnings = discovery.warnings
+        warnings.append("Record-layer probe is read-only. It does not mutate the game app, pack archives, or register TweakDB records.")
+        if expandedRecords.isEmpty {
+            warnings.append("No expanded TweakXL item records were found; tweakxl-expanded-records.json was still written.")
+        }
+
+        var indexSearches: [AddonProbeFactoryIndexSearchReport] = []
+        var candidateResources: [AddonProbeRecordLayerCandidateResource] = []
+        if databaseExists {
+            let store = ArchiveCatalogIndexStore()
+            var candidatesByKey: [String: (match: ArchiveCatalogIndexSearchMatch, terms: Set<String>)] = [:]
+            for term in terms {
+                let search = try store.search(options: ArchiveCatalogIndexSearchOptions(
+                    query: term,
+                    databaseURL: databaseURL,
+                    limit: 50
+                ))
+                indexSearches.append(AddonProbeFactoryIndexSearchReport(
+                    term: term,
+                    exactResource: false,
+                    totalMatchCount: search.totalMatchCount,
+                    shownMatchCount: search.matches.count,
+                    matches: search.matches
+                ))
+                for match in search.matches {
+                    let key = "\(match.archivePath)\u{0}\(match.assetPath)"
+                    var entry = candidatesByKey[key] ?? (match, [])
+                    entry.terms.insert(term)
+                    candidatesByKey[key] = entry
+                }
+            }
+            candidateResources = candidatesByKey.values
+                .map { entry in
+                    AddonProbeRecordLayerCandidateResource(
+                        archivePath: entry.match.archivePath,
+                        assetPath: entry.match.assetPath,
+                        assetExtension: entry.match.assetExtension,
+                        category: entry.match.category,
+                        matchedTerms: entry.terms.sorted()
+                    )
+                }
+                .sorted {
+                    if $0.archivePath != $1.archivePath { return $0.archivePath < $1.archivePath }
+                    return $0.assetPath < $1.assetPath
+                }
+        } else {
+            warnings.append("Archive catalog index database was not found; resource extraction was skipped.")
+        }
+
+        var diagnostics: [AddonProbeRecordLayerResourceDiagnostic] = []
+        var attempts: [AddonProbeFactoryRoundtripCommandAttempt] = []
+        var decodedTextMatches: [AddonProbeRecordLayerTextMatch] = []
+        var extractionArchivePaths: [String] = []
+
+        if databaseExists, !candidateResources.isEmpty {
+            try FileManager.default.createDirectory(at: workRoot, withIntermediateDirectories: true)
+            let extractedRoot = workRoot.appendingPathComponent("extracted", isDirectory: true)
+            let decodedRoot = workRoot.appendingPathComponent("decoded", isDirectory: true)
+            try FileManager.default.createDirectory(at: extractedRoot, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: decodedRoot, withIntermediateDirectories: true)
+
+            let candidatesByArchive = Dictionary(grouping: candidateResources, by: \.archivePath)
+            for archivePath in candidatesByArchive.keys.sorted() {
+                let sourceArchiveURL: URL
+                do {
+                    sourceArchiveURL = try resolveFactoryRoundtripArchiveURL(archivePath: archivePath, gameInstall: gameInstall)
+                    try validateRegularFile(sourceArchiveURL, description: "Record-layer source archive")
+                } catch {
+                    warnings.append("Candidate archive could not be resolved for extraction: \(archivePath): \(error.localizedDescription)")
+                    continue
+                }
+                extractionArchivePaths.append(sourceArchiveURL.path)
+                let archiveExtractRoot = extractedRoot.appendingPathComponent(Self.safeFilename(archivePath), isDirectory: true)
+                do {
+                    try recordRoundtripArchiveToolingCommand(
+                        cp77toolsURL: cp77toolsURL,
+                        arguments: CP77ToolsArchiveSwapTooling.extractArguments(
+                            sourceArchiveURL: sourceArchiveURL,
+                            outputDirectoryURL: archiveExtractRoot
+                        ),
+                        attempts: &attempts,
+                        operation: "Record-layer candidate archive extraction"
+                    ) {
+                        try tooling.extractArchive(
+                            cp77toolsURL: cp77toolsURL,
+                            sourceArchiveURL: sourceArchiveURL,
+                            outputDirectoryURL: archiveExtractRoot
+                        )
+                    }
+                } catch {
+                    warnings.append("Record-layer candidate archive extraction failed for \(archivePath): \(error.localizedDescription)")
+                    continue
+                }
+
+                for candidate in candidatesByArchive[archivePath, default: []].sorted(by: { $0.assetPath < $1.assetPath }) {
+                    let localURL: URL
+                    do {
+                        localURL = try assetURL(assetPath: candidate.assetPath, rootURL: archiveExtractRoot, label: "Record-layer candidate resource")
+                    } catch {
+                        warnings.append("Candidate resource path could not be resolved after extraction: \(candidate.assetPath): \(error.localizedDescription)")
+                        continue
+                    }
+
+                    guard FileManager.default.fileExists(atPath: localURL.path) else {
+                        let message = "Candidate resource was not found after extraction: \(candidate.assetPath)"
+                        diagnostics.append(AddonProbeRecordLayerResourceDiagnostic(
+                            archivePath: archivePath,
+                            resourcePath: candidate.assetPath,
+                            extractedPath: localURL.path,
+                            exists: false,
+                            size: nil,
+                            first32BytesHex: "",
+                            detectedMagic: .empty,
+                            parseStatus: .missing,
+                            warnings: [message]
+                        ))
+                        warnings.append(message)
+                        continue
+                    }
+
+                    let data = try Data(contentsOf: localURL)
+                    let factoryDiagnostic = Self.diagnoseFactoryResource(
+                        resourcePath: candidate.assetPath,
+                        archivePath: archivePath,
+                        extractedPath: localURL.path,
+                        data: data
+                    )
+                    diagnostics.append(AddonProbeRecordLayerResourceDiagnostic(
+                        archivePath: archivePath,
+                        resourcePath: candidate.assetPath,
+                        extractedPath: localURL.path,
+                        exists: true,
+                        size: factoryDiagnostic.size,
+                        first32BytesHex: factoryDiagnostic.first32BytesHex,
+                        detectedMagic: factoryDiagnostic.detectedMagic,
+                        parseStatus: factoryDiagnostic.parseStatus,
+                        warnings: factoryDiagnostic.warnings
+                    ))
+
+                    if let text = String(data: data, encoding: .utf8) {
+                        decodedTextMatches.append(contentsOf: Self.recordLayerMatches(
+                            text: text,
+                            sourcePath: localURL.path,
+                            resourcePath: candidate.assetPath,
+                            archivePath: archivePath,
+                            terms: terms
+                        ))
+                    }
+
+                    if factoryDiagnostic.detectedMagic == .cr2w {
+                        let resourceDecodedRoot = decodedRoot.appendingPathComponent(
+                            "\(Self.safeFilename(archivePath))-\(Self.safeFilename(candidate.assetPath))",
+                            isDirectory: true
+                        )
+                        try FileManager.default.createDirectory(at: resourceDecodedRoot, withIntermediateDirectories: true)
+                        let result = runRoundtripCP77ToolsCommand(
+                            cp77toolsURL: cp77toolsURL,
+                            arguments: ["convert", "serialize", localURL.path, "--outpath", resourceDecodedRoot.path],
+                            timeout: 120,
+                            attempts: &attempts
+                        )
+                        guard result?.exitCode == 0 else {
+                            warnings.append("cp77tools convert serialize failed for candidate record-layer resource: \(candidate.assetPath)")
+                            continue
+                        }
+                        let decodedFiles = try regularFiles(under: resourceDecodedRoot, description: "Record-layer decoded CR2W output")
+                        if decodedFiles.isEmpty {
+                            warnings.append("cp77tools convert serialize produced no decoded files for candidate record-layer resource: \(candidate.assetPath)")
+                        }
+                        for file in decodedFiles {
+                            guard let text = try readSmallTextFile(file.url) else { continue }
+                            decodedTextMatches.append(contentsOf: Self.recordLayerMatches(
+                                text: text,
+                                sourcePath: file.url.path,
+                                resourcePath: candidate.assetPath,
+                                archivePath: archivePath,
+                                terms: terms
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+
+        let likelyPatchable = candidateResources.contains(where: Self.isLikelyPatchableRecordLayerCandidate)
+        if !databaseExists {
+            warnings.append("No archive index was available, so CyberMac could not determine whether a patchable item-record layer exists.")
+        } else if candidateResources.isEmpty {
+            warnings.append("No candidate record/static-data resources were found in the archive index for the requested terms.")
+        } else if !likelyPatchable {
+            warnings.append("Candidate resources were found, but none look like a patchable .tweak/.tdb item-record layer. True add-on item registration remains unresolved.")
+        } else {
+            warnings.append("Candidate .tweak/.tdb record-layer resources were found, but CyberMac does not support patching them yet.")
+        }
+
+        let conclusion: AddonProbeRecordLayerProbeConclusion
+        if !databaseExists {
+            conclusion = .archiveIndexMissing
+        } else if candidateResources.isEmpty {
+            conclusion = .noCandidateResources
+        } else if likelyPatchable {
+            conclusion = .patchableRecordLayerCandidateFound
+        } else {
+            conclusion = .candidateResourcesFoundNoRecordDefinitions
+        }
+
+        let report = AddonProbeRecordLayerProbeReport(
+            modPath: root.sourceURL.path,
+            outputDirectoryPath: outputRootURL.path,
+            expandedRecordsPath: expandedReportURL.path,
+            expandedRecords: expandedRecords,
+            baseRecordCounts: baseCounts,
+            searchTerms: terms,
+            indexDatabasePath: databaseURL.path,
+            indexDatabaseExists: databaseExists,
+            indexSearches: indexSearches,
+            candidateResources: candidateResources,
+            extractionArchivePaths: extractionArchivePaths,
+            resourceDiagnostics: diagnostics.sorted {
+                if $0.archivePath != $1.archivePath { return $0.archivePath < $1.archivePath }
+                return $0.resourcePath < $1.resourcePath
+            },
+            cp77toolsCommandsAttempted: attempts,
+            decodedTextMatches: decodedTextMatches.sorted {
+                if $0.sourcePath != $1.sourcePath { return $0.sourcePath < $1.sourcePath }
+                if ($0.lineNumber ?? -1) != ($1.lineNumber ?? -1) { return ($0.lineNumber ?? -1) < ($1.lineNumber ?? -1) }
+                if ($0.jsonPath ?? "") != ($1.jsonPath ?? "") { return ($0.jsonPath ?? "") < ($1.jsonPath ?? "") }
+                return $0.term < $1.term
+            },
+            likelyPatchableRecordLayerFound: likelyPatchable,
+            conclusion: conclusion,
+            warnings: Array(Set(warnings)).sorted(),
+            reportPath: reportURL.path
+        )
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        return report
+    }
+
+    private static func baseRecordCounts(_ records: [AddonProbeExpandedItemRecord]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for record in records {
+            guard let baseRecord = record.baseRecord else { continue }
+            counts[baseRecord, default: 0] += 1
+        }
+        return counts
+    }
+
+    private static func isLikelyPatchableRecordLayerCandidate(_ candidate: AddonProbeRecordLayerCandidateResource) -> Bool {
+        let ext = candidate.assetExtension.lowercased()
+        let path = candidate.assetPath.lowercased()
+        return ext == "tweak" ||
+            ext == "tdb" ||
+            path.hasSuffix(".tweak") ||
+            path.hasSuffix(".tdb")
+    }
+
+    private static func recordLayerMatches(
+        text: String,
+        sourcePath: String,
+        resourcePath: String,
+        archivePath: String?,
+        terms: [String]
+    ) -> [AddonProbeRecordLayerTextMatch] {
+        var matches: [AddonProbeRecordLayerTextMatch] = []
+        let loweredTerms = terms.map { ($0, $0.lowercased()) }
+        if let jsonMatches = recordLayerJSONMatches(
+            text: text,
+            sourcePath: sourcePath,
+            resourcePath: resourcePath,
+            archivePath: archivePath,
+            terms: loweredTerms
+        ) {
+            matches.append(contentsOf: jsonMatches)
+        }
+
+        let lines = text.components(separatedBy: .newlines)
+        for (index, line) in lines.enumerated() {
+            let lowerLine = line.lowercased()
+            for (term, lowerTerm) in loweredTerms where lowerLine.contains(lowerTerm) {
+                matches.append(AddonProbeRecordLayerTextMatch(
+                    term: term,
+                    archivePath: archivePath,
+                    resourcePath: resourcePath,
+                    sourcePath: sourcePath,
+                    lineNumber: index + 1,
+                    jsonPath: nil,
+                    matchedString: clippedMatchString(line)
+                ))
+            }
+        }
+        return dedupeRecordLayerMatches(matches)
+    }
+
+    private static func recordLayerJSONMatches(
+        text: String,
+        sourcePath: String,
+        resourcePath: String,
+        archivePath: String?,
+        terms: [(term: String, lowerTerm: String)]
+    ) -> [AddonProbeRecordLayerTextMatch]? {
+        guard let data = text.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data, options: [])
+        else {
+            return nil
+        }
+        var values: [FactoryJSONStringValue] = []
+        collectFactoryJSONStringValues(parsed, path: "$", into: &values)
+        var keys: [FactoryJSONStringValue] = []
+        collectFactoryJSONKeyValues(parsed, path: "$", into: &keys)
+        var matches: [AddonProbeRecordLayerTextMatch] = []
+        for entry in values + keys {
+            let lowerValue = entry.value.lowercased()
+            let lowerPath = entry.path.lowercased()
+            for (term, lowerTerm) in terms where lowerValue.contains(lowerTerm) || lowerPath.contains(lowerTerm) {
+                matches.append(AddonProbeRecordLayerTextMatch(
+                    term: term,
+                    archivePath: archivePath,
+                    resourcePath: resourcePath,
+                    sourcePath: sourcePath,
+                    lineNumber: nil,
+                    jsonPath: entry.path,
+                    matchedString: clippedMatchString(entry.value)
+                ))
+            }
+        }
+        return matches
+    }
+
+    private static func collectFactoryJSONKeyValues(_ node: Any, path: String, into values: inout [FactoryJSONStringValue]) {
+        if let object = node as? [String: Any] {
+            for key in object.keys.sorted() {
+                let keyPath = jsonPathAppendingKey(key, to: path)
+                values.append(FactoryJSONStringValue(path: keyPath, value: key))
+                collectFactoryJSONKeyValues(object[key] as Any, path: keyPath, into: &values)
+            }
+        } else if let array = node as? [Any] {
+            for (index, item) in array.enumerated() {
+                collectFactoryJSONKeyValues(item, path: "\(path)[\(index)]", into: &values)
+            }
+        }
+    }
+
+    private static func dedupeRecordLayerMatches(_ matches: [AddonProbeRecordLayerTextMatch]) -> [AddonProbeRecordLayerTextMatch] {
+        var seen = Set<String>()
+        var result: [AddonProbeRecordLayerTextMatch] = []
+        for match in matches {
+            let key = [
+                match.term,
+                match.archivePath ?? "",
+                match.resourcePath,
+                match.sourcePath,
+                match.lineNumber.map(String.init) ?? "",
+                match.jsonPath ?? "",
+                match.matchedString
+            ].joined(separator: "\u{0}")
+            guard seen.insert(key).inserted else { continue }
+            result.append(match)
+        }
+        return result
+    }
+
+    private static func clippedMatchString(_ value: String, limit: Int = 500) -> String {
+        let oneLine = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: " ")
+        guard oneLine.count > limit else { return oneLine }
+        return String(oneLine.prefix(limit - 13)) + "... truncated"
+    }
+
     private func factoryLayerWorkRoot(outputDirectoryURL: URL?) throws -> URL {
         let root = (outputDirectoryURL?.standardizedFileURL ?? home.archiveProbeTmpURL)
             .appendingPathComponent("factory-layer-\(stageID())", isDirectory: true)
@@ -7309,6 +8244,165 @@ public enum AddonProbeRecordLayerFormatter {
             }
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+public enum AddonProbeRecordLayerProbeFormatter {
+    public static func format(_ report: AddonProbeRecordLayerProbeReport) -> String {
+        var lines: [String] = [
+            "CyberMac add-on probe record-layer probe",
+            "Status: read-only Path B probe; true add-on clothing is not solved.",
+            "Conclusion: \(report.conclusion.rawValue)",
+            "Expanded TweakXL records: \(report.expandedRecords.count)",
+            "Expanded records JSON: \(PathSafety.redactUserPath(report.expandedRecordsPath))",
+            "Archive index DB: \(PathSafety.redactUserPath(report.indexDatabasePath))",
+            "Index DB exists: \(report.indexDatabaseExists ? "yes" : "no")",
+            "Candidate resources: \(report.candidateResources.count)",
+            "Likely patchable record layer found: \(report.likelyPatchableRecordLayerFound ? "yes" : "no")",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))"
+        ]
+        if !report.baseRecordCounts.isEmpty {
+            lines.append("")
+            lines.append("Base record counts:")
+            for key in report.baseRecordCounts.keys.sorted() {
+                lines.append("- \(key): \(report.baseRecordCounts[key] ?? 0)")
+            }
+        }
+        appendList("Search terms", report.searchTerms, to: &lines)
+        if !report.candidateResources.isEmpty {
+            lines.append("")
+            lines.append("Candidate resources:")
+            for candidate in report.candidateResources.prefix(100) {
+                lines.append("- \(candidate.archivePath) | \(candidate.assetPath) | terms: \(candidate.matchedTerms.joined(separator: ", "))")
+            }
+            if report.candidateResources.count > 100 {
+                lines.append("- ... \(report.candidateResources.count - 100) more")
+            }
+        }
+        if !report.resourceDiagnostics.isEmpty {
+            lines.append("")
+            lines.append("Resource diagnostics:")
+            for diagnostic in report.resourceDiagnostics.prefix(100) {
+                lines.append("- \(diagnostic.archivePath) | \(diagnostic.resourcePath)")
+                if let extractedPath = diagnostic.extractedPath {
+                    lines.append("  path: \(PathSafety.redactUserPath(extractedPath))")
+                }
+                lines.append("  exists: \(diagnostic.exists ? "yes" : "no"), magic: \(diagnostic.detectedMagic.rawValue), parse: \(diagnostic.parseStatus.rawValue), size: \(diagnostic.size.map(String.init) ?? "n/a")")
+                for warning in diagnostic.warnings {
+                    lines.append("  warning: \(warning)")
+                }
+            }
+        }
+        if !report.decodedTextMatches.isEmpty {
+            lines.append("")
+            lines.append("Decoded/text matches:")
+            for match in report.decodedTextMatches.prefix(100) {
+                let location = match.jsonPath ?? match.lineNumber.map { "line \($0)" } ?? "unknown location"
+                lines.append("- \(match.term) in \(PathSafety.redactUserPath(match.sourcePath)) @ \(location): \(match.matchedString)")
+            }
+            if report.decodedTextMatches.count > 100 {
+                lines.append("- ... \(report.decodedTextMatches.count - 100) more")
+            }
+        }
+        if !report.cp77toolsCommandsAttempted.isEmpty {
+            lines.append("")
+            lines.append("cp77tools commands attempted: \(report.cp77toolsCommandsAttempted.count)")
+            for attempt in report.cp77toolsCommandsAttempted.prefix(50) {
+                lines.append("- exit \(attempt.exitCode.map(String.init) ?? "(not run)"): \(attempt.command)")
+                for warning in attempt.warnings {
+                    lines.append("  warning: \(warning)")
+                }
+            }
+        }
+        appendList("Warnings", report.warnings, to: &lines)
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeRecordLayerProbeReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+
+    private static func appendList(_ title: String, _ values: [String], to lines: inout [String], limit: Int = 100) {
+        guard !values.isEmpty else { return }
+        lines.append("")
+        lines.append("\(title):")
+        for value in values.prefix(limit) {
+            lines.append("- \(value)")
+        }
+        if values.count > limit {
+            lines.append("- ... \(values.count - limit) more")
+        }
+    }
+}
+
+public enum AddonProbeRecordRuntimeProbeFormatter {
+    public static func format(_ result: AddonProbeRecordRuntimeProbeResult) -> String {
+        var lines: [String] = [
+            "CyberMac add-on probe record-runtime probe",
+            "Status: read-only redscript probe; it does not grant items or register records.",
+            "Input: \(PathSafety.redactUserPath(result.inputPath))",
+            "Output zip: \(PathSafety.redactUserPath(result.outputZipPath))",
+            "Mod name: \(result.modName)",
+            "Entry path: \(result.redscriptEntryPath)",
+            "Base records: \(result.baseRecordIDs.count)",
+            "Custom records: \(result.customRecordIDs.count)"
+        ]
+        appendList("Base record IDs", result.baseRecordIDs, to: &lines)
+        appendList("Custom record IDs", result.customRecordIDs, to: &lines)
+        appendList("Warnings", result.warnings, to: &lines)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func appendList(_ title: String, _ values: [String], to lines: inout [String], limit: Int = 100) {
+        guard !values.isEmpty else { return }
+        lines.append("")
+        lines.append("\(title):")
+        for value in values.prefix(limit) {
+            lines.append("- \(value)")
+        }
+        if values.count > limit {
+            lines.append("- ... \(values.count - limit) more")
+        }
+    }
+}
+
+public enum AddonProbeCompareBaseRecordsFormatter {
+    public static func format(_ report: AddonProbeCompareBaseRecordsReport) -> String {
+        var lines: [String] = [
+            "CyberMac add-on probe compare base records",
+            "Status: read-only Path B probe; true add-on clothing is not solved.",
+            "Conclusion: \(report.conclusion.rawValue)",
+            "Summary: \(report.summary)",
+            "Layer report: \(PathSafety.redactUserPath(report.recordLayerReportPath))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))"
+        ]
+        for baseRecord in report.baseRecordIDs {
+            let matches = report.matchesByBaseRecord[baseRecord] ?? []
+            lines.append("")
+            lines.append("\(baseRecord): \(matches.count) match(es)")
+            for match in matches.prefix(25) {
+                let location = match.jsonPath ?? match.lineNumber.map { "line \($0)" } ?? "unknown location"
+                lines.append("- \(PathSafety.redactUserPath(match.sourcePath)) @ \(location): \(match.matchedString)")
+            }
+        }
+        appendList("Warnings", report.warnings, to: &lines)
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeCompareBaseRecordsReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+
+    private static func appendList(_ title: String, _ values: [String], to lines: inout [String], limit: Int = 100) {
+        guard !values.isEmpty else { return }
+        lines.append("")
+        lines.append("\(title):")
+        for value in values.prefix(limit) {
+            lines.append("- \(value)")
+        }
+        if values.count > limit {
+            lines.append("- ... \(values.count - limit) more")
+        }
     }
 }
 

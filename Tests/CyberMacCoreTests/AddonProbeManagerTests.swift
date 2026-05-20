@@ -230,6 +230,510 @@ final class AddonProbeManagerTests: XCTestCase {
         XCTAssertTrue(json.contains("Items.atomiic_sexyofficedress_skirt_brownv2"))
     }
 
+    func testAtomiicTweakXLExpandsIntoFullRecordSummaries() throws {
+        let analysis = AddonProbeManager.analyzeTweakXL("\(atomiicShirtTemplate())\n\(atomiicSkirtTemplate())")
+
+        XCTAssertEqual(analysis.expandedItemRecords.count, 27)
+        XCTAssertEqual(analysis.expandedItemRecords.filter { $0.baseRecord == "Items.GenericInnerChestClothing" }.count, 9)
+        XCTAssertEqual(analysis.expandedItemRecords.filter { $0.baseRecord == "Items.Skirt" }.count, 18)
+
+        let firstShirt = try XCTUnwrap(analysis.expandedItemRecords.first { $0.recordID == "Items.atomiic_sexyofficedress_shirt_black" })
+        XCTAssertEqual(firstShirt.itemID, firstShirt.recordID)
+        XCTAssertEqual(firstShirt.placementSlots, ["OutfitSlots.TorsoInner"])
+        XCTAssertEqual(firstShirt.appearanceName, "atomiic_sexyofficedress_shirt_w_black")
+        XCTAssertEqual(firstShirt.entityName, "atomiic_sexyofficedress_shirt_w")
+        XCTAssertEqual(firstShirt.displayName, "Atomiic Sexy Office Dress Shirt black")
+        XCTAssertEqual(firstShirt.localizedDescription, "Atomiic Sexy Office Dress localized description black")
+        XCTAssertEqual(firstShirt.iconAtlasResourcePath, "base\\atomiic\\icons\\atomiic_sexyofficedress.inkatlas")
+        XCTAssertEqual(firstShirt.iconAtlasPartName, "slot_01")
+        XCTAssertEqual(firstShirt.quality, "Quality.Legendary")
+        XCTAssertEqual(firstShirt.statModifiers, ["Items.IconicItem", "Items.ScaleToPlayerLevel"])
+    }
+
+    func testRecordLayerProbeWritesExpandedRecordsAndHandlesNoCandidateResources() throws {
+        let modRoot = try makeAtomiicMod()
+        let dbURL = try makeArchiveIndex(catalogs: [
+            "Data_archive_Mac_content_basegame_1_engine.archive.txt": "base\\ui\\unrelated_asset.xbm\n"
+        ])
+        let game = try makeGameInstall()
+
+        let report = try makeManager().recordLayerProbe(request: AddonProbeRecordLayerProbeRequest(
+            modURL: modRoot,
+            outputDirectoryURL: tempDir.appendingPathComponent("record-layer-no-candidates", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            gameInstall: game,
+            databaseURL: dbURL
+        ))
+
+        XCTAssertEqual(report.searchTerms, AddonProbeManager.recordLayerProbeSearchTerms)
+        XCTAssertEqual(report.expandedRecords.count, 27)
+        XCTAssertEqual(report.baseRecordCounts["Items.GenericInnerChestClothing"], 9)
+        XCTAssertEqual(report.baseRecordCounts["Items.Skirt"], 18)
+        XCTAssertEqual(report.conclusion, .noCandidateResources)
+        XCTAssertTrue(report.candidateResources.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.expandedRecordsPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+
+        let expandedData = try Data(contentsOf: URL(fileURLWithPath: report.expandedRecordsPath))
+        let expanded = try JSONDecoder.cybermac.decode(AddonProbeTweakXLExpandedRecordsReport.self, from: expandedData)
+        XCTAssertEqual(expanded.recordCount, 27)
+        XCTAssertEqual(expanded.records.first?.recordID, "Items.atomiic_sexyofficedress_shirt_black")
+    }
+
+    func testRecordLayerProbeDecodesCR2WAndFindsNestedJSONStrings() throws {
+        let modRoot = try makeAtomiicMod()
+        let game = try makeGameInstall()
+        let factoryArchive = try makeFactoryArchive(gameInstall: game)
+        let resourcePath = "base/gamedata/static_data/itemRecords.tdb"
+        let dbURL = try makeArchiveIndex(catalogs: [
+            "Data_archive_Mac_content_basegame_4_gamedata.archive.txt": "\(resourcePath)\n"
+        ])
+        let tooling = FakeAddonProbeTooling(dataByArchivePath: [
+            factoryArchive.path: [
+                resourcePath: Data([0x43, 0x52, 0x32, 0x57, 0x00])
+            ]
+        ])
+        let fakeCP77ToolsURL = try makeFakeCP77ToolsForRecordLayerDecode()
+
+        let report = try makeManager(tooling: tooling).recordLayerProbe(request: AddonProbeRecordLayerProbeRequest(
+            modURL: modRoot,
+            outputDirectoryURL: tempDir.appendingPathComponent("record-layer-cr2w", isDirectory: true),
+            cp77toolsURL: fakeCP77ToolsURL,
+            gameInstall: game,
+            databaseURL: dbURL
+        ))
+
+        XCTAssertEqual(report.conclusion, .patchableRecordLayerCandidateFound)
+        XCTAssertTrue(report.likelyPatchableRecordLayerFound)
+        XCTAssertEqual(report.candidateResources.first?.assetPath, resourcePath)
+        XCTAssertEqual(report.resourceDiagnostics.first?.detectedMagic, .cr2w)
+        XCTAssertTrue(report.cp77toolsCommandsAttempted.contains { Array($0.arguments.prefix(2)) == ["convert", "serialize"] })
+        XCTAssertTrue(report.decodedTextMatches.contains { $0.term == "Items.GenericInnerChestClothing" && $0.jsonPath == "$.Data.records[0].id" })
+        XCTAssertTrue(report.decodedTextMatches.contains { $0.term == "Items.Skirt" && $0.matchedString == "Items.Skirt" })
+        XCTAssertTrue(report.decodedTextMatches.contains { $0.term == "ScaleToPlayerLevel" && $0.matchedString == "Items.ScaleToPlayerLevel" })
+
+        let data = try JSONEncoder.cybermac.encode(report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeRecordLayerProbeReport.self, from: data)
+        XCTAssertEqual(decoded.conclusion, .patchableRecordLayerCandidateFound)
+    }
+
+    func testRecordRuntimeProbeIncludesAllBaseAndCustomRecordIDs() throws {
+        let modRoot = try makeAtomiicMod()
+        let outputZip = tempDir.appendingPathComponent("record-runtime-probe.zip")
+
+        let result = try makeManager().recordRuntimeProbe(request: AddonProbeRecordRuntimeProbeRequest(
+            modURL: modRoot,
+            outputZipURL: outputZip,
+            modName: "CyberMac Atomiic Record Probe"
+        ))
+
+        XCTAssertEqual(result.baseRecordIDs, ["Items.GenericInnerChestClothing", "Items.Skirt"])
+        XCTAssertEqual(result.customRecordIDs.count, 27)
+        XCTAssertEqual(result.customRecordIDs.first, "Items.atomiic_sexyofficedress_shirt_black")
+        XCTAssertEqual(result.customRecordIDs.last, "Items.atomiic_sexyofficedress_skirt_brownv2")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.outputZipPath))
+
+        let source = try redscriptEntry(in: outputZip, path: result.redscriptEntryPath)
+        XCTAssertFalse(source.isEmpty)
+        for recordID in result.baseRecordIDs + result.customRecordIDs {
+            XCTAssertTrue(source.contains(recordID), "Missing \(recordID)")
+        }
+        XCTAssertFalse(source.contains("gamedataItem_Record"))
+        XCTAssertFalse(source.contains("gamedataClothing_Record"))
+        XCTAssertFalse(source.contains("gamedataItem_Record_inline"))
+        XCTAssertFalse(source.contains("TweakDBInterface.GetItemRecord"))
+        XCTAssertFalse(source.contains("TweakDBInterface.GetRecord"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetCName"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetFloat"))
+        XCTAssertTrue(source.contains("baseRecordsProbablyPresent"))
+        XCTAssertTrue(source.contains("customRecordsProbablyPresent"))
+        XCTAssertTrue(source.contains("customRecordsProbablyMissing"))
+        XCTAssertFalse(source.contains("GiveItem"))
+    }
+
+    func testCompareBaseRecordsReportsUnresolvedWhenNoDefinitionsFound() throws {
+        let modRoot = try makeAtomiicMod()
+        let dbURL = try makeArchiveIndex(catalogs: [
+            "Data_archive_Mac_content_basegame_1_engine.archive.txt": "base\\ui\\unrelated_asset.xbm\n"
+        ])
+        let game = try makeGameInstall()
+
+        let report = try makeManager().compareBaseRecords(request: AddonProbeCompareBaseRecordsRequest(
+            modURL: modRoot,
+            outputDirectoryURL: tempDir.appendingPathComponent("compare-base-unresolved", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            gameInstall: game,
+            databaseURL: dbURL
+        ))
+
+        XCTAssertEqual(report.conclusion, .unresolved)
+        XCTAssertTrue(report.matchesByBaseRecord["Items.GenericInnerChestClothing"]?.isEmpty == true)
+        XCTAssertTrue(report.matchesByBaseRecord["Items.Skirt"]?.isEmpty == true)
+        XCTAssertTrue(report.summary.contains("likely not stored"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+
+        let data = try JSONEncoder.cybermac.encode(report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeCompareBaseRecordsReport.self, from: data)
+        XCTAssertEqual(decoded.conclusion, .unresolved)
+    }
+
+    func testTweakDBStorageLocatorDetectsPathMatchesInFakeGameBundle() throws {
+        let game = try makeGameInstall()
+        try write("Contents/Data/r6/cache/tweakdb/item_records.tdb", under: game.appURL, contents: "placeholder")
+
+        let report = try makeManager().locateTweakDBStorage(request: AddonProbeTweakDBStorageLocatorRequest(
+            outputDirectoryURL: tempDir.appendingPathComponent("tweakdb-locator-paths", isDirectory: true),
+            gameInstall: game,
+            archiveIndexDatabaseURL: tempDir.appendingPathComponent("missing-index.sqlite")
+        ))
+
+        XCTAssertTrue(report.pathMatches.contains { $0.relativePath == "cache/tweakdb/item_records.tdb" })
+        XCTAssertEqual(report.conclusion, .noStorageFound)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.pathMatchesPath))
+
+        let data = try JSONEncoder.cybermac.encode(report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBStorageLocatorReport.self, from: data)
+        XCTAssertEqual(decoded.pathMatches.count, report.pathMatches.count)
+    }
+
+    func testTweakDBStorageLocatorDetectsStringsInFakeBinaryAndTextFiles() throws {
+        let game = try makeGameInstall()
+        try write(
+            "Contents/Data/r6/cache/item-records.txt",
+            under: game.appURL,
+            contents: "Items.Skirt uses OutfitSlots.LegsOuter"
+        )
+        let binaryURL = game.appURL.appendingPathComponent("Contents/MacOS/Cyberpunk2077")
+        var binary = Data([0xFE, 0xED, 0xFA, 0xCF])
+        binary.append(contentsOf: Array("TweakDBInterface GetRecord".utf8))
+        try binary.write(to: binaryURL, options: [.atomic])
+
+        let report = try makeManager().locateTweakDBStorage(request: AddonProbeTweakDBStorageLocatorRequest(
+            outputDirectoryURL: tempDir.appendingPathComponent("tweakdb-locator-strings", isDirectory: true),
+            gameInstall: game,
+            archiveIndexDatabaseURL: tempDir.appendingPathComponent("missing-index.sqlite")
+        ))
+
+        XCTAssertTrue(report.stringMatches.contains { $0.term == "Items.Skirt" && $0.fileKind == "text" })
+        XCTAssertTrue(report.stringMatches.contains { $0.term == "GetRecord" && $0.fileKind == "mach-o" })
+        XCTAssertTrue(report.stringMatches.contains { $0.term == "GetRecord" && $0.offsets.contains(21) })
+    }
+
+    func testTweakDBStorageLocatorClassifiesRandomTweakDBIDReferencesAsNotStorage() throws {
+        let game = try makeGameInstall()
+        try write(
+            "Contents/Data/archive/pc/content/random_streaming_sector.ent",
+            under: game.appURL,
+            contents: "entity reference TweakDBID only"
+        )
+
+        let report = try makeManager().locateTweakDBStorage(request: AddonProbeTweakDBStorageLocatorRequest(
+            outputDirectoryURL: tempDir.appendingPathComponent("tweakdb-locator-incidental", isDirectory: true),
+            gameInstall: game,
+            archiveIndexDatabaseURL: tempDir.appendingPathComponent("missing-index.sqlite")
+        ))
+
+        XCTAssertTrue(report.candidateStorageFiles.isEmpty)
+        XCTAssertEqual(report.conclusion, .noStorageFound)
+        XCTAssertTrue(report.stringMatches.contains { $0.term == "TweakDBID" && $0.priority == .incidental && !$0.storageLike })
+    }
+
+    func testTweakDBStorageLocatorClassifiesExactBaseRecordAsHighPriorityStorageCandidate() throws {
+        let game = try makeGameInstall()
+        try write(
+            "Contents/Data/r6/cache/item-record-store.bin",
+            under: game.appURL,
+            contents: "record Items.GenericInnerChestClothing placement OutfitSlots.TorsoInner"
+        )
+
+        let report = try makeManager().locateTweakDBStorage(request: AddonProbeTweakDBStorageLocatorRequest(
+            outputDirectoryURL: tempDir.appendingPathComponent("tweakdb-locator-base-record", isDirectory: true),
+            gameInstall: game,
+            archiveIndexDatabaseURL: tempDir.appendingPathComponent("missing-index.sqlite")
+        ))
+
+        let candidate = try XCTUnwrap(report.candidateStorageFiles.first)
+        XCTAssertEqual(candidate.priority, .high)
+        XCTAssertTrue(candidate.matchedTerms.contains("Items.GenericInnerChestClothing"))
+        XCTAssertEqual(report.conclusion, .patchableArchiveRecordStoreFound)
+    }
+
+    func testRedscriptTweakDBAPIScanReportsAvailableAndMissingSymbols() throws {
+        try write(
+            "defs/tweakdb.reds",
+            under: home.redscriptRuntimeURL,
+            contents: """
+            public native class TweakDBInterface {
+              public static native func GetRecord(recordID: TDBID) -> ref<IScriptable>;
+            }
+            public native class TDBID {
+              public static native func Create(value: String) -> TDBID;
+            }
+            public native class ItemID {
+              public static native func FromTDBID(id: TDBID) -> ItemID;
+            }
+            public native class gamedataClothing_Record {}
+            """
+        )
+
+        let report = try makeManager().redscriptTweakDBAPIScan(request: AddonProbeRedscriptTweakDBAPIScanRequest(
+            outputDirectoryURL: tempDir.appendingPathComponent("redscript-tweakdb-api-scan", isDirectory: true)
+        ))
+
+        XCTAssertTrue(report.availableSymbols.contains("TweakDBInterface.GetRecord"))
+        XCTAssertTrue(report.availableSymbols.contains("TweakDBInterface.Get*"))
+        XCTAssertTrue(report.availableSymbols.contains("TDBID.Create"))
+        XCTAssertTrue(report.availableSymbols.contains("ItemID.FromTDBID"))
+        XCTAssertTrue(report.availableSymbols.contains("gamedataClothing_Record"))
+        XCTAssertTrue(report.missingSymbols.contains("gamedataItem_Record"))
+        XCTAssertTrue(report.missingSymbols.contains("TweakDBInterface.GetItemRecord"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+
+        let data = try JSONEncoder.cybermac.encode(report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeRedscriptTweakDBAPIScanReport.self, from: data)
+        XCTAssertEqual(decoded.availableSymbols, report.availableSymbols)
+    }
+
+    func testTweakDBBinaryInspectExtractsStringsOffsetsAndQueryMatches() throws {
+        let fake = try makeFakeTweakDBBinary(name: "tweakdb.bin", strings: [
+            "Items.Skirt",
+            "Items.FormalSkirt_01_basic_02",
+            "BaseClothing"
+        ])
+        let out = tempDir.appendingPathComponent("tweakdb-bin-inspect", isDirectory: true)
+
+        let report = try makeManager().inspectTweakDBBinary(request: AddonProbeTweakDBBinaryInspectRequest(
+            fileURL: fake.url,
+            outputDirectoryURL: out,
+            queries: ["Items.Skirt", "Skirt"]
+        ))
+
+        XCTAssertEqual(report.magicHeaderValue, "47 db b1 0b")
+        XCTAssertEqual(report.headerWords.first?.u32LE, 196205383)
+        XCTAssertEqual(report.stringCount, 3)
+        XCTAssertTrue(report.conclusions.contains(.plaintextRecordNamesFound))
+        XCTAssertTrue(report.conclusions.contains(.queryRecordsFound))
+        XCTAssertTrue(report.queryMatches.contains {
+            $0.query == "Items.Skirt" &&
+                $0.kind == .exactString &&
+                $0.stringOffset == fake.offsets["Items.Skirt"]
+        })
+        XCTAssertTrue(report.queryMatches.contains {
+            $0.query == "Skirt" &&
+                $0.kind == .substringString &&
+                $0.string == "Items.Skirt"
+        })
+        XCTAssertTrue(report.queryMatches.contains {
+            $0.query == "Items.Skirt" &&
+                $0.kind == .rawBytes &&
+                $0.rawByteOffset == fake.offsets["Items.Skirt"]
+        })
+
+        let stringsTSV = try String(contentsOfFile: report.stringsTablePath, encoding: .utf8)
+        XCTAssertTrue(stringsTSV.contains("\(fake.offsets["Items.Skirt"]!)\t11\tItems.Skirt"))
+        let contextDump = try String(contentsOfFile: report.contextDumpsPath, encoding: .utf8)
+        XCTAssertTrue(contextDump.contains("de ad be ef"))
+        XCTAssertTrue(contextDump.contains("fa ce"))
+
+        let data = try JSONEncoder.cybermac.encode(report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBBinaryInspectReport.self, from: data)
+        XCTAssertEqual(decoded.sha256, report.sha256)
+    }
+
+    func testTweakDBBinaryInspectReportsNoQueryMatches() throws {
+        let fake = try makeFakeTweakDBBinary(name: "tweakdb-no-query.bin", strings: [
+            "Items.TShirt_04_old_01",
+            "FeetClothing"
+        ])
+        let report = try makeManager().inspectTweakDBBinary(request: AddonProbeTweakDBBinaryInspectRequest(
+            fileURL: fake.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("tweakdb-bin-no-query", isDirectory: true),
+            queries: ["Items.DoesNotExist"]
+        ))
+
+        XCTAssertTrue(report.conclusions.contains(.noQueryRecordsFound))
+        XCTAssertTrue(report.queryMatches.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.queryMatchesPath))
+    }
+
+    func testTweakDBBinaryCompareReportsSharedAndUniqueStrings() throws {
+        let base = try makeFakeTweakDBBinary(name: "tweakdb-base.bin", strings: [
+            "Items.Skirt",
+            "Items.BaseOnly",
+            "Clothing"
+        ])
+        let ep1 = try makeFakeTweakDBBinary(name: "tweakdb-ep1.bin", strings: [
+            "Items.Skirt",
+            "Items.EP1Only",
+            "Clothing"
+        ])
+
+        let report = try makeManager().compareTweakDBBinaries(request: AddonProbeTweakDBBinaryCompareRequest(
+            baseURL: base.url,
+            ep1URL: ep1.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("tweakdb-bin-compare", isDirectory: true)
+        ))
+
+        XCTAssertTrue(report.headersMatch)
+        XCTAssertTrue(report.sharedStrings.contains("Items.Skirt"))
+        XCTAssertTrue(report.sharedStrings.contains("Clothing"))
+        XCTAssertTrue(report.uniqueToBase.contains("Items.BaseOnly"))
+        XCTAssertTrue(report.uniqueToEP1.contains("Items.EP1Only"))
+        XCTAssertTrue(report.sharedRecordContexts.contains { $0.string == "Items.Skirt" })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.stringsComparisonPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.contextComparisonPath))
+
+        let data = try JSONEncoder.cybermac.encode(report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBBinaryCompareReport.self, from: data)
+        XCTAssertEqual(decoded.sharedStrings, report.sharedStrings)
+    }
+
+    func testTweakDBPackedStringAnalysisDetectsFixstrAndShortNames() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt"),
+            (encoding: .fixstr, value: "Items.TShirt_04_old_01"),
+            (encoding: .fixstr, value: "Items.FormalSkirt_01_basic_02"),
+            (encoding: .fixstr, value: "BaseClothing")
+        ])
+        try build.data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-fixstr", isDirectory: true),
+            queries: ["Items.Skirt", "Items.TShirt_04_old_01", "Items.FormalSkirt_01_basic_02"]
+        ))
+
+        XCTAssertTrue(report.conclusions.contains(.packedStringsConfirmed))
+        XCTAssertTrue(report.conclusions.contains(.queryPackedStringsFound))
+
+        let skirt = try XCTUnwrap(report.packedStrings.first { $0.string == "Items.Skirt" })
+        XCTAssertEqual(skirt.encoding, .fixstr)
+        XCTAssertEqual(skirt.length, 11)
+        XCTAssertEqual(skirt.stringOffset, skirt.tagOffset + 1)
+        XCTAssertEqual(build.data[skirt.tagOffset], 0x8b)
+
+        let shirt = try XCTUnwrap(report.packedStrings.first { $0.string == "Items.TShirt_04_old_01" })
+        XCTAssertEqual(shirt.length, 22)
+        XCTAssertEqual(build.data[shirt.tagOffset], 0x96)
+
+        let formal = try XCTUnwrap(report.packedStrings.first { $0.string == "Items.FormalSkirt_01_basic_02" })
+        XCTAssertEqual(formal.length, 29)
+        XCTAssertEqual(build.data[formal.tagOffset], 0x9d)
+
+        let tsv = try String(contentsOfFile: report.packedStringsTablePath, encoding: .utf8)
+        XCTAssertTrue(tsv.contains("Items.Skirt"))
+        XCTAssertTrue(tsv.contains("fixstr"))
+    }
+
+    func testTweakDBPackedStringAnalysisDetectsStr8AndStr16Encodings() throws {
+        let long40 = String(repeating: "A", count: 40)
+        let long300 = String(repeating: "B", count: 300)
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .str8, value: long40),
+            (encoding: .str16, value: long300)
+        ])
+        try build.data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-str816", isDirectory: true),
+            queries: [long40, long300]
+        ))
+
+        let str8 = try XCTUnwrap(report.packedStrings.first { $0.string == long40 })
+        XCTAssertEqual(str8.encoding, .str8)
+        XCTAssertEqual(str8.length, 40)
+        XCTAssertEqual(build.data[str8.tagOffset], 0xd9)
+
+        let str16 = try XCTUnwrap(report.packedStrings.first { $0.string == long300 })
+        XCTAssertEqual(str16.encoding, .str16)
+        XCTAssertEqual(str16.length, 300)
+        XCTAssertEqual(build.data[str16.tagOffset], 0xda)
+    }
+
+    func testTweakDBPackedStringAnalysisFindsAbsoluteReferences() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt"),
+            (encoding: .fixstr, value: "Items.Other_Item_01")
+        ], appendReferencesToFirstPackedString: true)
+        try build.data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-refs", isDirectory: true),
+            queries: ["Items.Skirt"]
+        ))
+
+        let queryReport = try XCTUnwrap(report.queryReports.first { $0.query == "Items.Skirt" })
+        XCTAssertFalse(queryReport.previousStrings.isEmpty && queryReport.nextStrings.isEmpty)
+        XCTAssertEqual(queryReport.nextStrings.first?.string, "Items.Other_Item_01")
+        XCTAssertTrue(queryReport.references.contains { $0.kind == .absoluteToString })
+        XCTAssertTrue(queryReport.references.contains { $0.kind == .absoluteToTag })
+        XCTAssertTrue(report.conclusions.contains(.queryReferencesFound))
+
+        let data = try JSONEncoder.cybermac.encode(report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBPackedStringAnalysisReport.self, from: data)
+        XCTAssertEqual(decoded.packedStringCount, report.packedStringCount)
+    }
+
+    func testTweakDBPackedStringAnalysisRecordsNoQueryReferencesWhenAbsent() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt")
+        ])
+        try build.data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-no-refs", isDirectory: true),
+            queries: ["Items.DoesNotExist"]
+        ))
+
+        XCTAssertTrue(report.conclusions.contains(.noQueryReferencesFound))
+        XCTAssertTrue(report.queryReports.first?.packedMatches.isEmpty ?? false)
+    }
+
+    func testTweakDBPackedStringComparisonReportsBaseAndEP1Differences() throws {
+        let base = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt"),
+            (encoding: .fixstr, value: "Items.BaseOnly")
+        ])
+        try base.data.write(to: base.url, options: [.atomic])
+        let ep1 = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt"),
+            (encoding: .fixstr, value: "Items.EP1Only")
+        ], name: "packed-ep1.bin")
+        try ep1.data.write(to: ep1.url, options: [.atomic])
+
+        let manager = makeManager()
+        let baseReport = try manager.analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: base.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-base-out", isDirectory: true),
+            queries: ["Items.Skirt"]
+        ))
+        let ep1Report = try manager.analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: ep1.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-ep1-out", isDirectory: true),
+            queries: ["Items.Skirt"]
+        ))
+
+        let comparison = try manager.compareTweakDBPackedStringAnalyses(request: AddonProbeTweakDBPackedStringComparisonRequest(
+            baseAnalysisURL: URL(fileURLWithPath: baseReport.reportPath),
+            ep1AnalysisURL: URL(fileURLWithPath: ep1Report.reportPath),
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-compare", isDirectory: true)
+        ))
+
+        XCTAssertTrue(comparison.sharedItemNames.contains("Items.Skirt"))
+        XCTAssertTrue(comparison.baseOnlyItemNames.contains("Items.BaseOnly"))
+        XCTAssertTrue(comparison.ep1OnlyItemNames.contains("Items.EP1Only"))
+        XCTAssertTrue(comparison.queryDiffs.contains { $0.query == "Items.Skirt" })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: comparison.comparisonTSVPath))
+
+        let data = try JSONEncoder.cybermac.encode(comparison)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBPackedStringComparisonReport.self, from: data)
+        XCTAssertEqual(decoded.sharedItemNames, comparison.sharedItemNames)
+    }
+
     func testAtomiicSummaryReportsShirtAndSkirtCounts() throws {
         let modRoot = try makeAtomiicMod()
 
@@ -1299,6 +1803,94 @@ final class AddonProbeManagerTests: XCTestCase {
         return url
     }
 
+    private func makeFakeTweakDBBinary(name: String, strings: [String]) throws -> (url: URL, offsets: [String: Int]) {
+        var data = Data([0x47, 0xdb, 0xb1, 0x0b, 0x08, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00])
+        data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
+        while data.count < 64 {
+            data.append(0x00)
+        }
+
+        var offsets: [String: Int] = [:]
+        for string in strings {
+            data.append(contentsOf: [0xde, 0xad, 0xbe, 0xef])
+            let offset = data.count
+            data.append(contentsOf: Array(string.utf8))
+            data.append(0x00)
+            data.append(contentsOf: [0xfa, 0xce])
+            offsets[string] = offset
+        }
+        if let first = strings.first, let firstOffset = offsets[first] {
+            data.replaceSubrange(12..<16, with: littleEndianUInt32Bytes(UInt32(firstOffset)))
+        }
+
+        let url = tempDir.appendingPathComponent(name)
+        try data.write(to: url, options: [.atomic])
+        return (url, offsets)
+    }
+
+    private struct PackedTweakDBBuild {
+        let url: URL
+        let data: Data
+        let entries: [(encoding: AddonProbeTweakDBPackedStringEncoding, value: String, tagOffset: Int, stringOffset: Int)]
+    }
+
+    private func buildPackedTweakDBBinary(
+        packed: [(encoding: AddonProbeTweakDBPackedStringEncoding, value: String)],
+        appendReferencesToFirstPackedString: Bool = false,
+        name: String = "packed-tweakdb.bin"
+    ) -> PackedTweakDBBuild {
+        var data = Data([0x47, 0xdb, 0xb1, 0x0b])
+        for _ in 0..<60 { data.append(0x00) }
+
+        var entries: [(encoding: AddonProbeTweakDBPackedStringEncoding, value: String, tagOffset: Int, stringOffset: Int)] = []
+        for entry in packed {
+            data.append(contentsOf: [0xde, 0xad, 0xbe, 0xef])
+            let tagOffset = data.count
+            let bytes = Array(entry.value.utf8)
+            switch entry.encoding {
+            case .fixstr:
+                data.append(0x80 | UInt8(bytes.count & 0x1f))
+            case .str8:
+                data.append(0xd9)
+                data.append(UInt8(bytes.count))
+            case .str16:
+                let length = bytes.count
+                data.append(0xda)
+                data.append(UInt8(length & 0xff))
+                data.append(UInt8((length >> 8) & 0xff))
+            case .str32:
+                let length = bytes.count
+                data.append(0xdb)
+                data.append(UInt8(length & 0xff))
+                data.append(UInt8((length >> 8) & 0xff))
+                data.append(UInt8((length >> 16) & 0xff))
+                data.append(UInt8((length >> 24) & 0xff))
+            }
+            let stringOffset = data.count
+            data.append(contentsOf: bytes)
+            entries.append((entry.encoding, entry.value, tagOffset, stringOffset))
+        }
+
+        if appendReferencesToFirstPackedString, let first = entries.first {
+            for _ in 0..<8 { data.append(0x00) }
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(first.stringOffset)))
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(first.tagOffset)))
+            for _ in 0..<8 { data.append(0x00) }
+        }
+
+        let url = tempDir.appendingPathComponent(name)
+        return PackedTweakDBBuild(url: url, data: data, entries: entries)
+    }
+
+    private func littleEndianUInt32Bytes(_ value: UInt32) -> [UInt8] {
+        [
+            UInt8(value & 0xff),
+            UInt8((value >> 8) & 0xff),
+            UInt8((value >> 16) & 0xff),
+            UInt8((value >> 24) & 0xff)
+        ]
+    }
+
     private func factoryCloneJSON(compiledData: [[String]]?, data: [[String]]?) -> String {
         var rootChunk: [String: Any] = [:]
         if let compiledData {
@@ -1359,6 +1951,11 @@ final class AddonProbeManagerTests: XCTestCase {
           appearanceName: atomiic_sexyofficedress_shirt_w_!${base_color}
           entityName: atomiic_sexyofficedress_shirt_w
           displayName: Atomiic Sexy Office Dress Shirt ${base_color}
+          localizedDescription: Atomiic Sexy Office Dress localized description ${base_color}
+          quality: Quality.Legendary
+          statModifiers:
+            - !append Items.IconicItem
+            - !append Items.ScaleToPlayerLevel
           icon:
             atlasResourcePath: base\\atomiic\\icons\\atomiic_sexyofficedress.inkatlas
             atlasPartName: ${icon}
@@ -1384,6 +1981,11 @@ final class AddonProbeManagerTests: XCTestCase {
           appearanceName: atomiic_sexyofficedress_skirt_w_!${base_color}
           entityName: atomiic_sexyofficedress_skirt_w
           displayName: Atomiic Sexy Office Dress Skirt ${base_color}
+          localizedDescription: Atomiic Sexy Office Dress localized description ${base_color}
+          quality: Quality.Legendary
+          statModifiers:
+            - !append Items.IconicItem
+            - !append Items.ScaleToPlayerLevel
           icon:
             atlasResourcePath: base\\atomiic\\icons\\atomiic_sexyofficedress.inkatlas
             atlasPartName: ${icon}
@@ -1624,6 +2226,41 @@ final class AddonProbeManagerTests: XCTestCase {
         return url
     }
 
+    private func makeFakeCP77ToolsForRecordLayerDecode() throws -> URL {
+        let url = tempDir.appendingPathComponent("cp77tools-record-layer-decode")
+        let script = """
+        #!/bin/sh
+        if [ "$1" = "convert" ] && [ "$2" = "serialize" ] && [ "$4" = "--outpath" ]; then
+          mkdir -p "$5"
+          cat > "$5/itemRecords.tdb.json" <<'JSON'
+        {
+          "Header": {},
+          "Data": {
+            "records": [
+              {
+                "id": "Items.GenericInnerChestClothing",
+                "placementSlots": ["OutfitSlots.TorsoInner"],
+                "quality": "Quality.Legendary"
+              },
+              {
+                "id": "Items.Skirt",
+                "placementSlots": ["OutfitSlots.LegsOuter"],
+                "statModifiers": ["Items.IconicItem", "Items.ScaleToPlayerLevel"]
+              }
+            ]
+          }
+        }
+        JSON
+          exit 0
+        fi
+        echo "cp77tools fake record layer decode"
+        exit 0
+        """
+        try script.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
+    }
+
     private func createZip(_ url: URL, entries: [String: String]) throws {
         let archive = try Archive(url: url, accessMode: .create)
         for (path, contents) in entries.sorted(by: { $0.key < $1.key }) {
@@ -1638,6 +2275,32 @@ final class AddonProbeManagerTests: XCTestCase {
                 return data.subdata(in: start..<min(start + size, data.count))
             }
         }
+    }
+
+    private func makeArchiveIndex(catalogs: [String: String]) throws -> URL {
+        let catalogDir = tempDir.appendingPathComponent("record-layer-catalogs-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: catalogDir, withIntermediateDirectories: true)
+        for (relativePath, contents) in catalogs {
+            let url = catalogDir.appendingPathComponent(relativePath)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+        }
+        let dbURL = tempDir.appendingPathComponent("record-layer-\(UUID().uuidString).sqlite")
+        _ = try ArchiveCatalogIndexBuilder().build(options: ArchiveCatalogIndexBuildOptions(
+            catalogDirectory: catalogDir,
+            outputDatabase: dbURL
+        ))
+        return dbURL
+    }
+
+    private func redscriptEntry(in zipURL: URL, path: String) throws -> String {
+        let archive = try Archive(url: zipURL, accessMode: .read)
+        let entry = try XCTUnwrap(archive.first { $0.path == path })
+        var data = Data()
+        _ = try archive.extract(entry) { chunk in
+            data.append(chunk)
+        }
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 
     private func makeGameInstall() throws -> GameInstall {

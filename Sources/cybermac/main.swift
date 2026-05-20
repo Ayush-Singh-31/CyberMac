@@ -186,6 +186,15 @@ struct CyberMacCLI {
           cybermac addon-probe analyze-xl-factory <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
           cybermac addon-probe stage-xl-factory-registry <mod-path> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app
           cybermac addon-probe search-record-layer [--limit 50] [--db <path>]
+          cybermac addon-probe record-layer-probe <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
+          cybermac addon-probe record-runtime-probe <mod-path> --out <zip-path> [--mod-name <name>]
+          cybermac addon-probe compare-base-records <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
+          cybermac addon-probe locate-tweakdb-storage --out <dir> --game-app /path/to/Cyberpunk.app [--cp77tools <path>] [--json]
+          cybermac addon-probe redscript-tweakdb-api-scan --out <dir> [--json]
+          cybermac addon-probe inspect-tweakdb-bin --file <path-to-tweakdb.bin> --out <dir> [--query <string>] [--json]
+          cybermac addon-probe compare-tweakdb-bin --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --out <dir> [--json]
+          cybermac addon-probe analyze-tweakdb-strings --file <tweakdb.bin> --out <dir> [--query <string>] [--json]
+          cybermac addon-probe compare-tweakdb-string-analysis --base <base-analysis.json> --ep1 <ep1-analysis.json> --out <dir> [--json]
           cybermac addon-probe inspect-factory-layer [--out <dir>] [--json] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--try-cr2w-decode]
           cybermac addon-probe analyze-factory-json <decoded-json-root> [--json]
           cybermac addon-probe roundtrip-factory-resource <resource-path> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
@@ -964,7 +973,7 @@ struct CyberMacCLI {
 
     private func addonProbe() throws {
         guard arguments.count >= 2 else {
-            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
+            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|record-layer-probe|record-runtime-probe|compare-base-records|locate-tweakdb-storage|redscript-tweakdb-api-scan|inspect-tweakdb-bin|compare-tweakdb-bin|analyze-tweakdb-strings|compare-tweakdb-string-analysis|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
         }
 
         switch arguments[1] {
@@ -984,6 +993,24 @@ struct CyberMacCLI {
             try addonProbeStageXLFactoryRegistry()
         case "search-record-layer":
             try addonProbeSearchRecordLayer()
+        case "record-layer-probe":
+            try addonProbeRecordLayerProbe()
+        case "record-runtime-probe":
+            try addonProbeRecordRuntimeProbe()
+        case "compare-base-records":
+            try addonProbeCompareBaseRecords()
+        case "locate-tweakdb-storage":
+            try addonProbeLocateTweakDBStorage()
+        case "redscript-tweakdb-api-scan":
+            try addonProbeRedscriptTweakDBAPIScan()
+        case "inspect-tweakdb-bin":
+            try addonProbeInspectTweakDBBinary()
+        case "compare-tweakdb-bin":
+            try addonProbeCompareTweakDBBinary()
+        case "analyze-tweakdb-strings":
+            try addonProbeAnalyzeTweakDBStrings()
+        case "compare-tweakdb-string-analysis":
+            try addonProbeCompareTweakDBStringAnalysis()
         case "inspect-factory-layer":
             try addonProbeInspectFactoryLayer()
         case "analyze-factory-json":
@@ -1180,6 +1207,208 @@ struct CyberMacCLI {
         let databaseURL = optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
         let report = try AddonProbeManager(home: home).searchRecordLayer(databaseURL: databaseURL, limit: limit)
         print(AddonProbeRecordLayerFormatter.format(report))
+    }
+
+    private func addonProbeRecordLayerProbe() throws {
+        let valueFlags: Set<String> = ["--out", "--cp77tools", "--game-app", "--db"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools"),
+              let gameAppPath = optionValue("--game-app")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe record-layer-probe <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let report = try AddonProbeManager(home: home).recordLayerProbe(request: AddonProbeRecordLayerProbeRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            gameInstall: game,
+            databaseURL: optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeRecordLayerProbeFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeRecordLayerProbeFormatter.format(report))
+        }
+    }
+
+    private func addonProbeRecordRuntimeProbe() throws {
+        let valueFlags: Set<String> = ["--out", "--mod-name"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let outputPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe record-runtime-probe <mod-path> --out <zip-path> [--mod-name <name>]")
+        }
+
+        let result = try AddonProbeManager(home: home).recordRuntimeProbe(request: AddonProbeRecordRuntimeProbeRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            outputZipURL: PathSafety.expandedURL(from: outputPath),
+            modName: optionValue("--mod-name")
+        ))
+        print(AddonProbeRecordRuntimeProbeFormatter.format(result))
+    }
+
+    private func addonProbeCompareBaseRecords() throws {
+        let valueFlags: Set<String> = ["--out", "--cp77tools", "--game-app", "--db"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools"),
+              let gameAppPath = optionValue("--game-app")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe compare-base-records <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let report = try AddonProbeManager(home: home).compareBaseRecords(request: AddonProbeCompareBaseRecordsRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            gameInstall: game,
+            databaseURL: optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeCompareBaseRecordsFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeCompareBaseRecordsFormatter.format(report))
+        }
+    }
+
+    private func addonProbeLocateTweakDBStorage() throws {
+        let valueFlags: Set<String> = ["--out", "--game-app", "--cp77tools", "--db"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let outputDirectoryPath = optionValue("--out"),
+              let gameAppPath = optionValue("--game-app")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe locate-tweakdb-storage --out <dir> --game-app /path/to/Cyberpunk.app [--cp77tools <path>] [--json]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: gameAppPath)
+        let report = try AddonProbeManager(home: home).locateTweakDBStorage(request: AddonProbeTweakDBStorageLocatorRequest(
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            gameInstall: game,
+            cp77toolsURL: optionValue("--cp77tools").map(PathSafety.expandedURL),
+            archiveIndexDatabaseURL: optionValue("--db").map(PathSafety.expandedURL) ?? ArchiveCatalogIndexDefaults.databaseURL
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBStorageLocatorFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBStorageLocatorFormatter.format(report))
+        }
+    }
+
+    private func addonProbeRedscriptTweakDBAPIScan() throws {
+        let valueFlags: Set<String> = ["--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe redscript-tweakdb-api-scan --out <dir> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).redscriptTweakDBAPIScan(request: AddonProbeRedscriptTweakDBAPIScanRequest(
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeRedscriptTweakDBAPIScanFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeRedscriptTweakDBAPIScanFormatter.format(report))
+        }
+    }
+
+    private func addonProbeInspectTweakDBBinary() throws {
+        let valueFlags: Set<String> = ["--file", "--out", "--query"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe inspect-tweakdb-bin --file <path-to-tweakdb.bin> --out <dir> [--query <string>] [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).inspectTweakDBBinary(request: AddonProbeTweakDBBinaryInspectRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            queries: optionValues("--query", after: 2)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBBinaryInspectFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBBinaryInspectFormatter.format(report))
+        }
+    }
+
+    private func addonProbeCompareTweakDBBinary() throws {
+        let valueFlags: Set<String> = ["--base", "--ep1", "--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let basePath = optionValue("--base"),
+              let ep1Path = optionValue("--ep1"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe compare-tweakdb-bin --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --out <dir> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).compareTweakDBBinaries(request: AddonProbeTweakDBBinaryCompareRequest(
+            baseURL: PathSafety.expandedURL(from: basePath),
+            ep1URL: PathSafety.expandedURL(from: ep1Path),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBBinaryCompareFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBBinaryCompareFormatter.format(report))
+        }
+    }
+
+    private func addonProbeAnalyzeTweakDBStrings() throws {
+        let valueFlags: Set<String> = ["--file", "--out", "--query"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe analyze-tweakdb-strings --file <path-to-tweakdb.bin> --out <dir> [--query <string>] [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            queries: optionValues("--query", after: 2)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBPackedStringAnalysisFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBPackedStringAnalysisFormatter.format(report))
+        }
+    }
+
+    private func addonProbeCompareTweakDBStringAnalysis() throws {
+        let valueFlags: Set<String> = ["--base", "--ep1", "--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let basePath = optionValue("--base"),
+              let ep1Path = optionValue("--ep1"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe compare-tweakdb-string-analysis --base <base-analysis.json> --ep1 <ep1-analysis.json> --out <dir> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).compareTweakDBPackedStringAnalyses(request: AddonProbeTweakDBPackedStringComparisonRequest(
+            baseAnalysisURL: PathSafety.expandedURL(from: basePath),
+            ep1AnalysisURL: PathSafety.expandedURL(from: ep1Path),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBPackedStringComparisonFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBPackedStringComparisonFormatter.format(report))
+        }
     }
 
     private func addonProbeInspectFactoryLayer() throws {
