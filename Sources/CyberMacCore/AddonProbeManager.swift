@@ -2712,6 +2712,26 @@ public struct AddonProbeManager: Sendable {
         try TweakDBPackedStringAnalyzer().analyze(request: request)
     }
 
+    public func analyzeTweakDBReferenceTables(request: AddonProbeTweakDBReferenceTableAnalysisRequest) throws -> AddonProbeTweakDBReferenceTableAnalysisReport {
+        try TweakDBReferenceTableAnalyzer().analyze(request: request)
+    }
+
+    public func analyzeTweakDBItemIndexes(request: AddonProbeTweakDBItemIndexAnalysisRequest) throws -> AddonProbeTweakDBItemIndexAnalysisReport {
+        try TweakDBItemIndexAnalyzer().analyze(request: request)
+    }
+
+    public func inspectTweakDBStructure(request: AddonProbeTweakDBStructureInspectRequest) throws -> AddonProbeTweakDBStructureReport {
+        try TweakDBStructureInspector().inspect(request: request)
+    }
+
+    public func traceTweakDBRecord(request: AddonProbeTweakDBRecordTraceRequest) throws -> AddonProbeTweakDBRecordTraceReport {
+        try TweakDBStructureInspector().trace(request: request)
+    }
+
+    public func stageTweakDBCloneRecord(request: AddonProbeTweakDBCloneRecordRequest) throws -> AddonProbeTweakDBCloneRecordReport {
+        try TweakDBCloneRecordStager().stage(request: request)
+    }
+
     public func compareTweakDBPackedStringAnalyses(request: AddonProbeTweakDBPackedStringComparisonRequest) throws -> AddonProbeTweakDBPackedStringComparisonReport {
         try TweakDBPackedStringAnalyzer().compare(request: request)
     }

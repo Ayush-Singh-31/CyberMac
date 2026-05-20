@@ -677,6 +677,370 @@ final class AddonProbeManagerTests: XCTestCase {
         XCTAssertEqual(decoded.packedStringCount, report.packedStringCount)
     }
 
+    func testTweakDBPackedStringDirectReferenceScanHandlesLargeDataWithLimit() throws {
+        let query = "Items.Skirt"
+        let queryBytes = Array(query.utf8)
+        let size = 40 * 1024 * 1024
+        var data = Data(repeating: 0, count: size)
+        let tagOffset = 1024
+        data[tagOffset] = 0x80 | UInt8(queryBytes.count & 0x1f)
+        let stringOffset = tagOffset + 1
+        for (index, byte) in queryBytes.enumerated() {
+            data[stringOffset + index] = byte
+        }
+        let referenceStart = 4096
+        for index in 0..<250 {
+            writeLittleEndianUInt32(UInt32(stringOffset), into: &data, at: referenceStart + index * 8)
+            writeLittleEndianUInt32(UInt32(tagOffset), into: &data, at: referenceStart + index * 8 + 4)
+        }
+        let url = tempDir.appendingPathComponent("large-packed-tweakdb.bin")
+        try data.write(to: url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-large-direct", isDirectory: true),
+            queries: [query],
+            referenceScanMode: .direct,
+            referenceLimit: 50
+        ))
+
+        let queryReport = try XCTUnwrap(report.queryReports.first { $0.query == query })
+        XCTAssertEqual(queryReport.references.count, 50)
+        XCTAssertTrue(queryReport.referencesTruncated)
+        XCTAssertTrue(queryReport.references.allSatisfy {
+            $0.kind == .absoluteToString || $0.kind == .absoluteToTag
+        })
+    }
+
+    func testTweakDBPackedStringAnalysisNoReferenceScanSkipsReferencesAndHashes() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt")
+        ], appendReferencesToFirstPackedString: true)
+        try build.data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-no-reference-scan", isDirectory: true),
+            queries: ["Items.Skirt"],
+            referenceScanMode: .none
+        ))
+
+        let queryReport = try XCTUnwrap(report.queryReports.first { $0.query == "Items.Skirt" })
+        XCTAssertEqual(report.referenceScanMode, .none)
+        XCTAssertTrue(queryReport.references.isEmpty)
+        XCTAssertTrue(queryReport.hashCandidates.isEmpty)
+        XCTAssertTrue(report.warnings.contains { $0.contains("Reference scanning was skipped") })
+    }
+
+    func testTweakDBPackedStringDeepReferenceScanGatesRelativeOffsets() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt")
+        ])
+        var data = build.data
+        let first = try XCTUnwrap(build.entries.first)
+        for _ in 0..<8 { data.append(0x00) }
+        let relativeOffset = data.count
+        let delta = Int32(first.stringOffset - relativeOffset)
+        data.append(contentsOf: littleEndianUInt32Bytes(UInt32(bitPattern: delta)))
+        try data.write(to: build.url, options: [.atomic])
+
+        let direct = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-relative-direct", isDirectory: true),
+            queries: ["Items.Skirt"],
+            referenceScanMode: .direct
+        ))
+        let directQuery = try XCTUnwrap(direct.queryReports.first { $0.query == "Items.Skirt" })
+        XCTAssertFalse(directQuery.references.contains { $0.kind == .relativeFromHereToString || $0.kind == .relativeFromHereToTag })
+
+        let deep = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-relative-deep", isDirectory: true),
+            queries: ["Items.Skirt"],
+            referenceScanMode: .deep
+        ))
+        let deepQuery = try XCTUnwrap(deep.queryReports.first { $0.query == "Items.Skirt" })
+        XCTAssertTrue(deepQuery.references.contains { $0.kind == .relativeFromHereToString })
+        XCTAssertFalse(deepQuery.hashCandidates.isEmpty)
+    }
+
+    func testTweakDBPackedStringTargetedQueryScansOnlyQueryMatches() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt"),
+            (encoding: .fixstr, value: "Items.Other_Item_01")
+        ])
+        var data = build.data
+        let skirt = try XCTUnwrap(build.entries.first { $0.value == "Items.Skirt" })
+        let other = try XCTUnwrap(build.entries.first { $0.value == "Items.Other_Item_01" })
+        data.append(contentsOf: littleEndianUInt32Bytes(UInt32(skirt.stringOffset)))
+        data.append(contentsOf: littleEndianUInt32Bytes(UInt32(skirt.tagOffset)))
+        data.append(contentsOf: littleEndianUInt32Bytes(UInt32(other.stringOffset)))
+        data.append(contentsOf: littleEndianUInt32Bytes(UInt32(other.tagOffset)))
+        try data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-targeted-query", isDirectory: true),
+            queries: ["Items.Skirt"],
+            referenceScanMode: .direct
+        ))
+
+        XCTAssertEqual(report.queryReports.count, 1)
+        let queryReport = try XCTUnwrap(report.queryReports.first)
+        let targets = Set(queryReport.references.map(\.target))
+        XCTAssertTrue(targets.contains(skirt.stringOffset))
+        XCTAssertTrue(targets.contains(skirt.tagOffset))
+        XCTAssertFalse(targets.contains(other.stringOffset))
+        XCTAssertFalse(targets.contains(other.tagOffset))
+    }
+
+    func testTweakDBReferenceTableAnalysisMapsFakeTwelveByteRows() throws {
+        let fixture = try makeReferenceTableFixture(name: "reference-table-map")
+
+        let table = try XCTUnwrap(fixture.report.candidateTables.first { $0.rowWidth == 12 })
+        XCTAssertEqual(table.rowWidth, 12)
+        XCTAssertTrue(table.pointingFieldIndexes.contains(0))
+        XCTAssertGreaterThanOrEqual(table.rowCount, 4)
+        XCTAssertTrue(table.sampleRows.contains { row in
+            row.fields.contains { $0.string == "Items.Middle" && $0.pointsToKind == "stringOffset" }
+        })
+        XCTAssertTrue(fixture.report.conclusions.contains(.referenceTablesFound))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.report.tableReportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.report.queryNeighborhoodsPath))
+    }
+
+    func testTweakDBReferenceTableAnalysisPrefersTwelveByteRows() throws {
+        let fixture = try makeReferenceTableFixture(name: "reference-table-width")
+
+        let firstTable = try XCTUnwrap(fixture.report.candidateTables.first)
+        XCTAssertEqual(firstTable.rowWidth, 12)
+        XCTAssertEqual(firstTable.startOffset, fixture.rowOffsets.first)
+    }
+
+    func testTweakDBReferenceTableAnalysisQueryNeighborhoodResolvesNeighbors() throws {
+        let fixture = try makeReferenceTableFixture(name: "reference-table-neighborhood")
+
+        let neighborhood = try XCTUnwrap(fixture.report.queryNeighborhoods.first { $0.query == "Items.Middle" })
+        XCTAssertEqual(neighborhood.rowOffset, fixture.rowOffsets[1])
+        XCTAssertEqual(neighborhood.rowIndex, 1)
+        XCTAssertTrue(neighborhood.previousRows.contains { row in
+            row.fields.contains { $0.string == "Items.Before" }
+        })
+        XCTAssertTrue(neighborhood.nextRows.contains { row in
+            row.fields.contains { $0.string == "Items.After" }
+        })
+        XCTAssertTrue(fixture.report.conclusions.contains(.queryReferenceTablesMapped))
+    }
+
+    func testTweakDBReferenceTableAnalysisDensityDetectionFindsSyntheticTable() throws {
+        let fixture = try makeReferenceTableFixture(name: "reference-table-density")
+
+        let table = try XCTUnwrap(fixture.report.candidateTables.first { $0.startOffset == fixture.rowOffsets[0] && $0.rowWidth == 12 })
+        XCTAssertEqual(table.rowCount, 4)
+        XCTAssertEqual(table.hitCount, 4)
+        XCTAssertEqual(table.hitDensity, 1.0)
+        XCTAssertEqual(table.kind, .stringOffsetTable)
+    }
+
+    func testTweakDBReferenceTableAnalysisJSONEncodes() throws {
+        let fixture = try makeReferenceTableFixture(name: "reference-table-json")
+
+        let data = try JSONEncoder.cybermac.encode(fixture.report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBReferenceTableAnalysisReport.self, from: data)
+        XCTAssertEqual(decoded.candidateTables, fixture.report.candidateTables)
+        XCTAssertEqual(decoded.queryNeighborhoods, fixture.report.queryNeighborhoods)
+    }
+
+    func testTweakDBItemIndexAnalysisMapsFakeTwelveByteRows() throws {
+        let fixture = try makeItemIndexFixture(name: "item-index-map")
+
+        XCTAssertEqual(fixture.report.summary.itemPackedStringCount, 3)
+        XCTAssertEqual(fixture.report.summary.totalReferences, 5)
+        let region = try XCTUnwrap(fixture.report.indexRegions.first)
+        XCTAssertEqual(region.likelyRowWidth, 12)
+        XCTAssertEqual(region.likelyFieldIndex, 0)
+        XCTAssertEqual(region.hitCount, 5)
+        XCTAssertTrue(region.sampleRows.contains { row in
+            row.fields.contains { $0.resolvedItem == "Items.B" && $0.resolvedKind == .stringOffset }
+        })
+        XCTAssertTrue(fixture.report.conclusions.contains(.itemReferencesFound))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.report.itemReferenceSummaryPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.report.itemIndexRegionsPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixture.report.itemReferencesTSVPath))
+    }
+
+    func testTweakDBItemIndexAnalysisPrefersTwelveByteRows() throws {
+        let fixture = try makeItemIndexFixture(name: "item-index-width")
+
+        let region = try XCTUnwrap(fixture.report.indexRegions.first)
+        XCTAssertEqual(region.likelyRowWidth, 12)
+        XCTAssertEqual(region.startOffset, fixture.rowOffsets[0])
+        XCTAssertEqual(region.endOffset, fixture.rowOffsets[4] + 12)
+    }
+
+    func testTweakDBItemIndexAnalysisIgnoresNonItemStrings() throws {
+        let fixture = try makeItemIndexFixture(name: "item-index-non-items")
+
+        XCTAssertFalse(fixture.report.itemReferences.contains { $0.item == "2038-2053" })
+        XCTAssertFalse(fixture.report.indexRegions.contains { region in
+            region.sampleRows.contains { row in
+                row.fields.contains { $0.resolvedItem == "2038-2053" }
+            }
+        })
+    }
+
+    func testTweakDBItemIndexAnalysisQueryNeighborhoodShowsPreviousCurrentNextRows() throws {
+        let fixture = try makeItemIndexFixture(name: "item-index-neighborhood")
+
+        let queryReport = try XCTUnwrap(fixture.report.queryReports.first { $0.query == "Items.B" })
+        let neighborhood = try XCTUnwrap(queryReport.neighborhoods.first)
+        XCTAssertEqual(neighborhood.alignedRowStart, fixture.rowOffsets[1])
+        XCTAssertTrue(neighborhood.previousRows.contains { row in
+            row.fields.contains { $0.resolvedItem == "Items.A" }
+        })
+        XCTAssertTrue(neighborhood.currentRow?.fields.contains { $0.resolvedItem == "Items.B" } ?? false)
+        XCTAssertTrue(neighborhood.nextRows.contains { row in
+            row.fields.contains { $0.resolvedItem == "Items.C" }
+        })
+        XCTAssertTrue(fixture.report.conclusions.contains(.queryItemsMapped))
+    }
+
+    func testTweakDBItemIndexAnalysisQueryNeighborhoodExpandsAroundIsolatedQueryRegion() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.A")
+        ], name: "item-index-isolated-query.bin")
+        let item = try XCTUnwrap(build.entries.first { $0.value == "Items.A" })
+        var data = build.data
+        for value in [111, 222, 333] {
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(value)))
+            data.append(contentsOf: littleEndianUInt32Bytes(0))
+            data.append(contentsOf: littleEndianUInt32Bytes(0))
+        }
+        let queryRowOffset = data.count
+        data.append(contentsOf: littleEndianUInt32Bytes(UInt32(item.stringOffset)))
+        data.append(contentsOf: littleEndianUInt32Bytes(0x3f))
+        data.append(contentsOf: littleEndianUInt32Bytes(0))
+        for value in [444, 555, 666] {
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(value)))
+            data.append(contentsOf: littleEndianUInt32Bytes(0))
+            data.append(contentsOf: littleEndianUInt32Bytes(0))
+        }
+        try data.write(to: build.url, options: [.atomic])
+
+        let manager = makeManager()
+        let stringsAnalysis = try manager.analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("item-index-isolated-strings", isDirectory: true),
+            queries: ["Items.A"],
+            referenceScanMode: .none
+        ))
+        let report = try manager.analyzeTweakDBItemIndexes(request: AddonProbeTweakDBItemIndexAnalysisRequest(
+            fileURL: build.url,
+            stringsAnalysisURL: URL(fileURLWithPath: stringsAnalysis.reportPath),
+            outputDirectoryURL: tempDir.appendingPathComponent("item-index-isolated-out", isDirectory: true),
+            queries: ["Items.A"]
+        ))
+
+        let queryReport = try XCTUnwrap(report.queryReports.first { $0.query == "Items.A" })
+        let neighborhood = try XCTUnwrap(queryReport.neighborhoods.first)
+        XCTAssertEqual(neighborhood.alignedRowStart, queryRowOffset)
+        XCTAssertTrue(neighborhood.previousRows.contains { row in
+            row.fields.contains { $0.rawUInt32 == 333 }
+        })
+        XCTAssertTrue(neighborhood.currentRow?.fields.contains { $0.resolvedItem == "Items.A" } ?? false)
+        XCTAssertTrue(neighborhood.nextRows.contains { row in
+            row.fields.contains { $0.rawUInt32 == 444 }
+        })
+    }
+
+    func testTweakDBItemIndexAnalysisNoisyNonItemReferencesDoNotGenerateRegions() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.A"),
+            (encoding: .fixstr, value: "2038-2053")
+        ], name: "item-index-noisy-non-item.bin")
+        var data = build.data
+        let noise = try XCTUnwrap(build.entries.first { $0.value == "2038-2053" })
+        for index in 0..<12 {
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(noise.stringOffset)))
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(index)))
+            data.append(contentsOf: littleEndianUInt32Bytes(0))
+        }
+        try data.write(to: build.url, options: [.atomic])
+
+        let manager = makeManager()
+        let stringsAnalysis = try manager.analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("item-index-noisy-strings", isDirectory: true),
+            queries: ["Items.A"],
+            referenceScanMode: .none
+        ))
+        let report = try manager.analyzeTweakDBItemIndexes(request: AddonProbeTweakDBItemIndexAnalysisRequest(
+            fileURL: build.url,
+            stringsAnalysisURL: URL(fileURLWithPath: stringsAnalysis.reportPath),
+            outputDirectoryURL: tempDir.appendingPathComponent("item-index-noisy-out", isDirectory: true),
+            queries: ["Items.A"]
+        ))
+
+        XCTAssertEqual(report.summary.itemPackedStringCount, 1)
+        XCTAssertTrue(report.itemReferences.isEmpty)
+        XCTAssertTrue(report.indexRegions.isEmpty)
+        XCTAssertFalse(report.conclusions.contains(.itemIndexRegionsFound))
+    }
+
+    func testTweakDBItemIndexAnalysisJSONAndTSVEncode() throws {
+        let fixture = try makeItemIndexFixture(name: "item-index-json")
+
+        let data = try JSONEncoder.cybermac.encode(fixture.report)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBItemIndexAnalysisReport.self, from: data)
+        XCTAssertEqual(decoded.indexRegions, fixture.report.indexRegions)
+        XCTAssertEqual(decoded.queryReports, fixture.report.queryReports)
+
+        let tsv = try String(contentsOfFile: fixture.report.itemReferencesTSVPath, encoding: .utf8)
+        XCTAssertTrue(tsv.contains("refOffset\titem\tkind\treferencedOffset\twindow"))
+        XCTAssertTrue(tsv.contains("Items.B"))
+    }
+
+    func testTweakDBPackedStringAnalysisMaxPackedStringsStopsExtraction() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt"),
+            (encoding: .fixstr, value: "Items.Other_Item_01")
+        ])
+        try build.data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-max-strings", isDirectory: true),
+            queries: ["Items.Skirt"],
+            referenceScanMode: .none,
+            maxPackedStrings: 1
+        ))
+
+        XCTAssertEqual(report.packedStringCount, 1)
+        XCTAssertEqual(report.maxPackedStrings, 1)
+        XCTAssertTrue(report.warnings.contains { $0.contains("--max-packed-strings 1") })
+    }
+
+    func testTweakDBPackedStringAnalysisHumanOutputIncludesProgressPhases() throws {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Skirt")
+        ])
+        try build.data.write(to: build.url, options: [.atomic])
+
+        let report = try makeManager().analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("packed-progress", isDirectory: true),
+            queries: ["Items.Skirt"],
+            referenceScanMode: .none
+        ))
+        let human = AddonProbeTweakDBPackedStringAnalysisFormatter.format(report)
+
+        XCTAssertTrue(human.contains("Phase timings:"))
+        XCTAssertTrue(human.contains("fileLoad"))
+        XCTAssertTrue(human.contains("packedStringExtraction"))
+        XCTAssertTrue(human.contains("queryMatching"))
+        XCTAssertTrue(human.contains("referenceScan"))
+    }
+
     func testTweakDBPackedStringAnalysisRecordsNoQueryReferencesWhenAbsent() throws {
         let build = buildPackedTweakDBBinary(packed: [
             (encoding: .fixstr, value: "Items.Skirt")
@@ -732,6 +1096,65 @@ final class AddonProbeManagerTests: XCTestCase {
         let data = try JSONEncoder.cybermac.encode(comparison)
         let decoded = try JSONDecoder.cybermac.decode(AddonProbeTweakDBPackedStringComparisonReport.self, from: data)
         XCTAssertEqual(decoded.sharedItemNames, comparison.sharedItemNames)
+    }
+
+    func testTweakDBStructureInspectionParsesFormatHeaderAndSections() throws {
+        let fixture = try makeFormatTweakDBFixture(name: "format-structure.bin")
+
+        let report = try makeManager().inspectTweakDBStructure(request: AddonProbeTweakDBStructureInspectRequest(
+            fileURL: fixture.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("format-structure", isDirectory: true),
+            records: ["Items.A"]
+        ))
+
+        XCTAssertTrue(report.header.validWolvenKitHeader)
+        XCTAssertEqual(report.header.magicHex, "0x0bb1db47")
+        XCTAssertEqual(report.header.blobVersion, 8)
+        XCTAssertEqual(report.header.parserVersion, 4)
+        XCTAssertEqual(report.header.flatsOffset, 0x20)
+        XCTAssertEqual(report.recordCount, 1)
+        XCTAssertEqual(report.queryCount, 0)
+        XCTAssertEqual(report.groupTagCount, 0)
+        XCTAssertTrue(report.sections.contains { $0.name == "flatsPool" && $0.confidence != .unknown })
+        XCTAssertTrue(report.sections.contains { $0.name == "recordTable" && $0.count == 1 })
+        XCTAssertTrue(report.flatTypeSections.contains { $0.typeName == "Int32" && $0.parsedKeyCount == 2 })
+        XCTAssertTrue(report.conclusions.contains(.wolvenKitHeaderMatched))
+        XCTAssertTrue(report.conclusions.contains(.recordTableParsed))
+        XCTAssertTrue(report.conclusions.contains(.flatTableParsed))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.sectionsPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.recordTracesPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+
+        let decoded = try JSONDecoder.cybermac.decode(
+            AddonProbeTweakDBStructureReport.self,
+            from: Data(contentsOf: URL(fileURLWithPath: report.reportPath))
+        )
+        XCTAssertEqual(decoded.header.magicHex, report.header.magicHex)
+    }
+
+    func testTweakDBRecordTraceResolvesRecordAndKnownFlats() throws {
+        let fixture = try makeFormatTweakDBFixture(name: "format-trace.bin")
+
+        let report = try makeManager().traceTweakDBRecord(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: fixture.url,
+            record: "Items.A",
+            outputDirectoryURL: tempDir.appendingPathComponent("format-trace", isDirectory: true)
+        ))
+
+        XCTAssertEqual(report.trace.recordName, "Items.A")
+        XCTAssertNotNil(report.trace.recordTableEntry)
+        XCTAssertEqual(report.trace.recordTableEntry?.recordTypeName, "Item")
+        XCTAssertTrue(report.trace.traceStatus.contains("recordTableEntryResolved"))
+        XCTAssertTrue(report.trace.traceStatus.contains("knownSchemaFlatsResolved"))
+        XCTAssertEqual(report.trace.knownFlatCount, 2)
+        XCTAssertTrue(report.trace.knownFlats.contains { $0.property == "quality" && $0.valueSummary == "10" })
+        XCTAssertTrue(report.trace.knownFlats.contains { $0.property == "icon" && $0.valueSummary == "20" })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.tracePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+
+        let human = AddonProbeTweakDBRecordTraceFormatter.format(report)
+        XCTAssertTrue(human.contains("Record table: index=0"))
+        XCTAssertTrue(human.contains("Known flats: 2"))
     }
 
     func testAtomiicSummaryReportsShirtAndSkirtCounts() throws {
@@ -1834,6 +2257,20 @@ final class AddonProbeManagerTests: XCTestCase {
         let entries: [(encoding: AddonProbeTweakDBPackedStringEncoding, value: String, tagOffset: Int, stringOffset: Int)]
     }
 
+    private struct FormatTweakDBFixture {
+        let url: URL
+    }
+
+    private struct ReferenceTableFixture {
+        let report: AddonProbeTweakDBReferenceTableAnalysisReport
+        let rowOffsets: [Int]
+    }
+
+    private struct ItemIndexFixture {
+        let report: AddonProbeTweakDBItemIndexAnalysisReport
+        let rowOffsets: [Int]
+    }
+
     private func buildPackedTweakDBBinary(
         packed: [(encoding: AddonProbeTweakDBPackedStringEncoding, value: String)],
         appendReferencesToFirstPackedString: Bool = false,
@@ -1889,6 +2326,214 @@ final class AddonProbeManagerTests: XCTestCase {
             UInt8((value >> 16) & 0xff),
             UInt8((value >> 24) & 0xff)
         ]
+    }
+
+    private func littleEndianUInt64Bytes(_ value: UInt64) -> [UInt8] {
+        (0..<8).map { shift in
+            UInt8((value >> UInt64(shift * 8)) & 0xff)
+        }
+    }
+
+    private func appendLittleEndianUInt32(_ value: UInt32, to data: inout Data) {
+        data.append(contentsOf: littleEndianUInt32Bytes(value))
+    }
+
+    private func appendLittleEndianInt32(_ value: Int32, to data: inout Data) {
+        appendLittleEndianUInt32(UInt32(bitPattern: value), to: &data)
+    }
+
+    private func appendLittleEndianUInt64(_ value: UInt64, to data: inout Data) {
+        data.append(contentsOf: littleEndianUInt64Bytes(value))
+    }
+
+    private func writeLittleEndianUInt32(_ value: UInt32, into data: inout Data, at offset: Int) {
+        data.replaceSubrange(offset..<(offset + 4), with: littleEndianUInt32Bytes(value))
+    }
+
+    private func tweakDBID(_ name: String) -> UInt64 {
+        let bytes = Array(name.utf8)
+        return (UInt64(bytes.count) << 32) | UInt64(TweakDBPackedStringAnalyzer.crc32(bytes))
+    }
+
+    private func murmur3_32(_ string: String, seed: UInt32) -> UInt32 {
+        let data = Array(string.utf8)
+        let c1: UInt32 = 0xcc9e2d51
+        let c2: UInt32 = 0x1b873593
+        var hash = seed
+        let roundedEnd = data.count & ~3
+        var index = 0
+        while index < roundedEnd {
+            var k = UInt32(data[index]) |
+                (UInt32(data[index + 1]) << 8) |
+                (UInt32(data[index + 2]) << 16) |
+                (UInt32(data[index + 3]) << 24)
+            k = k &* c1
+            k = (k << 15) | (k >> 17)
+            k = k &* c2
+            hash ^= k
+            hash = (hash << 13) | (hash >> 19)
+            hash = hash &* 5 &+ 0xe6546b64
+            index += 4
+        }
+
+        var k1: UInt32 = 0
+        let remaining = data.count & 3
+        if remaining == 3 {
+            k1 ^= UInt32(data[roundedEnd + 2]) << 16
+        }
+        if remaining >= 2 {
+            k1 ^= UInt32(data[roundedEnd + 1]) << 8
+        }
+        if remaining >= 1 {
+            k1 ^= UInt32(data[roundedEnd])
+            k1 = k1 &* c1
+            k1 = (k1 << 15) | (k1 >> 17)
+            k1 = k1 &* c2
+            hash ^= k1
+        }
+
+        hash ^= UInt32(data.count)
+        hash ^= hash >> 16
+        hash = hash &* 0x85ebca6b
+        hash ^= hash >> 13
+        hash = hash &* 0xc2b2ae35
+        hash ^= hash >> 16
+        return hash
+    }
+
+    private func makeFormatTweakDBFixture(name: String) throws -> FormatTweakDBFixture {
+        var data = Data()
+        appendLittleEndianUInt32(0x0BB1DB47, to: &data)
+        appendLittleEndianUInt32(8, to: &data)
+        appendLittleEndianUInt32(4, to: &data)
+        appendLittleEndianUInt32(0x12345678, to: &data)
+        appendLittleEndianUInt32(0x20, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        XCTAssertEqual(data.count, 0x20)
+
+        appendLittleEndianUInt32(1, to: &data)
+        appendLittleEndianUInt64(TweakDBPackedStringAnalyzer.fnv1a64(Array("Int32".utf8)), to: &data)
+        appendLittleEndianUInt32(2, to: &data)
+        appendLittleEndianUInt32(2, to: &data)
+        appendLittleEndianUInt32(UInt32(0x20 + 4 + 20), to: &data)
+        XCTAssertEqual(data.count, 0x20 + 4 + 20)
+
+        appendLittleEndianUInt32(2, to: &data)
+        appendLittleEndianInt32(10, to: &data)
+        appendLittleEndianInt32(20, to: &data)
+        appendLittleEndianUInt32(2, to: &data)
+        appendLittleEndianUInt64(tweakDBID("Items.A.quality"), to: &data)
+        appendLittleEndianInt32(0, to: &data)
+        appendLittleEndianUInt64(tweakDBID("Items.A.icon"), to: &data)
+        appendLittleEndianInt32(1, to: &data)
+
+        let recordsOffset = data.count
+        appendLittleEndianUInt32(1, to: &data)
+        appendLittleEndianUInt64(tweakDBID("Items.A"), to: &data)
+        appendLittleEndianUInt32(murmur3_32("Item", seed: 0x5EEDBA5E), to: &data)
+
+        let queriesOffset = data.count
+        appendLittleEndianUInt32(0, to: &data)
+
+        let groupTagsOffset = data.count
+        appendLittleEndianUInt32(0, to: &data)
+
+        writeLittleEndianUInt32(UInt32(recordsOffset), into: &data, at: 20)
+        writeLittleEndianUInt32(UInt32(queriesOffset), into: &data, at: 24)
+        writeLittleEndianUInt32(UInt32(groupTagsOffset), into: &data, at: 28)
+
+        let url = tempDir.appendingPathComponent(name)
+        try data.write(to: url, options: [.atomic])
+        return FormatTweakDBFixture(url: url)
+    }
+
+    private func makeReferenceTableFixture(name: String) throws -> ReferenceTableFixture {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.Before"),
+            (encoding: .fixstr, value: "Items.Middle"),
+            (encoding: .fixstr, value: "Items.After"),
+            (encoding: .fixstr, value: "Items.Last")
+        ], name: "\(name).bin")
+        var data = build.data
+        let before = try XCTUnwrap(build.entries.first { $0.value == "Items.Before" })
+        let middle = try XCTUnwrap(build.entries.first { $0.value == "Items.Middle" })
+        let after = try XCTUnwrap(build.entries.first { $0.value == "Items.After" })
+        let last = try XCTUnwrap(build.entries.first { $0.value == "Items.Last" })
+
+        let rowValues = [before.stringOffset, middle.stringOffset, after.stringOffset, last.stringOffset]
+        var rowOffsets: [Int] = []
+        for (index, stringOffset) in rowValues.enumerated() {
+            rowOffsets.append(data.count)
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(stringOffset)))
+            data.append(contentsOf: littleEndianUInt32Bytes(0x3f))
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(index)))
+        }
+        try data.write(to: build.url, options: [.atomic])
+
+        let manager = makeManager()
+        let stringsAnalysis = try manager.analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("\(name)-strings", isDirectory: true),
+            queries: ["Items.Middle"],
+            referenceScanMode: .direct,
+            referenceLimit: 20
+        ))
+        let report = try manager.analyzeTweakDBReferenceTables(request: AddonProbeTweakDBReferenceTableAnalysisRequest(
+            fileURL: build.url,
+            stringsAnalysisURL: URL(fileURLWithPath: stringsAnalysis.reportPath),
+            outputDirectoryURL: tempDir.appendingPathComponent("\(name)-tables", isDirectory: true),
+            queries: ["Items.Middle"],
+            aroundOffsets: [rowOffsets[1]]
+        ))
+        return ReferenceTableFixture(report: report, rowOffsets: rowOffsets)
+    }
+
+    private func makeItemIndexFixture(name: String) throws -> ItemIndexFixture {
+        let build = buildPackedTweakDBBinary(packed: [
+            (encoding: .fixstr, value: "Items.A"),
+            (encoding: .fixstr, value: "2038-2053"),
+            (encoding: .fixstr, value: "Items.B"),
+            (encoding: .fixstr, value: "Items.C")
+        ], name: "\(name).bin")
+        var data = build.data
+        let itemA = try XCTUnwrap(build.entries.first { $0.value == "Items.A" })
+        let noise = try XCTUnwrap(build.entries.first { $0.value == "2038-2053" })
+        let itemB = try XCTUnwrap(build.entries.first { $0.value == "Items.B" })
+        let itemC = try XCTUnwrap(build.entries.first { $0.value == "Items.C" })
+
+        for index in 0..<6 {
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(noise.stringOffset)))
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(index)))
+            data.append(contentsOf: littleEndianUInt32Bytes(0))
+        }
+
+        let rowValues = [itemA.stringOffset, itemB.stringOffset, itemC.stringOffset, itemA.stringOffset, itemB.stringOffset]
+        var rowOffsets: [Int] = []
+        for (index, stringOffset) in rowValues.enumerated() {
+            rowOffsets.append(data.count)
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(stringOffset)))
+            data.append(contentsOf: littleEndianUInt32Bytes(0x3f))
+            data.append(contentsOf: littleEndianUInt32Bytes(UInt32(index)))
+        }
+        try data.write(to: build.url, options: [.atomic])
+
+        let manager = makeManager()
+        let stringsAnalysis = try manager.analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+            fileURL: build.url,
+            outputDirectoryURL: tempDir.appendingPathComponent("\(name)-strings", isDirectory: true),
+            queries: ["Items.B"],
+            referenceScanMode: .none
+        ))
+        let report = try manager.analyzeTweakDBItemIndexes(request: AddonProbeTweakDBItemIndexAnalysisRequest(
+            fileURL: build.url,
+            stringsAnalysisURL: URL(fileURLWithPath: stringsAnalysis.reportPath),
+            outputDirectoryURL: tempDir.appendingPathComponent("\(name)-items", isDirectory: true),
+            queries: ["Items.B"],
+            referenceLimit: 20
+        ))
+        return ItemIndexFixture(report: report, rowOffsets: rowOffsets)
     }
 
     private func factoryCloneJSON(compiledData: [[String]]?, data: [[String]]?) -> String {

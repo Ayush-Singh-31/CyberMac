@@ -1,6 +1,10 @@
 import Foundation
 import CyberMacCore
 
+private func formatProgressSeconds(_ seconds: Double) -> String {
+    String(format: "%.3fs", seconds)
+}
+
 let app = CyberMacCLI(arguments: Array(CommandLine.arguments.dropFirst()))
 app.run()
 
@@ -191,9 +195,14 @@ struct CyberMacCLI {
           cybermac addon-probe compare-base-records <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
           cybermac addon-probe locate-tweakdb-storage --out <dir> --game-app /path/to/Cyberpunk.app [--cp77tools <path>] [--json]
           cybermac addon-probe redscript-tweakdb-api-scan --out <dir> [--json]
-          cybermac addon-probe inspect-tweakdb-bin --file <path-to-tweakdb.bin> --out <dir> [--query <string>] [--json]
+          cybermac addon-probe inspect-tweakdb-bin --file <path-to-tweakdb.bin> --out <dir> [--query <string>] [--json]  # heuristic/raw scan
           cybermac addon-probe compare-tweakdb-bin --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --out <dir> [--json]
-          cybermac addon-probe analyze-tweakdb-strings --file <tweakdb.bin> --out <dir> [--query <string>] [--json]
+          cybermac addon-probe analyze-tweakdb-strings --file <tweakdb.bin> --out <dir> [--query <string>] [--reference-limit <n>] [--max-packed-strings <n>] [--no-reference-scan|--deep-reference-scan] [--json]  # heuristic packed-string scan
+          cybermac addon-probe analyze-tweakdb-reference-tables --file <tweakdb.bin> --strings-analysis <analysis.json> --out <dir> [--query <string>] [--around-offset <n>] [--json]  # heuristic table scan
+          cybermac addon-probe analyze-tweakdb-item-indexes --file <tweakdb.bin> --strings-analysis <analysis.json> --out <dir> [--query <Items.X>] [--reference-limit <n>] [--json]  # heuristic item-reference scan
+          cybermac addon-probe inspect-tweakdb-structure --file <tweakdb.bin> --out <dir> [--json]
+          cybermac addon-probe trace-tweakdb-record --file <tweakdb.bin> --record <record> --out <dir> [--json]
+          cybermac addon-probe stage-tweakdb-clone-record --file <tweakdb.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--set-cname <prop=val> ...] [--set-string <prop=val> ...] [--set-tweakdbid <prop=val> ...] [--set-lockey <prop=number> ...] [--json]
           cybermac addon-probe compare-tweakdb-string-analysis --base <base-analysis.json> --ep1 <ep1-analysis.json> --out <dir> [--json]
           cybermac addon-probe inspect-factory-layer [--out <dir>] [--json] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--try-cr2w-decode]
           cybermac addon-probe analyze-factory-json <decoded-json-root> [--json]
@@ -973,7 +982,7 @@ struct CyberMacCLI {
 
     private func addonProbe() throws {
         guard arguments.count >= 2 else {
-            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|record-layer-probe|record-runtime-probe|compare-base-records|locate-tweakdb-storage|redscript-tweakdb-api-scan|inspect-tweakdb-bin|compare-tweakdb-bin|analyze-tweakdb-strings|compare-tweakdb-string-analysis|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
+            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|record-layer-probe|record-runtime-probe|compare-base-records|locate-tweakdb-storage|redscript-tweakdb-api-scan|inspect-tweakdb-bin|compare-tweakdb-bin|analyze-tweakdb-strings|analyze-tweakdb-reference-tables|analyze-tweakdb-item-indexes|inspect-tweakdb-structure|trace-tweakdb-record|stage-tweakdb-clone-record|compare-tweakdb-string-analysis|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
         }
 
         switch arguments[1] {
@@ -1009,6 +1018,16 @@ struct CyberMacCLI {
             try addonProbeCompareTweakDBBinary()
         case "analyze-tweakdb-strings":
             try addonProbeAnalyzeTweakDBStrings()
+        case "analyze-tweakdb-reference-tables":
+            try addonProbeAnalyzeTweakDBReferenceTables()
+        case "analyze-tweakdb-item-indexes":
+            try addonProbeAnalyzeTweakDBItemIndexes()
+        case "inspect-tweakdb-structure":
+            try addonProbeInspectTweakDBStructure()
+        case "trace-tweakdb-record":
+            try addonProbeTraceTweakDBRecord()
+        case "stage-tweakdb-clone-record":
+            try addonProbeStageTweakDBCloneRecord()
         case "compare-tweakdb-string-analysis":
             try addonProbeCompareTweakDBStringAnalysis()
         case "inspect-factory-layer":
@@ -1367,25 +1386,243 @@ struct CyberMacCLI {
     }
 
     private func addonProbeAnalyzeTweakDBStrings() throws {
-        let valueFlags: Set<String> = ["--file", "--out", "--query"]
+        let valueFlags: Set<String> = ["--file", "--out", "--query", "--reference-limit", "--max-packed-strings"]
         let positionals = positionals(after: 2, valueFlags: valueFlags)
         guard positionals.isEmpty,
               let filePath = optionValue("--file"),
               let outputDirectoryPath = optionValue("--out")
         else {
-            throw CyberMacError.invalidInput("Usage: cybermac addon-probe analyze-tweakdb-strings --file <path-to-tweakdb.bin> --out <dir> [--query <string>] [--json]")
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe analyze-tweakdb-strings --file <path-to-tweakdb.bin> --out <dir> [--query <string>] [--reference-limit <n>] [--max-packed-strings <n>] [--no-reference-scan|--deep-reference-scan] [--json]")
+        }
+        guard !(hasFlag("--no-reference-scan") && hasFlag("--deep-reference-scan")) else {
+            throw CyberMacError.invalidInput("Use either --no-reference-scan or --deep-reference-scan, not both.")
         }
 
+        let referenceLimit: Int
+        if let rawReferenceLimit = optionValue("--reference-limit") {
+            guard let parsed = Int(rawReferenceLimit), parsed >= 0 else {
+                throw CyberMacError.invalidInput("--reference-limit must be a non-negative integer: \(rawReferenceLimit)")
+            }
+            referenceLimit = parsed
+        } else {
+            referenceLimit = TweakDBPackedStringAnalyzer.defaultReferenceLimit
+        }
+
+        let maxPackedStrings: Int?
+        if let rawMaxPackedStrings = optionValue("--max-packed-strings") {
+            guard let parsed = Int(rawMaxPackedStrings), parsed >= 0 else {
+                throw CyberMacError.invalidInput("--max-packed-strings must be a non-negative integer: \(rawMaxPackedStrings)")
+            }
+            maxPackedStrings = parsed
+        } else {
+            maxPackedStrings = nil
+        }
+
+        let referenceScanMode: AddonProbeTweakDBReferenceScanMode
+        if hasFlag("--no-reference-scan") {
+            referenceScanMode = .none
+        } else if hasFlag("--deep-reference-scan") {
+            referenceScanMode = .deep
+        } else {
+            referenceScanMode = .direct
+        }
+
+        let wantsJSON = hasFlag("--json")
+        let progressHandler: AddonProbeTweakDBPackedStringProgressHandler?
+        if wantsJSON {
+            progressHandler = nil
+        } else {
+            progressHandler = { event in
+                fputs("Progress: \(event.phase) \(formatProgressSeconds(event.elapsedSeconds)) total=\(formatProgressSeconds(event.totalElapsedSeconds)) - \(event.summary)\n", stderr)
+            }
+        }
         let report = try AddonProbeManager(home: home).analyzeTweakDBPackedStrings(request: AddonProbeTweakDBPackedStringAnalysisRequest(
             fileURL: PathSafety.expandedURL(from: filePath),
             outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
-            queries: optionValues("--query", after: 2)
+            queries: optionValues("--query", after: 2),
+            referenceScanMode: referenceScanMode,
+            referenceLimit: referenceLimit,
+            maxPackedStrings: maxPackedStrings,
+            progressHandler: progressHandler
         ))
-        if hasFlag("--json") {
+        if wantsJSON {
             print(try AddonProbeTweakDBPackedStringAnalysisFormatter.formatJSON(report))
         } else {
             print(AddonProbeTweakDBPackedStringAnalysisFormatter.format(report))
         }
+    }
+
+    private func addonProbeAnalyzeTweakDBReferenceTables() throws {
+        let valueFlags: Set<String> = ["--file", "--strings-analysis", "--out", "--query", "--around-offset"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let stringsAnalysisPath = optionValue("--strings-analysis"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe analyze-tweakdb-reference-tables --file <path-to-tweakdb.bin> --strings-analysis <tweakdb-packed-string-analysis.json> --out <dir> [--query <string>] [--around-offset <n>] [--json]")
+        }
+
+        let aroundOffsets = try optionValues("--around-offset", after: 2).map { raw in
+            guard let parsed = Int(raw), parsed >= 0 else {
+                throw CyberMacError.invalidInput("--around-offset must be a non-negative integer: \(raw)")
+            }
+            return parsed
+        }
+
+        let report = try AddonProbeManager(home: home).analyzeTweakDBReferenceTables(request: AddonProbeTweakDBReferenceTableAnalysisRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            stringsAnalysisURL: PathSafety.expandedURL(from: stringsAnalysisPath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            queries: optionValues("--query", after: 2),
+            aroundOffsets: aroundOffsets
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBReferenceTableAnalysisFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBReferenceTableAnalysisFormatter.format(report))
+        }
+    }
+
+    private func addonProbeAnalyzeTweakDBItemIndexes() throws {
+        let valueFlags: Set<String> = ["--file", "--strings-analysis", "--out", "--query", "--reference-limit"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let stringsAnalysisPath = optionValue("--strings-analysis"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe analyze-tweakdb-item-indexes --file <path-to-tweakdb.bin> --strings-analysis <tweakdb-packed-string-analysis.json> --out <dir> [--query <Items.X>] [--reference-limit <n>] [--json]")
+        }
+
+        let referenceLimit: Int
+        if let rawReferenceLimit = optionValue("--reference-limit") {
+            guard let parsed = Int(rawReferenceLimit), parsed >= 0 else {
+                throw CyberMacError.invalidInput("--reference-limit must be a non-negative integer: \(rawReferenceLimit)")
+            }
+            referenceLimit = parsed
+        } else {
+            referenceLimit = TweakDBItemIndexAnalyzer.defaultReferenceLimit
+        }
+
+        let report = try AddonProbeManager(home: home).analyzeTweakDBItemIndexes(request: AddonProbeTweakDBItemIndexAnalysisRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            stringsAnalysisURL: PathSafety.expandedURL(from: stringsAnalysisPath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            queries: optionValues("--query", after: 2),
+            referenceLimit: referenceLimit
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBItemIndexAnalysisFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBItemIndexAnalysisFormatter.format(report))
+        }
+    }
+
+    private func addonProbeInspectTweakDBStructure() throws {
+        let valueFlags: Set<String> = ["--file", "--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe inspect-tweakdb-structure --file <path-to-tweakdb.bin> --out <dir> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).inspectTweakDBStructure(request: AddonProbeTweakDBStructureInspectRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBStructureFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBStructureFormatter.format(report))
+        }
+    }
+
+    private func addonProbeTraceTweakDBRecord() throws {
+        let valueFlags: Set<String> = ["--file", "--record", "--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let record = optionValue("--record"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe trace-tweakdb-record --file <path-to-tweakdb.bin> --record <record> --out <dir> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).traceTweakDBRecord(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            record: record,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBRecordTraceFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBRecordTraceFormatter.format(report))
+        }
+    }
+
+    private func addonProbeStageTweakDBCloneRecord() throws {
+        let valueFlags: Set<String> = [
+            "--file", "--source-record", "--new-record", "--out",
+            "--set-cname", "--set-string", "--set-tweakdbid", "--set-lockey"
+        ]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let sourceRecord = optionValue("--source-record"),
+              let newRecord = optionValue("--new-record"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-tweakdb-clone-record --file <path-to-tweakdb.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--set-cname <prop=val> ...] [--set-string <prop=val> ...] [--set-tweakdbid <prop=val> ...] [--set-lockey <prop=number> ...] [--json]")
+        }
+
+        var overrides: [AddonProbeTweakDBCloneOverride] = []
+        for raw in optionValues("--set-cname", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-cname")
+            overrides.append(.cName(property: parts.property, value: parts.value))
+        }
+        for raw in optionValues("--set-string", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-string")
+            overrides.append(.string(property: parts.property, value: parts.value))
+        }
+        for raw in optionValues("--set-tweakdbid", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-tweakdbid")
+            overrides.append(.tweakDBID(property: parts.property, value: parts.value))
+        }
+        for raw in optionValues("--set-lockey", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-lockey")
+            guard let value = UInt64(parts.value) else {
+                throw CyberMacError.invalidInput("--set-lockey value must be a non-negative integer (got '\(parts.value)' for property '\(parts.property)').")
+            }
+            overrides.append(.locKey(property: parts.property, value: value))
+        }
+
+        let report = try AddonProbeManager(home: home).stageTweakDBCloneRecord(request: AddonProbeTweakDBCloneRecordRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            sourceRecord: sourceRecord,
+            newRecord: newRecord,
+            overrides: overrides
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBCloneRecordFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBCloneRecordFormatter.format(report))
+        }
+    }
+
+    private func parseCloneOverridePair(_ raw: String, flag: String) throws -> (property: String, value: String) {
+        guard let separator = raw.firstIndex(of: "=") else {
+            throw CyberMacError.invalidInput("\(flag) value must be in the form property=value (got '\(raw)').")
+        }
+        let property = String(raw[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = String(raw[raw.index(after: separator)...])
+        guard !property.isEmpty else {
+            throw CyberMacError.invalidInput("\(flag) property must not be empty (got '\(raw)').")
+        }
+        return (property, value)
     }
 
     private func addonProbeCompareTweakDBStringAnalysis() throws {

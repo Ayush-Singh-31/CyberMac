@@ -1,14 +1,66 @@
 import Foundation
 
+public enum AddonProbeTweakDBReferenceScanMode: String, Codable, Equatable, Sendable {
+    case none
+    case direct
+    case deep
+}
+
+public struct AddonProbeTweakDBPackedStringProgressEvent: Sendable {
+    public let phase: String
+    public let elapsedSeconds: Double
+    public let totalElapsedSeconds: Double
+    public let summary: String
+
+    public init(phase: String, elapsedSeconds: Double, totalElapsedSeconds: Double, summary: String) {
+        self.phase = phase
+        self.elapsedSeconds = elapsedSeconds
+        self.totalElapsedSeconds = totalElapsedSeconds
+        self.summary = summary
+    }
+}
+
+public typealias AddonProbeTweakDBPackedStringProgressHandler = @Sendable (AddonProbeTweakDBPackedStringProgressEvent) -> Void
+
+public struct AddonProbeTweakDBPackedStringPhaseTiming: Codable, Equatable, Sendable {
+    public let phase: String
+    public let elapsedSeconds: Double
+    public let totalElapsedSeconds: Double
+    public let summary: String
+
+    public init(phase: String, elapsedSeconds: Double, totalElapsedSeconds: Double, summary: String) {
+        self.phase = phase
+        self.elapsedSeconds = elapsedSeconds
+        self.totalElapsedSeconds = totalElapsedSeconds
+        self.summary = summary
+    }
+}
+
 public struct AddonProbeTweakDBPackedStringAnalysisRequest: Sendable {
     public let fileURL: URL
     public let outputDirectoryURL: URL
     public let queries: [String]
+    public let referenceScanMode: AddonProbeTweakDBReferenceScanMode
+    public let referenceLimit: Int
+    public let maxPackedStrings: Int?
+    public let progressHandler: AddonProbeTweakDBPackedStringProgressHandler?
 
-    public init(fileURL: URL, outputDirectoryURL: URL, queries: [String] = []) {
+    public init(
+        fileURL: URL,
+        outputDirectoryURL: URL,
+        queries: [String] = [],
+        referenceScanMode: AddonProbeTweakDBReferenceScanMode = .direct,
+        referenceLimit: Int = TweakDBPackedStringAnalyzer.defaultReferenceLimit,
+        maxPackedStrings: Int? = nil,
+        progressHandler: AddonProbeTweakDBPackedStringProgressHandler? = nil
+    ) {
         self.fileURL = fileURL
         self.outputDirectoryURL = outputDirectoryURL
         self.queries = queries
+        self.referenceScanMode = referenceScanMode
+        self.referenceLimit = referenceLimit
+        self.maxPackedStrings = maxPackedStrings
+        self.progressHandler = progressHandler
     }
 }
 
@@ -73,10 +125,71 @@ public struct AddonProbeTweakDBPackedStringQueryReport: Codable, Equatable, Send
     public let nextStrings: [AddonProbeTweakDBPackedString]
     public let references: [AddonProbeTweakDBStringReference]
     public let hashCandidates: [AddonProbeTweakDBHashReferenceCandidate]
+    public let referenceLimit: Int
+    public let referencesTruncated: Bool
     public let contextHexStartOffset: Int
     public let contextHex: String
     public let contextASCIIStartOffset: Int
     public let contextASCII: String
+
+    public init(
+        query: String,
+        packedMatches: [AddonProbeTweakDBPackedString],
+        previousStrings: [AddonProbeTweakDBPackedString],
+        nextStrings: [AddonProbeTweakDBPackedString],
+        references: [AddonProbeTweakDBStringReference],
+        hashCandidates: [AddonProbeTweakDBHashReferenceCandidate],
+        referenceLimit: Int = TweakDBPackedStringAnalyzer.defaultReferenceLimit,
+        referencesTruncated: Bool = false,
+        contextHexStartOffset: Int,
+        contextHex: String,
+        contextASCIIStartOffset: Int,
+        contextASCII: String
+    ) {
+        self.query = query
+        self.packedMatches = packedMatches
+        self.previousStrings = previousStrings
+        self.nextStrings = nextStrings
+        self.references = references
+        self.hashCandidates = hashCandidates
+        self.referenceLimit = referenceLimit
+        self.referencesTruncated = referencesTruncated
+        self.contextHexStartOffset = contextHexStartOffset
+        self.contextHex = contextHex
+        self.contextASCIIStartOffset = contextASCIIStartOffset
+        self.contextASCII = contextASCII
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case query
+        case packedMatches
+        case previousStrings
+        case nextStrings
+        case references
+        case hashCandidates
+        case referenceLimit
+        case referencesTruncated
+        case contextHexStartOffset
+        case contextHex
+        case contextASCIIStartOffset
+        case contextASCII
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        query = try container.decode(String.self, forKey: .query)
+        packedMatches = try container.decode([AddonProbeTweakDBPackedString].self, forKey: .packedMatches)
+        previousStrings = try container.decode([AddonProbeTweakDBPackedString].self, forKey: .previousStrings)
+        nextStrings = try container.decode([AddonProbeTweakDBPackedString].self, forKey: .nextStrings)
+        references = try container.decode([AddonProbeTweakDBStringReference].self, forKey: .references)
+        hashCandidates = try container.decode([AddonProbeTweakDBHashReferenceCandidate].self, forKey: .hashCandidates)
+        referenceLimit = try container.decodeIfPresent(Int.self, forKey: .referenceLimit) ?? TweakDBPackedStringAnalyzer.defaultReferenceLimit
+        referencesTruncated = try container.decodeIfPresent(Bool.self, forKey: .referencesTruncated) ?? false
+        contextHexStartOffset = try container.decode(Int.self, forKey: .contextHexStartOffset)
+        contextHex = try container.decode(String.self, forKey: .contextHex)
+        contextASCIIStartOffset = try container.decode(Int.self, forKey: .contextASCIIStartOffset)
+        contextASCII = try container.decode(String.self, forKey: .contextASCII)
+    }
 }
 
 public struct AddonProbeTweakDBPackedStringRegion: Codable, Equatable, Sendable {
@@ -109,6 +222,9 @@ public struct AddonProbeTweakDBPackedStringAnalysisReport: Codable, Equatable, S
     public let size: Int
     public let sha256: String
     public let queries: [String]
+    public let referenceScanMode: AddonProbeTweakDBReferenceScanMode
+    public let referenceLimit: Int
+    public let maxPackedStrings: Int?
     public let packedStringCount: Int
     public let encodingCounts: [String: Int]
     public let packedStringsTablePath: String
@@ -120,7 +236,99 @@ public struct AddonProbeTweakDBPackedStringAnalysisReport: Codable, Equatable, S
     public let queryReports: [AddonProbeTweakDBPackedStringQueryReport]
     public let regions: [AddonProbeTweakDBPackedStringRegion]
     public let conclusions: [AddonProbeTweakDBPackedStringConclusion]
+    public let phaseTimings: [AddonProbeTweakDBPackedStringPhaseTiming]
     public let warnings: [String]
+
+    public init(
+        filePath: String,
+        size: Int,
+        sha256: String,
+        queries: [String],
+        referenceScanMode: AddonProbeTweakDBReferenceScanMode = .direct,
+        referenceLimit: Int = TweakDBPackedStringAnalyzer.defaultReferenceLimit,
+        maxPackedStrings: Int? = nil,
+        packedStringCount: Int,
+        encodingCounts: [String: Int],
+        packedStringsTablePath: String,
+        queryReportPath: String,
+        regionsPath: String,
+        reportPath: String,
+        packedStrings: [AddonProbeTweakDBPackedString],
+        stringSetComparison: AddonProbeTweakDBPackedStringSetComparison,
+        queryReports: [AddonProbeTweakDBPackedStringQueryReport],
+        regions: [AddonProbeTweakDBPackedStringRegion],
+        conclusions: [AddonProbeTweakDBPackedStringConclusion],
+        phaseTimings: [AddonProbeTweakDBPackedStringPhaseTiming] = [],
+        warnings: [String]
+    ) {
+        self.filePath = filePath
+        self.size = size
+        self.sha256 = sha256
+        self.queries = queries
+        self.referenceScanMode = referenceScanMode
+        self.referenceLimit = referenceLimit
+        self.maxPackedStrings = maxPackedStrings
+        self.packedStringCount = packedStringCount
+        self.encodingCounts = encodingCounts
+        self.packedStringsTablePath = packedStringsTablePath
+        self.queryReportPath = queryReportPath
+        self.regionsPath = regionsPath
+        self.reportPath = reportPath
+        self.packedStrings = packedStrings
+        self.stringSetComparison = stringSetComparison
+        self.queryReports = queryReports
+        self.regions = regions
+        self.conclusions = conclusions
+        self.phaseTimings = phaseTimings
+        self.warnings = warnings
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case filePath
+        case size
+        case sha256
+        case queries
+        case referenceScanMode
+        case referenceLimit
+        case maxPackedStrings
+        case packedStringCount
+        case encodingCounts
+        case packedStringsTablePath
+        case queryReportPath
+        case regionsPath
+        case reportPath
+        case packedStrings
+        case stringSetComparison
+        case queryReports
+        case regions
+        case conclusions
+        case phaseTimings
+        case warnings
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        filePath = try container.decode(String.self, forKey: .filePath)
+        size = try container.decode(Int.self, forKey: .size)
+        sha256 = try container.decode(String.self, forKey: .sha256)
+        queries = try container.decode([String].self, forKey: .queries)
+        referenceScanMode = try container.decodeIfPresent(AddonProbeTweakDBReferenceScanMode.self, forKey: .referenceScanMode) ?? .deep
+        referenceLimit = try container.decodeIfPresent(Int.self, forKey: .referenceLimit) ?? TweakDBPackedStringAnalyzer.defaultReferenceLimit
+        maxPackedStrings = try container.decodeIfPresent(Int.self, forKey: .maxPackedStrings)
+        packedStringCount = try container.decode(Int.self, forKey: .packedStringCount)
+        encodingCounts = try container.decode([String: Int].self, forKey: .encodingCounts)
+        packedStringsTablePath = try container.decode(String.self, forKey: .packedStringsTablePath)
+        queryReportPath = try container.decode(String.self, forKey: .queryReportPath)
+        regionsPath = try container.decode(String.self, forKey: .regionsPath)
+        reportPath = try container.decode(String.self, forKey: .reportPath)
+        packedStrings = try container.decode([AddonProbeTweakDBPackedString].self, forKey: .packedStrings)
+        stringSetComparison = try container.decode(AddonProbeTweakDBPackedStringSetComparison.self, forKey: .stringSetComparison)
+        queryReports = try container.decode([AddonProbeTweakDBPackedStringQueryReport].self, forKey: .queryReports)
+        regions = try container.decode([AddonProbeTweakDBPackedStringRegion].self, forKey: .regions)
+        conclusions = try container.decode([AddonProbeTweakDBPackedStringConclusion].self, forKey: .conclusions)
+        phaseTimings = try container.decodeIfPresent([AddonProbeTweakDBPackedStringPhaseTiming].self, forKey: .phaseTimings) ?? []
+        warnings = try container.decode([String].self, forKey: .warnings)
+    }
 }
 
 public struct AddonProbeTweakDBPackedStringQueryDiff: Codable, Equatable, Sendable {
@@ -170,11 +378,12 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
         "FeetClothing"
     ]
 
+    public static let defaultReferenceLimit = 100
+
     private static let minPackedStringLength = 1
     private static let contextHexRadius = 128
     private static let contextASCIIRadius = 256
     private static let neighborWindow = 3
-    private static let maxReferencesPerQuery = 64
     private static let maxHashOffsetsPerAlgorithm = 64
     private static let denseRegionGap = 64
     private static let denseRegionMinCount = 8
@@ -182,26 +391,117 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
     public init() {}
 
     public func analyze(request: AddonProbeTweakDBPackedStringAnalysisRequest) throws -> AddonProbeTweakDBPackedStringAnalysisReport {
+        guard request.referenceLimit >= 0 else {
+            throw CyberMacError.invalidInput("--reference-limit must be a non-negative integer: \(request.referenceLimit)")
+        }
+        if let maxPackedStrings = request.maxPackedStrings, maxPackedStrings < 0 {
+            throw CyberMacError.invalidInput("--max-packed-strings must be a non-negative integer: \(maxPackedStrings)")
+        }
+
         let fileURL = request.fileURL.standardizedFileURL
         let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL
         try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: fileURL, outputDirectoryURL: outputDirectoryURL)
         try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
 
+        let analysisStart = Date()
+        var phaseTimings: [AddonProbeTweakDBPackedStringPhaseTiming] = []
+        func finishPhase(_ phase: String, startedAt: Date, summary: String) {
+            let now = Date()
+            let timing = AddonProbeTweakDBPackedStringPhaseTiming(
+                phase: phase,
+                elapsedSeconds: now.timeIntervalSince(startedAt),
+                totalElapsedSeconds: now.timeIntervalSince(analysisStart),
+                summary: summary
+            )
+            phaseTimings.append(timing)
+            request.progressHandler?(AddonProbeTweakDBPackedStringProgressEvent(
+                phase: timing.phase,
+                elapsedSeconds: timing.elapsedSeconds,
+                totalElapsedSeconds: timing.totalElapsedSeconds,
+                summary: timing.summary
+            ))
+        }
+        func emitProgress(_ phase: String, summary: String) {
+            let now = Date()
+            request.progressHandler?(AddonProbeTweakDBPackedStringProgressEvent(
+                phase: phase,
+                elapsedSeconds: 0,
+                totalElapsedSeconds: now.timeIntervalSince(analysisStart),
+                summary: summary
+            ))
+        }
+
+        let loadStart = Date()
         let data = try Self.readData(fileURL)
         let bytes = [UInt8](data)
-        let packed = Self.extractPackedStrings(bytes: bytes)
+        finishPhase("fileLoad", startedAt: loadStart, summary: "Loaded \(bytes.count) bytes from \(fileURL.lastPathComponent).")
+
+        let packedStart = Date()
+        let packed = Self.extractPackedStrings(bytes: bytes, limit: request.maxPackedStrings)
+        finishPhase("packedStringExtraction", startedAt: packedStart, summary: "Extracted \(packed.count) packed string candidates.")
+
+        let printableStart = Date()
         let printable = Self.extractPrintableStrings(bytes: bytes)
+        finishPhase("printableStringExtraction", startedAt: printableStart, summary: "Extracted \(printable.count) printable string runs.")
+
+        let queryStart = Date()
         let queries = Self.normalizedQueries(request.queries)
-        let packedOffsetIndex = Self.indexByStringOffset(packed)
-        let queryReports = queries.map { query in
+        let queryMatches = Self.queryMatchSets(queries: queries, packed: packed)
+        let totalQueryMatches = queryMatches.reduce(0) { $0 + $1.matches.count }
+        finishPhase("queryMatching", startedAt: queryStart, summary: "Matched \(totalQueryMatches) packed strings across \(queries.count) queries.")
+
+        let referenceStart = Date()
+        emitProgress(
+            "referenceScan",
+            summary: Self.referenceScanStartSummary(
+                mode: request.referenceScanMode,
+                queryCount: queries.count,
+                matchCount: totalQueryMatches,
+                limit: request.referenceLimit
+            )
+        )
+        let referenceResults = Self.referenceScanResults(
+            mode: request.referenceScanMode,
+            bytes: bytes,
+            queryMatches: queryMatches,
+            referenceLimit: request.referenceLimit
+        )
+        let totalReferences = referenceResults.values.reduce(0) { $0 + $1.references.count }
+        let truncatedReferenceQueries = referenceResults.values.filter(\.truncated).count
+        finishPhase(
+            "referenceScan",
+            startedAt: referenceStart,
+            summary: "Finished \(request.referenceScanMode.rawValue) reference scan with \(totalReferences) retained references; truncatedQueries=\(truncatedReferenceQueries)."
+        )
+
+        var hashCandidatesByQuery: [String: [AddonProbeTweakDBHashReferenceCandidate]] = [:]
+        if request.referenceScanMode == .deep {
+            let hashStart = Date()
+            for matchSet in queryMatches {
+                hashCandidatesByQuery[matchSet.query] = Self.findHashCandidates(query: matchSet.query, bytes: bytes)
+            }
+            finishPhase("hashSearch", startedAt: hashStart, summary: "Computed experimental hash candidates for \(queries.count) queries.")
+        }
+
+        let reportBuildStart = Date()
+        let queryReports = queryMatches.map { matchSet in
             Self.buildQueryReport(
-                query: query,
+                query: matchSet.query,
+                matches: matchSet.matches,
                 bytes: bytes,
                 packed: packed,
-                packedOffsetIndex: packedOffsetIndex
+                referenceResult: referenceResults[matchSet.query] ?? ReferenceScanResult(),
+                hashCandidates: hashCandidatesByQuery[matchSet.query] ?? [],
+                referenceLimit: request.referenceLimit
             )
         }
-        let regions = Self.regions(packed: packed, bytes: bytes)
+        finishPhase("queryReportBuild", startedAt: reportBuildStart, summary: "Built \(queryReports.count) query reports.")
+
+        let regionsStart = Date()
+        let regions = Self.regions(packed: packed, bytes: bytes, referenceScanMode: request.referenceScanMode)
+        finishPhase("regionDetection", startedAt: regionsStart, summary: "Detected \(regions.count) packed string regions.")
+
+        let comparisonStart = Date()
         let printableSet = Set(printable.map(\.string))
         let packedSet = Set(packed.map(\.string))
         let setComparison = AddonProbeTweakDBPackedStringSetComparison(
@@ -212,6 +512,8 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
             printableOnlyCount: printableSet.subtracting(packedSet).count
         )
         let conclusions = Self.conclusions(packed: packed, queryReports: queryReports, queries: queries)
+        finishPhase("stringSetComparison", startedAt: comparisonStart, summary: "Compared printable and packed string sets.")
+
         var encodingCounts: [String: Int] = [:]
         for entry in packed {
             encodingCounts[entry.encoding.rawValue, default: 0] += 1
@@ -222,15 +524,38 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
         let regionsURL = outputDirectoryURL.appendingPathComponent("tweakdb-packed-regions.txt")
         let reportURL = outputDirectoryURL.appendingPathComponent("tweakdb-packed-string-analysis.json")
 
+        let outputStart = Date()
         try Self.writePackedStringsTSV(packed, to: packedTableURL)
         try Self.writeQueryReportText(queryReports, to: queryReportURL)
         try Self.writeRegionsText(regions, to: regionsURL)
+        finishPhase("outputWriting", startedAt: outputStart, summary: "Wrote TSV, query report, and region report artifacts.")
+
+        var warnings = [
+            "Read-only analysis only. No game files were modified.",
+            "Packed-string detection uses MessagePack-style fixstr/str8/str16/str32 heuristics; classification is experimental.",
+            "Default reference scanning is query-scoped and direct-offset only; use --deep-reference-scan for relative-offset and hash heuristics."
+        ]
+        if request.referenceScanMode == .none {
+            warnings.append("Reference scanning was skipped by request.")
+        }
+        if request.referenceScanMode == .deep {
+            warnings.append("Hash search uses experimental FNV-1a 32/64 and CRC32 candidates; matches do not prove the engine actually uses that algorithm.")
+        }
+        if let maxPackedStrings = request.maxPackedStrings {
+            warnings.append("Packed string extraction stopped after --max-packed-strings \(maxPackedStrings); results may be incomplete.")
+        }
+        if queryReports.contains(where: \.referencesTruncated) {
+            warnings.append("One or more query reference lists were truncated at the configured --reference-limit.")
+        }
 
         let report = AddonProbeTweakDBPackedStringAnalysisReport(
             filePath: fileURL.path,
             size: bytes.count,
-            sha256: try PathSafety.sha256(url: fileURL),
+            sha256: PathSafety.sha256(data: data),
             queries: queries,
+            referenceScanMode: request.referenceScanMode,
+            referenceLimit: request.referenceLimit,
+            maxPackedStrings: request.maxPackedStrings,
             packedStringCount: packed.count,
             encodingCounts: encodingCounts,
             packedStringsTablePath: packedTableURL.path,
@@ -242,11 +567,8 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
             queryReports: queryReports,
             regions: regions,
             conclusions: conclusions,
-            warnings: [
-                "Read-only analysis only. No game files were modified.",
-                "Packed-string detection uses MessagePack-style fixstr/str8/str16/str32 heuristics; classification is experimental.",
-                "Hash search uses experimental FNV-1a 32/64 and CRC32 candidates; matches do not prove the engine actually uses that algorithm."
-            ]
+            phaseTimings: phaseTimings,
+            warnings: warnings
         )
         try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
         return report
@@ -317,7 +639,8 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
 
     // MARK: - Packed string extraction
 
-    static func extractPackedStrings(bytes: [UInt8]) -> [AddonProbeTweakDBPackedString] {
+    static func extractPackedStrings(bytes: [UInt8], limit: Int? = nil) -> [AddonProbeTweakDBPackedString] {
+        if let limit, limit <= 0 { return [] }
         var results: [AddonProbeTweakDBPackedString] = []
         let count = bytes.count
         var index = 0
@@ -335,6 +658,7 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
                         encoding: .fixstr,
                         string: value
                     ))
+                    if let limit, results.count >= limit { return results }
                 }
             } else if tag == 0xd9, index + 2 <= count {
                 let length = Int(bytes[index + 1])
@@ -348,6 +672,7 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
                         encoding: .str8,
                         string: value
                     ))
+                    if let limit, results.count >= limit { return results }
                 }
             } else if tag == 0xda, index + 3 <= count {
                 let length = Int(bytes[index + 1]) | (Int(bytes[index + 2]) << 8)
@@ -361,6 +686,7 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
                         encoding: .str16,
                         string: value
                     ))
+                    if let limit, results.count >= limit { return results }
                 }
             } else if tag == 0xdb, index + 5 <= count {
                 let length = Int(bytes[index + 1]) |
@@ -378,6 +704,7 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
                         encoding: .str32,
                         string: value
                     ))
+                    if let limit, results.count >= limit { return results }
                 }
             }
             index += 1
@@ -440,17 +767,56 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
 
     // MARK: - Query report
 
+    private struct QueryMatchSet {
+        let query: String
+        let matches: [AddonProbeTweakDBPackedString]
+    }
+
+    private struct ReferenceScanTarget {
+        let query: String
+        let kind: AddonProbeTweakDBStringReferenceKind
+        let target: Int
+    }
+
+    private struct ReferenceScanResult {
+        var references: [AddonProbeTweakDBStringReference] = []
+        var truncated = false
+    }
+
+    private static func queryMatchSets(
+        queries: [String],
+        packed: [AddonProbeTweakDBPackedString]
+    ) -> [QueryMatchSet] {
+        let byString = Self.indexByString(packed)
+        return queries.map { QueryMatchSet(query: $0, matches: byString[$0] ?? []) }
+    }
+
+    private static func referenceScanStartSummary(
+        mode: AddonProbeTweakDBReferenceScanMode,
+        queryCount: Int,
+        matchCount: Int,
+        limit: Int
+    ) -> String {
+        switch mode {
+        case .none:
+            return "Skipping reference scan for \(queryCount) queries."
+        case .direct:
+            return "Starting direct reference scan for \(queryCount) queries, \(matchCount) query matches, limit \(limit) per query."
+        case .deep:
+            return "Starting deep reference scan for \(queryCount) queries, \(matchCount) query matches, limit \(limit) per query."
+        }
+    }
+
     private static func buildQueryReport(
         query: String,
+        matches: [AddonProbeTweakDBPackedString],
         bytes: [UInt8],
         packed: [AddonProbeTweakDBPackedString],
-        packedOffsetIndex: [Int: Int]
+        referenceResult: ReferenceScanResult,
+        hashCandidates: [AddonProbeTweakDBHashReferenceCandidate],
+        referenceLimit: Int
     ) -> AddonProbeTweakDBPackedStringQueryReport {
-        let matches = packed.filter { $0.string == query }
         let firstMatch = matches.first
-        let referenceTargets = Self.referenceTargets(for: matches)
-        let references = Self.findReferences(bytes: bytes, targets: referenceTargets)
-        let hashCandidates = Self.findHashCandidates(query: query, bytes: bytes)
         let centerOffset = firstMatch?.stringOffset ?? 0
         let centerLength = firstMatch?.length ?? 0
         let hexRange = Self.contextRange(offset: centerOffset, length: centerLength, radius: contextHexRadius, dataCount: bytes.count)
@@ -461,8 +827,10 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
             packedMatches: matches,
             previousStrings: neighbors.previous,
             nextStrings: neighbors.next,
-            references: references,
+            references: referenceResult.references,
             hashCandidates: hashCandidates,
+            referenceLimit: referenceLimit,
+            referencesTruncated: referenceResult.truncated,
             contextHexStartOffset: hexRange.lowerBound,
             contextHex: Self.hex(bytes: bytes, range: hexRange),
             contextASCIIStartOffset: asciiRange.lowerBound,
@@ -485,73 +853,161 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
         return (previous, next)
     }
 
-    private static func referenceTargets(for matches: [AddonProbeTweakDBPackedString]) -> [(kind: AddonProbeTweakDBStringReferenceKind, target: Int)] {
-        var targets: [(AddonProbeTweakDBStringReferenceKind, Int)] = []
-        for entry in matches {
-            targets.append((.absoluteToString, entry.stringOffset))
-            targets.append((.absoluteToTag, entry.tagOffset))
-            targets.append((.relativeFromHereToString, entry.stringOffset))
-            targets.append((.relativeFromHereToTag, entry.tagOffset))
+    private static func referenceScanResults(
+        mode: AddonProbeTweakDBReferenceScanMode,
+        bytes: [UInt8],
+        queryMatches: [QueryMatchSet],
+        referenceLimit: Int
+    ) -> [String: ReferenceScanResult] {
+        var results = Dictionary(uniqueKeysWithValues: queryMatches.map { ($0.query, ReferenceScanResult()) })
+        guard mode != .none, bytes.count >= 4 else { return results }
+
+        var retainedCounts = Dictionary(uniqueKeysWithValues: queryMatches.map { ($0.query, 0) })
+        let directTargets = Self.directReferenceTargets(queryMatches)
+        Self.scanDirectReferences(
+            bytes: bytes,
+            targetsByValue: Self.targetsByUInt32Value(directTargets),
+            referenceLimit: referenceLimit,
+            results: &results,
+            retainedCounts: &retainedCounts
+        )
+
+        if mode == .deep {
+            let relativeTargets = Self.relativeReferenceTargets(queryMatches)
+            Self.scanRelativeReferences(
+                bytes: bytes,
+                targetsByComputedOffset: Self.targetsByComputedOffset(relativeTargets),
+                referenceLimit: referenceLimit,
+                results: &results,
+                retainedCounts: &retainedCounts
+            )
+        }
+        return results
+    }
+
+    private static func directReferenceTargets(_ queryMatches: [QueryMatchSet]) -> [ReferenceScanTarget] {
+        var targets: [ReferenceScanTarget] = []
+        for matchSet in queryMatches where !matchSet.matches.isEmpty {
+            for entry in matchSet.matches {
+                targets.append(ReferenceScanTarget(query: matchSet.query, kind: .absoluteToString, target: entry.stringOffset))
+                targets.append(ReferenceScanTarget(query: matchSet.query, kind: .absoluteToTag, target: entry.tagOffset))
+            }
         }
         return targets
     }
 
-    private static func findReferences(
+    private static func relativeReferenceTargets(_ queryMatches: [QueryMatchSet]) -> [ReferenceScanTarget] {
+        var targets: [ReferenceScanTarget] = []
+        for matchSet in queryMatches where !matchSet.matches.isEmpty {
+            for entry in matchSet.matches {
+                targets.append(ReferenceScanTarget(query: matchSet.query, kind: .relativeFromHereToString, target: entry.stringOffset))
+                targets.append(ReferenceScanTarget(query: matchSet.query, kind: .relativeFromHereToTag, target: entry.tagOffset))
+            }
+        }
+        return targets
+    }
+
+    private static func targetsByUInt32Value(_ targets: [ReferenceScanTarget]) -> [UInt32: [ReferenceScanTarget]] {
+        var result: [UInt32: [ReferenceScanTarget]] = [:]
+        for target in targets where target.target >= 0 && target.target <= Int(UInt32.max) {
+            result[UInt32(target.target), default: []].append(target)
+        }
+        return result
+    }
+
+    private static func targetsByComputedOffset(_ targets: [ReferenceScanTarget]) -> [Int64: [ReferenceScanTarget]] {
+        var result: [Int64: [ReferenceScanTarget]] = [:]
+        for target in targets {
+            result[Int64(target.target), default: []].append(target)
+        }
+        return result
+    }
+
+    private static func scanDirectReferences(
         bytes: [UInt8],
-        targets: [(kind: AddonProbeTweakDBStringReferenceKind, target: Int)]
-    ) -> [AddonProbeTweakDBStringReference] {
-        guard !targets.isEmpty, bytes.count >= 4 else { return [] }
-        let absoluteByValue = Self.absoluteTargetIndex(targets)
-        let relativeTargets = targets.filter { $0.kind == .relativeFromHereToString || $0.kind == .relativeFromHereToTag }
-        var references: [AddonProbeTweakDBStringReference] = []
-        var counts: [AddonProbeTweakDBStringReferenceKind: Int] = [:]
+        targetsByValue: [UInt32: [ReferenceScanTarget]],
+        referenceLimit: Int,
+        results: inout [String: ReferenceScanResult],
+        retainedCounts: inout [String: Int]
+    ) {
+        guard !targetsByValue.isEmpty, bytes.count >= 4 else { return }
         var offset = 0
         while offset <= bytes.count - 4 {
             let value = Self.readUInt32LE(bytes: bytes, offset: offset)
-            if let kinds = absoluteByValue[Int(value)] {
-                for kind in kinds where (counts[kind] ?? 0) < Self.maxReferencesPerQuery {
-                    references.append(AddonProbeTweakDBStringReference(
+            if let targets = targetsByValue[value] {
+                for target in targets {
+                    Self.appendReference(
                         offset: offset,
                         value: value,
-                        kind: kind,
-                        target: Int(value),
-                        nearbyHex: Self.hex(bytes: bytes, range: Self.contextRange(offset: offset, length: 4, radius: 16, dataCount: bytes.count))
-                    ))
-                    counts[kind, default: 0] += 1
-                }
-            }
-            for (kind, target) in relativeTargets {
-                if (counts[kind] ?? 0) >= Self.maxReferencesPerQuery { continue }
-                let computed = Int64(offset) + Int64(Int32(bitPattern: value))
-                if computed == Int64(target) {
-                    references.append(AddonProbeTweakDBStringReference(
-                        offset: offset,
-                        value: value,
-                        kind: kind,
                         target: target,
-                        nearbyHex: Self.hex(bytes: bytes, range: Self.contextRange(offset: offset, length: 4, radius: 16, dataCount: bytes.count))
-                    ))
-                    counts[kind, default: 0] += 1
+                        bytes: bytes,
+                        referenceLimit: referenceLimit,
+                        results: &results,
+                        retainedCounts: &retainedCounts
+                    )
                 }
             }
             offset += 1
         }
-        return references
     }
 
-    private static func absoluteTargetIndex(
-        _ targets: [(kind: AddonProbeTweakDBStringReferenceKind, target: Int)]
-    ) -> [Int: [AddonProbeTweakDBStringReferenceKind]] {
-        var index: [Int: [AddonProbeTweakDBStringReferenceKind]] = [:]
-        for (kind, target) in targets {
-            switch kind {
-            case .absoluteToString, .absoluteToTag:
-                index[target, default: []].append(kind)
-            case .relativeFromHereToString, .relativeFromHereToTag:
-                continue
+    private static func scanRelativeReferences(
+        bytes: [UInt8],
+        targetsByComputedOffset: [Int64: [ReferenceScanTarget]],
+        referenceLimit: Int,
+        results: inout [String: ReferenceScanResult],
+        retainedCounts: inout [String: Int]
+    ) {
+        guard !targetsByComputedOffset.isEmpty, bytes.count >= 4 else { return }
+        var offset = 0
+        while offset <= bytes.count - 4 {
+            let value = Self.readUInt32LE(bytes: bytes, offset: offset)
+            let computed = Int64(offset) + Int64(Int32(bitPattern: value))
+            if let targets = targetsByComputedOffset[computed] {
+                for target in targets {
+                    Self.appendReference(
+                        offset: offset,
+                        value: value,
+                        target: target,
+                        bytes: bytes,
+                        referenceLimit: referenceLimit,
+                        results: &results,
+                        retainedCounts: &retainedCounts
+                    )
+                }
             }
+            offset += 1
         }
-        return index
+    }
+
+    private static func appendReference(
+        offset: Int,
+        value: UInt32,
+        target: ReferenceScanTarget,
+        bytes: [UInt8],
+        referenceLimit: Int,
+        results: inout [String: ReferenceScanResult],
+        retainedCounts: inout [String: Int]
+    ) {
+        guard results[target.query] != nil else { return }
+        guard referenceLimit > 0 else {
+            results[target.query]?.truncated = true
+            return
+        }
+        let count = retainedCounts[target.query] ?? 0
+        guard count < referenceLimit else {
+            results[target.query]?.truncated = true
+            return
+        }
+        let range = Self.contextRange(offset: offset, length: 4, radius: 16, dataCount: bytes.count)
+        results[target.query]?.references.append(AddonProbeTweakDBStringReference(
+            offset: offset,
+            value: value,
+            kind: target.kind,
+            target: target.target,
+            nearbyHex: Self.hex(bytes: bytes, range: range)
+        ))
+        retainedCounts[target.query] = count + 1
     }
 
     // MARK: - Hash search
@@ -646,10 +1102,11 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
 
     private static func regions(
         packed: [AddonProbeTweakDBPackedString],
-        bytes: [UInt8]
+        bytes: [UInt8],
+        referenceScanMode: AddonProbeTweakDBReferenceScanMode
     ) -> [AddonProbeTweakDBPackedStringRegion] {
         var regions = denseRegions(packed)
-        if let referenceRegion = referenceTableRegion(packed: packed, bytes: bytes) {
+        if referenceScanMode == .deep, let referenceRegion = referenceTableRegion(packed: packed, bytes: bytes) {
             regions.append(referenceRegion)
         }
         if let recordRegion = repeatedRecordRegion(packed) {
@@ -777,14 +1234,6 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
         return result
     }
 
-    private static func indexByStringOffset(_ packed: [AddonProbeTweakDBPackedString]) -> [Int: Int] {
-        var result: [Int: Int] = [:]
-        for (index, entry) in packed.enumerated() {
-            result[entry.stringOffset] = index
-        }
-        return result
-    }
-
     private static func indexByString(_ packed: [AddonProbeTweakDBPackedString]) -> [String: [AddonProbeTweakDBPackedString]] {
         Dictionary(grouping: packed, by: \.string)
     }
@@ -872,7 +1321,8 @@ public struct TweakDBPackedStringAnalyzer: Sendable {
     private static func writeQueryReportText(_ queryReports: [AddonProbeTweakDBPackedStringQueryReport], to url: URL) throws {
         var lines: [String] = []
         for report in queryReports {
-            lines.append("[query] \(report.query) packedMatches=\(report.packedMatches.count) references=\(report.references.count)")
+            let truncation = report.referencesTruncated ? " truncated=true limit=\(report.referenceLimit)" : ""
+            lines.append("[query] \(report.query) packedMatches=\(report.packedMatches.count) references=\(report.references.count)\(truncation)")
             for match in report.packedMatches {
                 lines.append("packed tag=\(match.tagOffset) string=\(match.stringOffset) len=\(match.length) enc=\(match.encoding.rawValue) value=\(match.string)")
             }
@@ -934,13 +1384,28 @@ public enum AddonProbeTweakDBPackedStringAnalysisFormatter {
             "SHA-256: \(report.sha256)",
             "Packed strings: \(report.packedStringCount)",
             "  fixstr=\(report.encodingCounts["fixstr"] ?? 0) str8=\(report.encodingCounts["str8"] ?? 0) str16=\(report.encodingCounts["str16"] ?? 0) str32=\(report.encodingCounts["str32"] ?? 0)",
+            "Reference scan: \(report.referenceScanMode.rawValue) limit=\(report.referenceLimit)",
             "Printable strings: \(report.stringSetComparison.printableCount) (overlap with packed: \(report.stringSetComparison.overlap))",
             "Packed only: \(report.stringSetComparison.packedOnlyCount) | Printable only: \(report.stringSetComparison.printableOnlyCount)",
             "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
             "Report: \(PathSafety.redactUserPath(report.reportPath))",
             "Packed strings TSV: \(PathSafety.redactUserPath(report.packedStringsTablePath))"
         ]
+        if let maxPackedStrings = report.maxPackedStrings {
+            lines.append("Max packed strings: \(maxPackedStrings)")
+        }
+        let truncatedQueries = report.queryReports.filter(\.referencesTruncated)
+        if !truncatedQueries.isEmpty {
+            lines.append("Reference truncation: \(truncatedQueries.count) queries truncated at limit \(report.referenceLimit)")
+        }
         appendList("Queries", report.queries, to: &lines)
+        if !report.phaseTimings.isEmpty {
+            lines.append("")
+            lines.append("Phase timings:")
+            for timing in report.phaseTimings {
+                lines.append("- \(timing.phase): \(formatSeconds(timing.elapsedSeconds)) total=\(formatSeconds(timing.totalElapsedSeconds)) - \(timing.summary)")
+            }
+        }
         appendList("Warnings", report.warnings, to: &lines)
         return lines.joined(separator: "\n")
     }
@@ -959,6 +1424,10 @@ public enum AddonProbeTweakDBPackedStringAnalysisFormatter {
         if values.count > 50 {
             lines.append("- ... \(values.count - 50) more")
         }
+    }
+
+    private static func formatSeconds(_ seconds: Double) -> String {
+        String(format: "%.3fs", seconds)
     }
 }
 
