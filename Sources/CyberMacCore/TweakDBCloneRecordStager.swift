@@ -80,6 +80,20 @@ public struct AddonProbeTweakDBCloneFlatPlan: Codable, Equatable, Sendable {
     public let unresolved: Bool
 }
 
+public struct AddonProbeTweakDBCloneRecordNeighbor: Codable, Equatable, Sendable {
+    public let tableIndex: Int
+    public let recordIDHex: String
+    public let recordName: String?
+}
+
+public struct AddonProbeTweakDBCloneTouchedFlatKeyTable: Codable, Equatable, Sendable {
+    public let typeHashHex: String
+    public let typeName: String?
+    public let keyCount: Int
+    public let keyTableSortedByID: Bool
+    public let firstUnsortedKeyPair: AddonProbeTweakDBIDOrderIssue?
+}
+
 public struct AddonProbeTweakDBCloneRecordReport: Codable, Equatable, Sendable {
     public let filePath: String
     public let outputDirectoryPath: String
@@ -93,6 +107,11 @@ public struct AddonProbeTweakDBCloneRecordReport: Codable, Equatable, Sendable {
     public let originalSize: Int
     public let stagedSize: Int
     public let stagedSHA256: String
+    public let newRecordSortedIndex: Int
+    public let previousRecord: AddonProbeTweakDBCloneRecordNeighbor?
+    public let nextRecord: AddonProbeTweakDBCloneRecordNeighbor?
+    public let stagedRecordsSortedByID: Bool
+    public let touchedFlatKeyTables: [AddonProbeTweakDBCloneTouchedFlatKeyTable]
     public let knownSchemaPropertyCount: Int
     public let clonedFlats: [AddonProbeTweakDBCloneFlatPlan]
     public let appliedOverrides: [AddonProbeTweakDBCloneFlatPlan]
@@ -103,6 +122,209 @@ public struct AddonProbeTweakDBCloneRecordReport: Codable, Equatable, Sendable {
     public let reportPath: String
     public let summaryPath: String
     public let verificationReportPath: String?
+}
+
+public struct AddonProbeTweakDBOverrideFlatRequest: Sendable {
+    public let fileURL: URL
+    public let outputDirectoryURL: URL
+    public let record: String
+    public let property: String
+    public let cNameValue: String
+
+    public init(
+        fileURL: URL,
+        outputDirectoryURL: URL,
+        record: String,
+        property: String,
+        cNameValue: String
+    ) {
+        self.fileURL = fileURL
+        self.outputDirectoryURL = outputDirectoryURL
+        self.record = record
+        self.property = property
+        self.cNameValue = cNameValue
+    }
+}
+
+public enum AddonProbeTweakDBOverrideFlatConclusion: String, Codable, Equatable, Sendable {
+    case stagedOverrideProduced
+    case stagedOverrideParsed
+    case existingRecordResolved
+    case existingFlatResolved
+    case offlineValueVerified
+    case checksumUnverified
+    case writerIncomplete
+    case failed
+}
+
+public struct AddonProbeTweakDBOverrideFlatReport: Codable, Equatable, Sendable {
+    public let filePath: String
+    public let outputDirectoryPath: String
+    public let stagedFilePath: String
+    public let record: String
+    public let recordIDHex: String
+    public let property: String
+    public let flatIDHex: String
+    public let typeName: String
+    public let typeHashHex: String
+    public let originalValue: String?
+    public let newValue: String
+    public let originalValueIndex: Int
+    public let newValueIndex: Int
+    public let cNameValueCountBefore: Int
+    public let cNameValueCountAfter: Int
+    public let cNameValueReused: Bool
+    public let cNameValueAppended: Bool
+    public let keyTableCountBefore: Int
+    public let keyTableCountAfter: Int
+    public let keyTableCountChanged: Bool
+    public let keyValueIndexChanged: Bool
+    public let valueBlockChanged: Bool
+    public let cNamePoolChanged: Bool
+    public let touchedFlatKeyTable: AddonProbeTweakDBCloneTouchedFlatKeyTable
+    public let originalSize: Int
+    public let stagedSize: Int
+    public let stagedSHA256: String
+    public let verificationSucceeded: Bool
+    public let verificationStatus: String
+    public let verification: AddonProbeTweakDBRecordTrace?
+    public let conclusions: [AddonProbeTweakDBOverrideFlatConclusion]
+    public let warnings: [String]
+    public let reportPath: String
+    public let summaryPath: String
+    public let verificationReportPath: String?
+}
+
+public struct AddonProbeTweakDBDualOverrideFlatRequest: Sendable {
+    public let baseFileURL: URL
+    public let ep1FileURL: URL
+    public let outputDirectoryURL: URL
+    public let record: String
+    public let property: String
+    public let cNameValue: String
+
+    public init(
+        baseFileURL: URL,
+        ep1FileURL: URL,
+        outputDirectoryURL: URL,
+        record: String,
+        property: String,
+        cNameValue: String
+    ) {
+        self.baseFileURL = baseFileURL
+        self.ep1FileURL = ep1FileURL
+        self.outputDirectoryURL = outputDirectoryURL
+        self.record = record
+        self.property = property
+        self.cNameValue = cNameValue
+    }
+}
+
+public enum AddonProbeTweakDBDualOverrideFlatConclusion: String, Codable, Equatable, Sendable {
+    case stagedBaseOverrideProduced
+    case stagedEP1OverrideProduced
+    case baseOfflineValueVerified
+    case ep1OfflineValueVerified
+    case checksumUnverified
+    case writerIncomplete
+    case failed
+}
+
+public struct AddonProbeTweakDBDualOverrideFlatReport: Codable, Equatable, Sendable {
+    public let baseFilePath: String
+    public let ep1FilePath: String
+    public let outputDirectoryPath: String
+    public let stagedBaseFilePath: String
+    public let stagedEP1FilePath: String
+    public let record: String
+    public let property: String
+    public let newValue: String
+    public let baseReport: AddonProbeTweakDBOverrideFlatReport
+    public let ep1Report: AddonProbeTweakDBOverrideFlatReport
+    public let baseVerificationSucceeded: Bool
+    public let ep1VerificationSucceeded: Bool
+    public let verificationSucceeded: Bool
+    public let baseVerificationStatus: String
+    public let ep1VerificationStatus: String
+    public let conclusions: [AddonProbeTweakDBDualOverrideFlatConclusion]
+    public let warnings: [String]
+    public let reportPath: String
+    public let summaryPath: String
+}
+
+public struct AddonProbeTweakDBDualCloneRecordRequest: Sendable {
+    public let baseFileURL: URL
+    public let ep1FileURL: URL
+    public let outputDirectoryURL: URL
+    public let sourceRecord: String
+    public let newRecord: String
+    public let overrides: [AddonProbeTweakDBCloneOverride]
+
+    public init(
+        baseFileURL: URL,
+        ep1FileURL: URL,
+        outputDirectoryURL: URL,
+        sourceRecord: String,
+        newRecord: String,
+        overrides: [AddonProbeTweakDBCloneOverride] = []
+    ) {
+        self.baseFileURL = baseFileURL
+        self.ep1FileURL = ep1FileURL
+        self.outputDirectoryURL = outputDirectoryURL
+        self.sourceRecord = sourceRecord
+        self.newRecord = newRecord
+        self.overrides = overrides
+    }
+}
+
+public enum AddonProbeTweakDBDualCloneRecordConclusion: String, Codable, Equatable, Sendable {
+    case stagedBaseCloneProduced
+    case stagedEP1CloneProduced
+    case baseNewRecordResolved
+    case ep1NewRecordResolved
+    case baseRecordsSortedByID
+    case ep1RecordsSortedByID
+    case baseTouchedFlatKeyTablesSorted
+    case ep1TouchedFlatKeyTablesSorted
+    case baseKnownClothingFlatsResolved
+    case ep1KnownClothingFlatsResolved
+    case checksumUnverified
+    case writerIncomplete
+    case failed
+}
+
+public struct AddonProbeTweakDBDualCloneRecordReport: Codable, Equatable, Sendable {
+    public let baseFilePath: String
+    public let ep1FilePath: String
+    public let outputDirectoryPath: String
+    public let stagedBaseFilePath: String
+    public let stagedEP1FilePath: String
+    public let sourceRecord: String
+    public let newRecord: String
+    public let expectedKnownClothingFlatCount: Int
+    public let baseKnownClothingFlatCount: Int
+    public let ep1KnownClothingFlatCount: Int
+    public let baseNewRecordSortedIndex: Int
+    public let ep1NewRecordSortedIndex: Int
+    public let baseReport: AddonProbeTweakDBCloneRecordReport
+    public let ep1Report: AddonProbeTweakDBCloneRecordReport
+    public let baseRuntimeLookupValidation: AddonProbeTweakDBRuntimeLookupValidationReport
+    public let ep1RuntimeLookupValidation: AddonProbeTweakDBRuntimeLookupValidationReport
+    public let baseNewRecordResolved: Bool
+    public let ep1NewRecordResolved: Bool
+    public let baseRecordsSortedByID: Bool
+    public let ep1RecordsSortedByID: Bool
+    public let baseTouchedFlatKeyTablesSorted: Bool
+    public let ep1TouchedFlatKeyTablesSorted: Bool
+    public let baseKnownClothingFlatsResolved: Bool
+    public let ep1KnownClothingFlatsResolved: Bool
+    public let verificationSucceeded: Bool
+    public let baseVerificationStatus: String
+    public let ep1VerificationStatus: String
+    public let conclusions: [AddonProbeTweakDBDualCloneRecordConclusion]
+    public let warnings: [String]
+    public let reportPath: String
+    public let summaryPath: String
 }
 
 public struct TweakDBCloneRecordStager: Sendable {
@@ -137,6 +359,7 @@ public struct TweakDBCloneRecordStager: Sendable {
         let sourceTypeName = Self.recordTypeNameForHash[sourceRecord.typeHash]
 
         var clonedFlats: [AddonProbeTweakDBCloneFlatPlan] = []
+        var touchedFlatTypeIndices = Set<Int>()
         for property in TweakDBStructureInspector.itemRecordProperties {
             let sourceFlatID = Self.tweakDBID("\(request.sourceRecord).\(property)")
             guard let location = parsed.flatLocationByID[sourceFlatID] else { continue }
@@ -149,6 +372,7 @@ public struct TweakDBCloneRecordStager: Sendable {
                 typeIndex: location.typeIndex,
                 keyIndex: parsed.flatTypes[location.typeIndex].keys.count - 1
             )
+            touchedFlatTypeIndices.insert(location.typeIndex)
             clonedFlats.append(AddonProbeTweakDBCloneFlatPlan(
                 property: property,
                 typeName: type.typeName,
@@ -217,6 +441,7 @@ public struct TweakDBCloneRecordStager: Sendable {
                     keyIndex: parsed.flatTypes[typeIndex].keys.count - 1
                 )
             }
+            touchedFlatTypeIndices.insert(typeIndex)
 
             for index in 0..<clonedFlats.count where clonedFlats[index].property == override.property {
                 clonedFlats[index] = AddonProbeTweakDBCloneFlatPlan(
@@ -250,6 +475,27 @@ public struct TweakDBCloneRecordStager: Sendable {
         }
 
         parsed.records.append(StagerRecord(id: newRecordID, typeHash: sourceRecord.typeHash))
+        parsed.records.sort { $0.id < $1.id }
+        for typeIndex in touchedFlatTypeIndices {
+            parsed.flatTypes[typeIndex].keys.sort { $0.id < $1.id }
+        }
+        Self.rebuildFlatLocations(parsed: &parsed)
+        let newRecordSortedIndex = parsed.records.firstIndex { $0.id == newRecordID } ?? -1
+        let stagedRecordsOrderIssue = Self.firstUnsortedPair(ids: parsed.records.map(\.id))
+        let knownRecordNames = Self.knownRecordNamesByID(sourceRecord: request.sourceRecord, newRecord: request.newRecord)
+        let previousRecord = Self.neighborRecord(
+            in: parsed.records,
+            at: newRecordSortedIndex - 1,
+            knownRecordNames: knownRecordNames
+        )
+        let nextRecord = Self.neighborRecord(
+            in: parsed.records,
+            at: newRecordSortedIndex + 1,
+            knownRecordNames: knownRecordNames
+        )
+        let touchedFlatKeyTables = touchedFlatTypeIndices.sorted().map { typeIndex in
+            Self.touchedFlatKeyTableReport(parsed.flatTypes[typeIndex])
+        }
 
         let stagedData = try Self.write(parsed: parsed)
         let stagedDirectory = outputDirectoryURL.appendingPathComponent("staged", isDirectory: true)
@@ -309,6 +555,11 @@ public struct TweakDBCloneRecordStager: Sendable {
             originalSize: originalData.count,
             stagedSize: stagedData.count,
             stagedSHA256: PathSafety.sha256(data: stagedData),
+            newRecordSortedIndex: newRecordSortedIndex,
+            previousRecord: previousRecord,
+            nextRecord: nextRecord,
+            stagedRecordsSortedByID: stagedRecordsOrderIssue == nil,
+            touchedFlatKeyTables: touchedFlatKeyTables,
             knownSchemaPropertyCount: TweakDBStructureInspector.itemRecordProperties.count,
             clonedFlats: clonedFlats,
             appliedOverrides: appliedOverrides,
@@ -326,6 +577,428 @@ public struct TweakDBCloneRecordStager: Sendable {
         if let verification {
             try Self.writeVerification(report.newRecord, trace: verification, to: verificationURL)
         }
+        return report
+    }
+
+    public func stageOverrideFlat(
+        request: AddonProbeTweakDBOverrideFlatRequest
+    ) throws -> AddonProbeTweakDBOverrideFlatReport {
+        let fileURL = request.fileURL.standardizedFileURL
+        let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL
+        try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: fileURL, outputDirectoryURL: outputDirectoryURL)
+        try Self.ensureOutputIsNotInputFile(inputFileURL: fileURL, outputDirectoryURL: outputDirectoryURL)
+        try Self.validateRecordName(request.record, label: "--record")
+        try Self.validateProperty(request.property)
+        try Self.validateFlatPropertyIdentifier(request.property)
+        try Self.validateCNameValue(request.cNameValue)
+        try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
+
+        let originalData = try Self.readData(fileURL)
+        var parsed = try Self.parse(data: originalData)
+
+        let recordID = Self.tweakDBID(request.record)
+        guard parsed.records.contains(where: { $0.id == recordID }) else {
+            throw CyberMacError.invalidInput("Record \(request.record) was not found in \(fileURL.path).")
+        }
+
+        guard let typeIndex = parsed.typeIndexByName["CName"] else {
+            throw CyberMacError.invalidInput("No CName flat type pool found in \(fileURL.path).")
+        }
+
+        let flatID = Self.tweakDBID("\(request.record).\(request.property)")
+        guard let location = parsed.flatLocationByID[flatID] else {
+            throw CyberMacError.invalidInput("Existing flat \(request.record).\(request.property) was not found in \(fileURL.path). Refusing to append a new flat key.")
+        }
+        guard location.typeIndex == typeIndex else {
+            let actualType = parsed.flatTypes[location.typeIndex].typeName ?? Self.hex(parsed.flatTypes[location.typeIndex].typeHash)
+            throw CyberMacError.invalidInput("Existing flat \(request.record).\(request.property) is \(actualType), not CName.")
+        }
+
+        let poolBefore = parsed.flatTypes[typeIndex]
+        let keyBefore = poolBefore.keys[location.keyIndex]
+        let originalValueIndex = keyBefore.valueIndex
+        let originalValue = Self.cNameValue(in: poolBefore, at: originalValueIndex)
+        let keyTableCountBefore = poolBefore.keys.count
+        let cNameValueCountBefore = poolBefore.blockValueCount + poolBefore.appendedValues.count
+
+        let prepared = Self.prepareOverrideValue(override: .cName(property: request.property, value: request.cNameValue))
+        let existingValueIndex = poolBefore.parsedValues.firstIndex { $0.equality == prepared.equality }
+        let existingAppendedIndex = poolBefore.appendedValues.firstIndex { $0.equality == prepared.equality }
+        let newValueIndex: Int
+        let valueAppended: Bool
+        if let existingValueIndex {
+            newValueIndex = existingValueIndex
+            valueAppended = false
+        } else if let existingAppendedIndex {
+            newValueIndex = poolBefore.blockValueCount + existingAppendedIndex
+            valueAppended = false
+        } else {
+            guard poolBefore.isHighConfidence else {
+                throw CyberMacError.invalidInput("Refusing override for '\(request.property)': the CName flat type pool has descriptor/block count mismatch (descriptor=\(poolBefore.descriptorValueCount) block=\(poolBefore.blockValueCount)). Appending a new CName value to a low-confidence section could corrupt the staged TweakDB.")
+            }
+            parsed.flatTypes[typeIndex].appendedValues.append(StagerValue(bytes: prepared.bytes, equality: prepared.equality, summary: prepared.summary))
+            newValueIndex = poolBefore.blockValueCount + parsed.flatTypes[typeIndex].appendedValues.count - 1
+            valueAppended = true
+        }
+
+        parsed.flatTypes[typeIndex].keys[location.keyIndex] = StagerKey(id: flatID, valueIndex: newValueIndex)
+        parsed.flatTypes[typeIndex].keys.sort { $0.id < $1.id }
+        Self.rebuildFlatLocations(parsed: &parsed)
+
+        let touchedFlatKeyTable = Self.touchedFlatKeyTableReport(parsed.flatTypes[typeIndex])
+        let keyTableCountAfter = parsed.flatTypes[typeIndex].keys.count
+        let cNameValueCountAfter = parsed.flatTypes[typeIndex].blockValueCount + parsed.flatTypes[typeIndex].appendedValues.count
+
+        let stagedData = try Self.write(parsed: parsed)
+        let stagedDirectory = outputDirectoryURL.appendingPathComponent("staged", isDirectory: true)
+        try FileManager.default.createDirectory(at: stagedDirectory, withIntermediateDirectories: true)
+        let stagedFileURL = stagedDirectory.appendingPathComponent("tweakdb.bin")
+        try stagedData.write(to: stagedFileURL, options: [.atomic])
+
+        let reportURL = outputDirectoryURL.appendingPathComponent("tweakdb-override-flat-stage.json")
+        let summaryURL = outputDirectoryURL.appendingPathComponent("tweakdb-override-flat-stage.txt")
+        let verificationURL = outputDirectoryURL.appendingPathComponent("tweakdb-override-flat-verification.txt")
+
+        var verification: AddonProbeTweakDBRecordTrace?
+        var verificationSucceeded = false
+        var verificationStatus: String
+        var conclusions: [AddonProbeTweakDBOverrideFlatConclusion] = [
+            .stagedOverrideProduced,
+            .existingRecordResolved,
+            .existingFlatResolved,
+            .checksumUnverified,
+            .writerIncomplete
+        ]
+        var warnings = Self.overrideFlatWarnings()
+
+        do {
+            let reparsed = try Self.parse(data: stagedData)
+            let verifiedValue = Self.cNameFlatValue(parsed: reparsed, record: request.record, property: request.property)
+            verificationSucceeded = verifiedValue == request.cNameValue
+            let traceReport = try TweakDBStructureInspector().trace(request: AddonProbeTweakDBRecordTraceRequest(
+                fileURL: stagedFileURL,
+                record: request.record,
+                outputDirectoryURL: stagedDirectory
+            ))
+            verification = traceReport.trace
+            conclusions.append(.stagedOverrideParsed)
+            if verificationSucceeded {
+                verificationStatus = "\(request.record).\(request.property) == \(request.cNameValue)"
+                conclusions.append(.offlineValueVerified)
+            } else {
+                verificationStatus = "\(request.record).\(request.property) verification failed; parsed value=\(verifiedValue ?? "<missing>")"
+                conclusions.append(.failed)
+            }
+        } catch {
+            verificationStatus = "stagedFileReparseFailed: \(error)"
+            conclusions.append(.failed)
+            warnings.append("Staged file failed to re-parse: \(error)")
+        }
+
+        let report = AddonProbeTweakDBOverrideFlatReport(
+            filePath: fileURL.path,
+            outputDirectoryPath: outputDirectoryURL.path,
+            stagedFilePath: stagedFileURL.path,
+            record: request.record,
+            recordIDHex: Self.hex(recordID),
+            property: request.property,
+            flatIDHex: Self.hex(flatID),
+            typeName: "CName",
+            typeHashHex: Self.hex(parsed.flatTypes[typeIndex].typeHash),
+            originalValue: originalValue,
+            newValue: request.cNameValue,
+            originalValueIndex: originalValueIndex,
+            newValueIndex: newValueIndex,
+            cNameValueCountBefore: cNameValueCountBefore,
+            cNameValueCountAfter: cNameValueCountAfter,
+            cNameValueReused: !valueAppended,
+            cNameValueAppended: valueAppended,
+            keyTableCountBefore: keyTableCountBefore,
+            keyTableCountAfter: keyTableCountAfter,
+            keyTableCountChanged: keyTableCountAfter != keyTableCountBefore,
+            keyValueIndexChanged: newValueIndex != originalValueIndex,
+            valueBlockChanged: valueAppended,
+            cNamePoolChanged: valueAppended,
+            touchedFlatKeyTable: touchedFlatKeyTable,
+            originalSize: originalData.count,
+            stagedSize: stagedData.count,
+            stagedSHA256: PathSafety.sha256(data: stagedData),
+            verificationSucceeded: verificationSucceeded,
+            verificationStatus: verificationStatus,
+            verification: verification,
+            conclusions: conclusions,
+            warnings: warnings,
+            reportPath: reportURL.path,
+            summaryPath: summaryURL.path,
+            verificationReportPath: verification != nil ? verificationURL.path : nil
+        )
+
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        try Self.writeOverrideFlatSummary(report, to: summaryURL)
+        if let verification {
+            try Self.writeVerification(report.record, trace: verification, to: verificationURL)
+        }
+        return report
+    }
+
+    public func stageDualOverrideFlat(
+        request: AddonProbeTweakDBDualOverrideFlatRequest
+    ) throws -> AddonProbeTweakDBDualOverrideFlatReport {
+        let baseFileURL = request.baseFileURL.standardizedFileURL
+        let ep1FileURL = request.ep1FileURL.standardizedFileURL
+        let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL
+        try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: baseFileURL, outputDirectoryURL: outputDirectoryURL)
+        try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: ep1FileURL, outputDirectoryURL: outputDirectoryURL)
+        try Self.validateRecordName(request.record, label: "--record")
+        try Self.validateProperty(request.property)
+        try Self.validateFlatPropertyIdentifier(request.property)
+        try Self.validateCNameValue(request.cNameValue)
+        try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
+
+        let finalStagedDirectory = outputDirectoryURL.appendingPathComponent("staged", isDirectory: true)
+        let finalBaseURL = finalStagedDirectory.appendingPathComponent("tweakdb.bin")
+        let finalEP1URL = finalStagedDirectory.appendingPathComponent("tweakdb_ep1.bin")
+        for stagedURL in [finalBaseURL, finalEP1URL] {
+            if stagedURL.standardizedFileURL.path == baseFileURL.path || stagedURL.standardizedFileURL.path == ep1FileURL.path {
+                throw CyberMacError.invalidInput("Refusing to overwrite input file: \(stagedURL.path)")
+            }
+        }
+
+        let baseWorkDirectory = outputDirectoryURL.appendingPathComponent("base", isDirectory: true)
+        let ep1WorkDirectory = outputDirectoryURL.appendingPathComponent("ep1", isDirectory: true)
+        let baseReport = try stageOverrideFlat(request: AddonProbeTweakDBOverrideFlatRequest(
+            fileURL: baseFileURL,
+            outputDirectoryURL: baseWorkDirectory,
+            record: request.record,
+            property: request.property,
+            cNameValue: request.cNameValue
+        ))
+        let ep1Report = try stageOverrideFlat(request: AddonProbeTweakDBOverrideFlatRequest(
+            fileURL: ep1FileURL,
+            outputDirectoryURL: ep1WorkDirectory,
+            record: request.record,
+            property: request.property,
+            cNameValue: request.cNameValue
+        ))
+
+        try FileManager.default.createDirectory(at: finalStagedDirectory, withIntermediateDirectories: true)
+        for stagedURL in [finalBaseURL, finalEP1URL] where FileManager.default.fileExists(atPath: stagedURL.path) {
+            try FileManager.default.removeItem(at: stagedURL)
+        }
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: baseReport.stagedFilePath), to: finalBaseURL)
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: ep1Report.stagedFilePath), to: finalEP1URL)
+
+        let baseFinalValue = try Self.cNameFlatValue(fileURL: finalBaseURL, record: request.record, property: request.property)
+        let ep1FinalValue = try Self.cNameFlatValue(fileURL: finalEP1URL, record: request.record, property: request.property)
+        let baseVerificationSucceeded = baseFinalValue == request.cNameValue
+        let ep1VerificationSucceeded = ep1FinalValue == request.cNameValue
+        let baseVerificationStatus = baseVerificationSucceeded
+            ? "\(request.record).\(request.property) == \(request.cNameValue)"
+            : "\(request.record).\(request.property) verification failed; parsed value=\(baseFinalValue ?? "<missing>")"
+        let ep1VerificationStatus = ep1VerificationSucceeded
+            ? "\(request.record).\(request.property) == \(request.cNameValue)"
+            : "\(request.record).\(request.property) verification failed; parsed value=\(ep1FinalValue ?? "<missing>")"
+
+        var conclusions: [AddonProbeTweakDBDualOverrideFlatConclusion] = [
+            .stagedBaseOverrideProduced,
+            .stagedEP1OverrideProduced,
+            .checksumUnverified,
+            .writerIncomplete
+        ]
+        if baseVerificationSucceeded {
+            conclusions.append(.baseOfflineValueVerified)
+        }
+        if ep1VerificationSucceeded {
+            conclusions.append(.ep1OfflineValueVerified)
+        }
+        if !baseVerificationSucceeded || !ep1VerificationSucceeded {
+            conclusions.append(.failed)
+        }
+
+        let reportURL = outputDirectoryURL.appendingPathComponent("tweakdb-dual-override-flat-stage.json")
+        let summaryURL = outputDirectoryURL.appendingPathComponent("tweakdb-dual-override-flat-stage.txt")
+        let warnings = Self.dualOverrideFlatWarnings()
+        let report = AddonProbeTweakDBDualOverrideFlatReport(
+            baseFilePath: baseFileURL.path,
+            ep1FilePath: ep1FileURL.path,
+            outputDirectoryPath: outputDirectoryURL.path,
+            stagedBaseFilePath: finalBaseURL.path,
+            stagedEP1FilePath: finalEP1URL.path,
+            record: request.record,
+            property: request.property,
+            newValue: request.cNameValue,
+            baseReport: baseReport,
+            ep1Report: ep1Report,
+            baseVerificationSucceeded: baseVerificationSucceeded,
+            ep1VerificationSucceeded: ep1VerificationSucceeded,
+            verificationSucceeded: baseVerificationSucceeded && ep1VerificationSucceeded,
+            baseVerificationStatus: baseVerificationStatus,
+            ep1VerificationStatus: ep1VerificationStatus,
+            conclusions: conclusions,
+            warnings: warnings,
+            reportPath: reportURL.path,
+            summaryPath: summaryURL.path
+        )
+
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        try Self.writeDualOverrideFlatSummary(report, to: summaryURL)
+        return report
+    }
+
+    public func stageDualCloneRecord(
+        request: AddonProbeTweakDBDualCloneRecordRequest
+    ) throws -> AddonProbeTweakDBDualCloneRecordReport {
+        let baseFileURL = request.baseFileURL.standardizedFileURL
+        let ep1FileURL = request.ep1FileURL.standardizedFileURL
+        let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL
+        try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: baseFileURL, outputDirectoryURL: outputDirectoryURL)
+        try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: ep1FileURL, outputDirectoryURL: outputDirectoryURL)
+        try Self.validateRecordName(request.sourceRecord, label: "--source-record")
+        try Self.validateRecordName(request.newRecord, label: "--new-record")
+        for override in request.overrides {
+            try Self.validateProperty(override.property)
+        }
+        try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
+
+        let finalStagedDirectory = outputDirectoryURL.appendingPathComponent("staged", isDirectory: true)
+        let finalBaseURL = finalStagedDirectory.appendingPathComponent("tweakdb.bin")
+        let finalEP1URL = finalStagedDirectory.appendingPathComponent("tweakdb_ep1.bin")
+        for stagedURL in [finalBaseURL, finalEP1URL] {
+            let stagedPath = stagedURL.standardizedFileURL.path
+            if stagedPath == baseFileURL.path || stagedPath == ep1FileURL.path {
+                throw CyberMacError.invalidInput("Refusing to overwrite input file: \(stagedURL.path)")
+            }
+        }
+
+        let baseWorkDirectory = outputDirectoryURL.appendingPathComponent("base-clone", isDirectory: true)
+        let ep1WorkDirectory = outputDirectoryURL.appendingPathComponent("ep1-clone", isDirectory: true)
+        let baseReport = try stage(request: AddonProbeTweakDBCloneRecordRequest(
+            fileURL: baseFileURL,
+            outputDirectoryURL: baseWorkDirectory,
+            sourceRecord: request.sourceRecord,
+            newRecord: request.newRecord,
+            overrides: request.overrides
+        ))
+        let ep1Report = try stage(request: AddonProbeTweakDBCloneRecordRequest(
+            fileURL: ep1FileURL,
+            outputDirectoryURL: ep1WorkDirectory,
+            sourceRecord: request.sourceRecord,
+            newRecord: request.newRecord,
+            overrides: request.overrides
+        ))
+
+        try FileManager.default.createDirectory(at: finalStagedDirectory, withIntermediateDirectories: true)
+        for stagedURL in [finalBaseURL, finalEP1URL] where FileManager.default.fileExists(atPath: stagedURL.path) {
+            try FileManager.default.removeItem(at: stagedURL)
+        }
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: baseReport.stagedFilePath), to: finalBaseURL)
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: ep1Report.stagedFilePath), to: finalEP1URL)
+
+        let baseLookup = try TweakDBStructureInspector().validateRuntimeLookup(request: AddonProbeTweakDBRuntimeLookupValidationRequest(
+            fileURL: finalBaseURL,
+            record: request.newRecord,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("base-runtime-lookup", isDirectory: true)
+        ))
+        let ep1Lookup = try TweakDBStructureInspector().validateRuntimeLookup(request: AddonProbeTweakDBRuntimeLookupValidationRequest(
+            fileURL: finalEP1URL,
+            record: request.newRecord,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("ep1-runtime-lookup", isDirectory: true)
+        ))
+
+        let expectedKnownFlatCount = TweakDBStructureInspector.itemRecordProperties.count
+        let baseKnownFlatCount = baseReport.verification?.knownFlatCount ?? 0
+        let ep1KnownFlatCount = ep1Report.verification?.knownFlatCount ?? 0
+        let baseNewRecordResolved = baseReport.verification?.recordTableEntry != nil && baseLookup.recordBinaryFound
+        let ep1NewRecordResolved = ep1Report.verification?.recordTableEntry != nil && ep1Lookup.recordBinaryFound
+        let baseRecordsSortedByID = baseReport.stagedRecordsSortedByID && baseLookup.recordsSortedByID
+        let ep1RecordsSortedByID = ep1Report.stagedRecordsSortedByID && ep1Lookup.recordsSortedByID
+        let baseTouchedFlatKeyTablesSorted = baseReport.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID)
+        let ep1TouchedFlatKeyTablesSorted = ep1Report.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID)
+        let baseKnownClothingFlatsResolved = baseKnownFlatCount == expectedKnownFlatCount &&
+            baseLookup.flatValidations.count == expectedKnownFlatCount &&
+            baseLookup.flatValidations.allSatisfy { $0.binaryFound && $0.keyTableSortedByID }
+        let ep1KnownClothingFlatsResolved = ep1KnownFlatCount == expectedKnownFlatCount &&
+            ep1Lookup.flatValidations.count == expectedKnownFlatCount &&
+            ep1Lookup.flatValidations.allSatisfy { $0.binaryFound && $0.keyTableSortedByID }
+
+        let baseVerificationStatus = [
+            "newRecordBinaryLookup=\(baseLookup.recordBinaryFound)",
+            "recordsSortedByID=\(baseRecordsSortedByID)",
+            "touchedFlatKeyTablesSorted=\(baseTouchedFlatKeyTablesSorted)",
+            "knownClothingFlats=\(baseKnownFlatCount)/\(expectedKnownFlatCount)"
+        ].joined(separator: "; ")
+        let ep1VerificationStatus = [
+            "newRecordBinaryLookup=\(ep1Lookup.recordBinaryFound)",
+            "recordsSortedByID=\(ep1RecordsSortedByID)",
+            "touchedFlatKeyTablesSorted=\(ep1TouchedFlatKeyTablesSorted)",
+            "knownClothingFlats=\(ep1KnownFlatCount)/\(expectedKnownFlatCount)"
+        ].joined(separator: "; ")
+
+        var conclusions: [AddonProbeTweakDBDualCloneRecordConclusion] = [
+            .stagedBaseCloneProduced,
+            .stagedEP1CloneProduced,
+            .checksumUnverified,
+            .writerIncomplete
+        ]
+        if baseNewRecordResolved { conclusions.append(.baseNewRecordResolved) }
+        if ep1NewRecordResolved { conclusions.append(.ep1NewRecordResolved) }
+        if baseRecordsSortedByID { conclusions.append(.baseRecordsSortedByID) }
+        if ep1RecordsSortedByID { conclusions.append(.ep1RecordsSortedByID) }
+        if baseTouchedFlatKeyTablesSorted { conclusions.append(.baseTouchedFlatKeyTablesSorted) }
+        if ep1TouchedFlatKeyTablesSorted { conclusions.append(.ep1TouchedFlatKeyTablesSorted) }
+        if baseKnownClothingFlatsResolved { conclusions.append(.baseKnownClothingFlatsResolved) }
+        if ep1KnownClothingFlatsResolved { conclusions.append(.ep1KnownClothingFlatsResolved) }
+
+        let verificationSucceeded = baseNewRecordResolved &&
+            ep1NewRecordResolved &&
+            baseRecordsSortedByID &&
+            ep1RecordsSortedByID &&
+            baseTouchedFlatKeyTablesSorted &&
+            ep1TouchedFlatKeyTablesSorted &&
+            baseKnownClothingFlatsResolved &&
+            ep1KnownClothingFlatsResolved
+        if !verificationSucceeded {
+            conclusions.append(.failed)
+        }
+
+        let reportURL = outputDirectoryURL.appendingPathComponent("tweakdb-dual-clone-record-stage.json")
+        let summaryURL = outputDirectoryURL.appendingPathComponent("tweakdb-dual-clone-record-stage.txt")
+        let report = AddonProbeTweakDBDualCloneRecordReport(
+            baseFilePath: baseFileURL.path,
+            ep1FilePath: ep1FileURL.path,
+            outputDirectoryPath: outputDirectoryURL.path,
+            stagedBaseFilePath: finalBaseURL.path,
+            stagedEP1FilePath: finalEP1URL.path,
+            sourceRecord: request.sourceRecord,
+            newRecord: request.newRecord,
+            expectedKnownClothingFlatCount: expectedKnownFlatCount,
+            baseKnownClothingFlatCount: baseKnownFlatCount,
+            ep1KnownClothingFlatCount: ep1KnownFlatCount,
+            baseNewRecordSortedIndex: baseReport.newRecordSortedIndex,
+            ep1NewRecordSortedIndex: ep1Report.newRecordSortedIndex,
+            baseReport: baseReport,
+            ep1Report: ep1Report,
+            baseRuntimeLookupValidation: baseLookup,
+            ep1RuntimeLookupValidation: ep1Lookup,
+            baseNewRecordResolved: baseNewRecordResolved,
+            ep1NewRecordResolved: ep1NewRecordResolved,
+            baseRecordsSortedByID: baseRecordsSortedByID,
+            ep1RecordsSortedByID: ep1RecordsSortedByID,
+            baseTouchedFlatKeyTablesSorted: baseTouchedFlatKeyTablesSorted,
+            ep1TouchedFlatKeyTablesSorted: ep1TouchedFlatKeyTablesSorted,
+            baseKnownClothingFlatsResolved: baseKnownClothingFlatsResolved,
+            ep1KnownClothingFlatsResolved: ep1KnownClothingFlatsResolved,
+            verificationSucceeded: verificationSucceeded,
+            baseVerificationStatus: baseVerificationStatus,
+            ep1VerificationStatus: ep1VerificationStatus,
+            conclusions: conclusions,
+            warnings: Self.dualCloneRecordWarnings(expectedKnownFlatCount: expectedKnownFlatCount),
+            reportPath: reportURL.path,
+            summaryPath: summaryURL.path
+        )
+
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        try Self.writeDualCloneRecordSummary(report, to: summaryURL)
         return report
     }
 
@@ -712,14 +1385,13 @@ public struct TweakDBCloneRecordStager: Sendable {
                     output.append(value.bytes)
                 }
             }
-            let sortedKeys = type.keys.sorted { $0.id < $1.id }
-            output.append(littleEndianBytes32(UInt32(sortedKeys.count)))
-            for key in sortedKeys {
+            output.append(littleEndianBytes32(UInt32(type.keys.count)))
+            for key in type.keys {
                 output.append(littleEndianBytes64(key.id))
                 output.append(littleEndianBytes32(UInt32(bitPattern: Int32(key.valueIndex))))
             }
             let descriptorValueCount = type.descriptorValueCount + type.appendedValues.count
-            descriptorRows.append((type.typeHash, descriptorValueCount, sortedKeys.count, valueBlockOffset))
+            descriptorRows.append((type.typeHash, descriptorValueCount, type.keys.count, valueBlockOffset))
         }
 
         var descriptorOffset = descriptorTableStart
@@ -822,6 +1494,65 @@ public struct TweakDBCloneRecordStager: Sendable {
         return try Data(contentsOf: url, options: [.mappedIfSafe])
     }
 
+    private static func rebuildFlatLocations(parsed: inout StagerFile) {
+        var locations: [UInt64: StagerFlatLocation] = [:]
+        for typeIndex in parsed.flatTypes.indices {
+            for keyIndex in parsed.flatTypes[typeIndex].keys.indices {
+                locations[parsed.flatTypes[typeIndex].keys[keyIndex].id] = StagerFlatLocation(
+                    typeIndex: typeIndex,
+                    keyIndex: keyIndex
+                )
+            }
+        }
+        parsed.flatLocationByID = locations
+    }
+
+    private static func firstUnsortedPair(ids: [UInt64]) -> AddonProbeTweakDBIDOrderIssue? {
+        guard ids.count > 1 else { return nil }
+        for index in 1..<ids.count where ids[index - 1] > ids[index] {
+            return AddonProbeTweakDBIDOrderIssue(
+                previousIndex: index - 1,
+                previousIDHex: hex(ids[index - 1]),
+                currentIndex: index,
+                currentIDHex: hex(ids[index])
+            )
+        }
+        return nil
+    }
+
+    private static func touchedFlatKeyTableReport(_ type: StagerFlatType) -> AddonProbeTweakDBCloneTouchedFlatKeyTable {
+        let issue = firstUnsortedPair(ids: type.keys.map(\.id))
+        return AddonProbeTweakDBCloneTouchedFlatKeyTable(
+            typeHashHex: hex(type.typeHash),
+            typeName: type.typeName,
+            keyCount: type.keys.count,
+            keyTableSortedByID: issue == nil,
+            firstUnsortedKeyPair: issue
+        )
+    }
+
+    private static func knownRecordNamesByID(sourceRecord: String, newRecord: String) -> [UInt64: String] {
+        var namesByID: [UInt64: String] = [:]
+        for recordName in AddonProbeManager.orderedUnique([sourceRecord, newRecord] + TweakDBStructureInspector.defaultRecords) {
+            namesByID[tweakDBID(recordName)] = recordName
+        }
+        return namesByID
+    }
+
+    private static func neighborRecord(
+        in records: [StagerRecord],
+        at index: Int,
+        knownRecordNames: [UInt64: String]
+    ) -> AddonProbeTweakDBCloneRecordNeighbor? {
+        guard records.indices.contains(index) else { return nil }
+        let record = records[index]
+        return AddonProbeTweakDBCloneRecordNeighbor(
+            tableIndex: index,
+            recordIDHex: hex(record.id),
+            recordName: knownRecordNames[record.id]
+        )
+    }
+
     private static func ensureOutputIsNotInsideInspectedApp(inputFileURL: URL, outputDirectoryURL: URL) throws {
         let components = inputFileURL.standardizedFileURL.pathComponents
         if let appIndex = components.firstIndex(where: { $0.hasSuffix(".app") }) {
@@ -856,6 +1587,53 @@ public struct TweakDBCloneRecordStager: Sendable {
         guard !trimmed.isEmpty else {
             throw CyberMacError.invalidInput("Override property name must not be empty")
         }
+    }
+
+    private static func validateFlatPropertyIdentifier(_ name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.allSatisfy(isAllowedRedscriptIdentifierCharacter) else {
+            throw CyberMacError.invalidInput("Override property contains unsupported characters: \(name). Allowed: A-Z, a-z, 0-9, '_'.")
+        }
+    }
+
+    private static func validateCNameValue(_ value: String) throws {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw CyberMacError.invalidInput("CName override value must not be empty")
+        }
+        guard trimmed == value else {
+            throw CyberMacError.invalidInput("CName override value must not have leading or trailing whitespace: \(value)")
+        }
+        guard value.allSatisfy(isAllowedCNameValueCharacter) else {
+            throw CyberMacError.invalidInput("CName override value contains unsupported characters: \(value). Allowed: A-Z, a-z, 0-9, '_', '-', '.', ':', '/'.")
+        }
+    }
+
+    private static func isAllowedRedscriptIdentifierCharacter(_ character: Character) -> Bool {
+        for scalar in character.unicodeScalars {
+            let value = scalar.value
+            let isUpper = (0x41...0x5A).contains(value)
+            let isLower = (0x61...0x7A).contains(value)
+            let isDigit = (0x30...0x39).contains(value)
+            if !(isUpper || isLower || isDigit || scalar == "_") {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func isAllowedCNameValueCharacter(_ character: Character) -> Bool {
+        for scalar in character.unicodeScalars {
+            let value = scalar.value
+            let isUpper = (0x41...0x5A).contains(value)
+            let isLower = (0x61...0x7A).contains(value)
+            let isDigit = (0x30...0x39).contains(value)
+            let isPunct = scalar == "_" || scalar == "-" || scalar == "." || scalar == ":" || scalar == "/"
+            if !(isUpper || isLower || isDigit || isPunct) {
+                return false
+            }
+        }
+        return true
     }
 
     private static func validateOffset(_ offset: Int, count: Int, label: String) throws {
@@ -918,12 +1696,74 @@ public struct TweakDBCloneRecordStager: Sendable {
         String(format: "0x%016llx", value)
     }
 
+    private static func cNameValue(in type: StagerFlatType, at valueIndex: Int) -> String? {
+        guard valueIndex >= 0 else { return nil }
+        if valueIndex < type.parsedValues.count,
+           case .cName(let value) = type.parsedValues[valueIndex].equality {
+            return value
+        }
+        let appendedIndex = valueIndex - type.blockValueCount
+        if appendedIndex >= 0,
+           appendedIndex < type.appendedValues.count,
+           case .cName(let value) = type.appendedValues[appendedIndex].equality {
+            return value
+        }
+        return nil
+    }
+
+    private static func cNameFlatValue(parsed: StagerFile, record: String, property: String) -> String? {
+        let flatID = tweakDBID("\(record).\(property)")
+        guard let location = parsed.flatLocationByID[flatID],
+              parsed.flatTypes.indices.contains(location.typeIndex),
+              parsed.flatTypes[location.typeIndex].keys.indices.contains(location.keyIndex)
+        else {
+            return nil
+        }
+        let type = parsed.flatTypes[location.typeIndex]
+        guard type.typeName == "CName" else { return nil }
+        let valueIndex = type.keys[location.keyIndex].valueIndex
+        return cNameValue(in: type, at: valueIndex)
+    }
+
+    private static func cNameFlatValue(fileURL: URL, record: String, property: String) throws -> String? {
+        let data = try readData(fileURL)
+        let parsed = try parse(data: data)
+        return cNameFlatValue(parsed: parsed, record: record, property: property)
+    }
+
     private static func commonWarnings() -> [String] {
         [
             "Staged clone is experimental. Checksum is preserved verbatim and not recomputed.",
             "Cloned flat keys reuse the source value indices; only override flats append new values.",
             "Property names are resolved via CyberMac's known item schema list, so non-schema flats remain in place but cannot be re-keyed.",
             "Staged output is for offline experimentation only. No game files were modified."
+        ]
+    }
+
+    private static func overrideFlatWarnings() -> [String] {
+        [
+            "Existing-flat override is experimental. Checksum is preserved verbatim and not recomputed.",
+            "This stages a new tweakdb.bin only; no game files were modified.",
+            "The command refuses to append cloned records or new flat keys. It only updates an existing flat key's value index.",
+            "If the requested CName value is absent, it is appended to the CName typed value pool."
+        ]
+    }
+
+    private static func dualOverrideFlatWarnings() -> [String] {
+        [
+            "Dual existing-flat override stages patched base and EP1 TweakDB blobs only; no game files were modified.",
+            "Both staged blobs preserve their original checksums verbatim and do not recompute them.",
+            "Final files to install are staged/tweakdb.bin and staged/tweakdb_ep1.bin.",
+            "Use runtime-item-diagnostic-grant --money-markers --check-cname to determine whether runtime sees the patched CName."
+        ]
+    }
+
+    private static func dualCloneRecordWarnings(expectedKnownFlatCount: Int) -> [String] {
+        [
+            "Dual clone stage writes install-ready staged/tweakdb.bin and staged/tweakdb_ep1.bin; no game files were modified.",
+            "Both staged blobs preserve their original checksums verbatim and do not recompute them.",
+            "Final files must be installed together into Data/r6/cache/tweakdb.bin and Data/r6/cache/tweakdb_ep1.bin.",
+            "Offline verification expects \(expectedKnownFlatCount) known Clothing flats to resolve in each staged blob."
         ]
     }
 
@@ -935,12 +1775,27 @@ public struct TweakDBCloneRecordStager: Sendable {
             "Staged: \(PathSafety.redactUserPath(report.stagedFilePath)) (size=\(report.stagedSize))",
             "Source record: \(report.sourceRecord) id=\(report.sourceRecordIDHex) type=\(report.sourceRecordTypeName ?? report.sourceRecordTypeHashHex)",
             "New record: \(report.newRecord) id=\(report.newRecordIDHex)",
+            "New record sorted index: \(report.newRecordSortedIndex)",
+            "Previous record: \(formatNeighbor(report.previousRecord))",
+            "Next record: \(formatNeighbor(report.nextRecord))",
+            "Staged records sorted by ID: \(report.stagedRecordsSortedByID)",
+            "Touched flat key tables sorted: \(report.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID))",
             "Cloned known-schema flats: \(report.clonedFlats.count) (out of \(report.knownSchemaPropertyCount) known properties tried)",
             "Applied overrides: \(report.appliedOverrides.count)",
             "Verification: \(report.verificationStatus)",
             "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
             ""
         ]
+        if !report.touchedFlatKeyTables.isEmpty {
+            lines.append("Touched flat key tables:")
+            for table in report.touchedFlatKeyTables {
+                lines.append("  \(table.typeName ?? table.typeHashHex) keys=\(table.keyCount) sorted=\(table.keyTableSortedByID)")
+                if let issue = table.firstUnsortedKeyPair {
+                    lines.append("    first unsorted key: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+                }
+            }
+            lines.append("")
+        }
         if !report.clonedFlats.isEmpty {
             lines.append("Cloned flats:")
             for flat in report.clonedFlats {
@@ -962,6 +1817,113 @@ public struct TweakDBCloneRecordStager: Sendable {
             lines.append(contentsOf: report.warnings.map { "- \($0)" })
         }
         try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func writeOverrideFlatSummary(_ report: AddonProbeTweakDBOverrideFlatReport, to url: URL) throws {
+        var lines: [String] = [
+            "CyberMac TweakDB existing flat override stage",
+            "Status: experimental offline writer; no game files were modified.",
+            "Input: \(PathSafety.redactUserPath(report.filePath)) (size=\(report.originalSize))",
+            "Staged: \(PathSafety.redactUserPath(report.stagedFilePath)) (size=\(report.stagedSize))",
+            "Record: \(report.record) id=\(report.recordIDHex)",
+            "Flat: .\(report.property) id=\(report.flatIDHex) type=\(report.typeName)",
+            "Original value: \(report.originalValue ?? "<missing>")",
+            "New value: \(report.newValue)",
+            "Value index: \(report.originalValueIndex) -> \(report.newValueIndex)",
+            "CName value count: \(report.cNameValueCountBefore) -> \(report.cNameValueCountAfter)",
+            "CName value reused: \(report.cNameValueReused)",
+            "CName value appended: \(report.cNameValueAppended)",
+            "Key table count: \(report.keyTableCountBefore) -> \(report.keyTableCountAfter)",
+            "Key table count changed: \(report.keyTableCountChanged)",
+            "Key value index changed: \(report.keyValueIndexChanged)",
+            "Value block changed: \(report.valueBlockChanged)",
+            "CName pool changed: \(report.cNamePoolChanged)",
+            "Touched flat key table sorted: \(report.touchedFlatKeyTable.keyTableSortedByID)",
+            "Verification: \(report.verificationStatus)",
+            "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
+            ""
+        ]
+        if let issue = report.touchedFlatKeyTable.firstUnsortedKeyPair {
+            lines.append("First unsorted key: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+            lines.append("")
+        }
+        if !report.warnings.isEmpty {
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func writeDualOverrideFlatSummary(_ report: AddonProbeTweakDBDualOverrideFlatReport, to url: URL) throws {
+        var lines: [String] = [
+            "CyberMac TweakDB dual existing flat override stage",
+            "Status: experimental offline writer; no game files were modified.",
+            "Base input: \(PathSafety.redactUserPath(report.baseFilePath))",
+            "EP1 input: \(PathSafety.redactUserPath(report.ep1FilePath))",
+            "Base staged: \(PathSafety.redactUserPath(report.stagedBaseFilePath))",
+            "EP1 staged: \(PathSafety.redactUserPath(report.stagedEP1FilePath))",
+            "Record: \(report.record)",
+            "Flat: .\(report.property)",
+            "New value: \(report.newValue)",
+            "Base verification: \(report.baseVerificationStatus)",
+            "EP1 verification: \(report.ep1VerificationStatus)",
+            "Verification succeeded: \(report.verificationSucceeded)",
+            "Base original value: \(report.baseReport.originalValue ?? "<missing>")",
+            "Base value index: \(report.baseReport.originalValueIndex) -> \(report.baseReport.newValueIndex)",
+            "Base CName values: \(report.baseReport.cNameValueCountBefore) -> \(report.baseReport.cNameValueCountAfter)",
+            "Base key table count changed: \(report.baseReport.keyTableCountChanged)",
+            "EP1 original value: \(report.ep1Report.originalValue ?? "<missing>")",
+            "EP1 value index: \(report.ep1Report.originalValueIndex) -> \(report.ep1Report.newValueIndex)",
+            "EP1 CName values: \(report.ep1Report.cNameValueCountBefore) -> \(report.ep1Report.cNameValueCountAfter)",
+            "EP1 key table count changed: \(report.ep1Report.keyTableCountChanged)",
+            "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
+            ""
+        ]
+        if !report.warnings.isEmpty {
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func writeDualCloneRecordSummary(_ report: AddonProbeTweakDBDualCloneRecordReport, to url: URL) throws {
+        var lines: [String] = [
+            "CyberMac TweakDB dual clone record stage",
+            "Status: experimental offline writer; no game files were modified.",
+            "Base input: \(PathSafety.redactUserPath(report.baseFilePath))",
+            "EP1 input: \(PathSafety.redactUserPath(report.ep1FilePath))",
+            "Base staged: \(PathSafety.redactUserPath(report.stagedBaseFilePath))",
+            "EP1 staged: \(PathSafety.redactUserPath(report.stagedEP1FilePath))",
+            "Source record: \(report.sourceRecord)",
+            "New record: \(report.newRecord)",
+            "Base new record sorted index: \(report.baseNewRecordSortedIndex)",
+            "EP1 new record sorted index: \(report.ep1NewRecordSortedIndex)",
+            "Base new record resolved: \(report.baseNewRecordResolved)",
+            "EP1 new record resolved: \(report.ep1NewRecordResolved)",
+            "Base records sorted by ID: \(report.baseRecordsSortedByID)",
+            "EP1 records sorted by ID: \(report.ep1RecordsSortedByID)",
+            "Base touched flat key tables sorted: \(report.baseTouchedFlatKeyTablesSorted)",
+            "EP1 touched flat key tables sorted: \(report.ep1TouchedFlatKeyTablesSorted)",
+            "Base known Clothing flats: \(report.baseKnownClothingFlatCount)/\(report.expectedKnownClothingFlatCount)",
+            "EP1 known Clothing flats: \(report.ep1KnownClothingFlatCount)/\(report.expectedKnownClothingFlatCount)",
+            "Base runtime binary index: \(report.baseRuntimeLookupValidation.recordBinaryIndex.map(String.init) ?? "missing")",
+            "EP1 runtime binary index: \(report.ep1RuntimeLookupValidation.recordBinaryIndex.map(String.init) ?? "missing")",
+            "Base verification: \(report.baseVerificationStatus)",
+            "EP1 verification: \(report.ep1VerificationStatus)",
+            "Verification succeeded: \(report.verificationSucceeded)",
+            "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
+            ""
+        ]
+        if !report.warnings.isEmpty {
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func formatNeighbor(_ neighbor: AddonProbeTweakDBCloneRecordNeighbor?) -> String {
+        guard let neighbor else { return "none" }
+        return neighbor.recordIDHex + (neighbor.recordName.map { " \($0)" } ?? "")
     }
 
     private static func writeVerification(_ recordName: String, trace: AddonProbeTweakDBRecordTrace, to url: URL) throws {
@@ -1089,6 +2051,11 @@ public enum AddonProbeTweakDBCloneRecordFormatter {
             "Source: \(report.sourceRecord) (\(report.sourceRecordIDHex)) type=\(report.sourceRecordTypeName ?? report.sourceRecordTypeHashHex)",
             "New: \(report.newRecord) (\(report.newRecordIDHex))",
             "Sizes: original=\(report.originalSize) staged=\(report.stagedSize)",
+            "New record sorted index: \(report.newRecordSortedIndex)",
+            "Previous record: \(formatNeighbor(report.previousRecord))",
+            "Next record: \(formatNeighbor(report.nextRecord))",
+            "Staged records sorted by ID: \(report.stagedRecordsSortedByID)",
+            "Touched flat key tables sorted: \(report.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID))",
             "Cloned flats: \(report.clonedFlats.count)",
             "Applied overrides: \(report.appliedOverrides.count)",
             "Verification: \(report.verificationStatus)",
@@ -1108,6 +2075,130 @@ public enum AddonProbeTweakDBCloneRecordFormatter {
     }
 
     public static func formatJSON(_ report: AddonProbeTweakDBCloneRecordReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+
+    private static func formatNeighbor(_ neighbor: AddonProbeTweakDBCloneRecordNeighbor?) -> String {
+        guard let neighbor else { return "none" }
+        return neighbor.recordIDHex + (neighbor.recordName.map { " \($0)" } ?? "")
+    }
+}
+
+public enum AddonProbeTweakDBOverrideFlatFormatter {
+    public static func format(_ report: AddonProbeTweakDBOverrideFlatReport) -> String {
+        var lines: [String] = [
+            "CyberMac TweakDB existing flat override stage",
+            "Status: experimental offline writer; no game files were modified.",
+            "Input: \(PathSafety.redactUserPath(report.filePath))",
+            "Staged: \(PathSafety.redactUserPath(report.stagedFilePath))",
+            "Output directory: \(PathSafety.redactUserPath(report.outputDirectoryPath))",
+            "Record: \(report.record) (\(report.recordIDHex))",
+            "Flat: .\(report.property) (\(report.flatIDHex)) type=\(report.typeName)",
+            "Original value: \(report.originalValue ?? "<missing>")",
+            "New value: \(report.newValue)",
+            "Value index: \(report.originalValueIndex) -> \(report.newValueIndex)",
+            "CName values: \(report.cNameValueCountBefore) -> \(report.cNameValueCountAfter)",
+            "CName value reused: \(report.cNameValueReused)",
+            "CName value appended: \(report.cNameValueAppended)",
+            "Key table count changed: \(report.keyTableCountChanged) (\(report.keyTableCountBefore) -> \(report.keyTableCountAfter))",
+            "Key value index changed: \(report.keyValueIndexChanged)",
+            "Value block changed: \(report.valueBlockChanged)",
+            "CName pool changed: \(report.cNamePoolChanged)",
+            "Touched flat key table sorted: \(report.touchedFlatKeyTable.keyTableSortedByID)",
+            "Verification: \(report.verificationStatus)",
+            "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))"
+        ]
+        if let verificationPath = report.verificationReportPath {
+            lines.append("Verification trace: \(PathSafety.redactUserPath(verificationPath))")
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeTweakDBOverrideFlatReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+}
+
+public enum AddonProbeTweakDBDualOverrideFlatFormatter {
+    public static func format(_ report: AddonProbeTweakDBDualOverrideFlatReport) -> String {
+        var lines: [String] = [
+            "CyberMac TweakDB dual existing flat override stage",
+            "Status: experimental offline writer; no game files were modified.",
+            "Base input: \(PathSafety.redactUserPath(report.baseFilePath))",
+            "EP1 input: \(PathSafety.redactUserPath(report.ep1FilePath))",
+            "Base staged: \(PathSafety.redactUserPath(report.stagedBaseFilePath))",
+            "EP1 staged: \(PathSafety.redactUserPath(report.stagedEP1FilePath))",
+            "Output directory: \(PathSafety.redactUserPath(report.outputDirectoryPath))",
+            "Record: \(report.record)",
+            "Flat: .\(report.property)",
+            "New value: \(report.newValue)",
+            "Base verification: \(report.baseVerificationStatus)",
+            "EP1 verification: \(report.ep1VerificationStatus)",
+            "Verification succeeded: \(report.verificationSucceeded)",
+            "Base value index: \(report.baseReport.originalValueIndex) -> \(report.baseReport.newValueIndex)",
+            "EP1 value index: \(report.ep1Report.originalValueIndex) -> \(report.ep1Report.newValueIndex)",
+            "Base key table count changed: \(report.baseReport.keyTableCountChanged)",
+            "EP1 key table count changed: \(report.ep1Report.keyTableCountChanged)",
+            "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))"
+        ]
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeTweakDBDualOverrideFlatReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+}
+
+public enum AddonProbeTweakDBDualCloneRecordFormatter {
+    public static func format(_ report: AddonProbeTweakDBDualCloneRecordReport) -> String {
+        var lines: [String] = [
+            "CyberMac TweakDB dual clone record stage",
+            "Status: experimental offline writer; no game files were modified.",
+            "Base input: \(PathSafety.redactUserPath(report.baseFilePath))",
+            "EP1 input: \(PathSafety.redactUserPath(report.ep1FilePath))",
+            "Base staged: \(PathSafety.redactUserPath(report.stagedBaseFilePath))",
+            "EP1 staged: \(PathSafety.redactUserPath(report.stagedEP1FilePath))",
+            "Output directory: \(PathSafety.redactUserPath(report.outputDirectoryPath))",
+            "Source: \(report.sourceRecord)",
+            "New: \(report.newRecord)",
+            "Base new record sorted index: \(report.baseNewRecordSortedIndex)",
+            "EP1 new record sorted index: \(report.ep1NewRecordSortedIndex)",
+            "Base binary lookup: \(report.baseRuntimeLookupValidation.recordBinaryFound ? "found" : "missing")\(report.baseRuntimeLookupValidation.recordBinaryIndex.map { " index=\($0)" } ?? "")",
+            "EP1 binary lookup: \(report.ep1RuntimeLookupValidation.recordBinaryFound ? "found" : "missing")\(report.ep1RuntimeLookupValidation.recordBinaryIndex.map { " index=\($0)" } ?? "")",
+            "Base records sorted by ID: \(report.baseRecordsSortedByID)",
+            "EP1 records sorted by ID: \(report.ep1RecordsSortedByID)",
+            "Base touched flat key tables sorted: \(report.baseTouchedFlatKeyTablesSorted)",
+            "EP1 touched flat key tables sorted: \(report.ep1TouchedFlatKeyTablesSorted)",
+            "Base known Clothing flats: \(report.baseKnownClothingFlatCount)/\(report.expectedKnownClothingFlatCount)",
+            "EP1 known Clothing flats: \(report.ep1KnownClothingFlatCount)/\(report.expectedKnownClothingFlatCount)",
+            "Verification succeeded: \(report.verificationSucceeded)",
+            "Conclusions: \(report.conclusions.map(\.rawValue).joined(separator: ", "))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))"
+        ]
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeTweakDBDualCloneRecordReport) throws -> String {
         String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
     }
 }

@@ -186,6 +186,7 @@ struct CyberMacCLI {
           cybermac addon-probe stage-assets <mod-path> --target-archive <relative-archive> --profile <profile-id> --out <dir> [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>]
           cybermac addon-probe grant-test <Items.Some_Item_ID> --out <zip-path> [--mod-name <name>]
           cybermac addon-probe grant-test-many <items-file-or-mod-path> --out <zip-path> [--mod-name <name>]
+          cybermac addon-probe runtime-item-diagnostic-grant --item <Items.X> [--item <Items.Y> ...] --out <zip-path> [--mod-name <name>] [--money-markers] [--check-cname <Items.X.prop=value>] [--json]
           cybermac addon-probe atomiic-summary <mod-path> [--json]
           cybermac addon-probe analyze-xl-factory <mod-path> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app [--json]
           cybermac addon-probe stage-xl-factory-registry <mod-path> --archive <relative-official-archive> --out <dir> --cp77tools <path> --game-app /path/to/Cyberpunk.app
@@ -202,7 +203,12 @@ struct CyberMacCLI {
           cybermac addon-probe analyze-tweakdb-item-indexes --file <tweakdb.bin> --strings-analysis <analysis.json> --out <dir> [--query <Items.X>] [--reference-limit <n>] [--json]  # heuristic item-reference scan
           cybermac addon-probe inspect-tweakdb-structure --file <tweakdb.bin> --out <dir> [--json]
           cybermac addon-probe trace-tweakdb-record --file <tweakdb.bin> --record <record> --out <dir> [--json]
+          cybermac addon-probe validate-tweakdb-runtime-lookup --file <tweakdb.bin> --record <Items.X> --out <dir> [--json]
+          cybermac addon-probe stage-tweakdb-override-flat --file <tweakdb.bin> --record <Items.X> --set-cname <prop=val> --out <dir> [--json]
+          cybermac addon-probe stage-tweakdb-override-flat-dual --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --record <Items.X> --set-cname <prop=val> --out <dir> [--json]
           cybermac addon-probe stage-tweakdb-clone-record --file <tweakdb.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--set-cname <prop=val> ...] [--set-string <prop=val> ...] [--set-tweakdbid <prop=val> ...] [--set-lockey <prop=number> ...] [--json]
+          cybermac addon-probe stage-tweakdb-clone-record-dual --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--set-cname <prop=val> ...] [--set-string <prop=val> ...] [--set-tweakdbid <prop=val> ...] [--set-lockey <prop=number> ...] [--json]
+          cybermac addon-probe stage-one-item-clothing-addon <mod-path> --item <Items.X> --profile <profile-id> --out <dir> [--yaml <relative-yaml>] [--source-record <Items.X>] [--target-archive <relative-archive>] [--base <tweakdb.bin>] [--ep1 <tweakdb_ep1.bin>] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--json]
           cybermac addon-probe compare-tweakdb-string-analysis --base <base-analysis.json> --ep1 <ep1-analysis.json> --out <dir> [--json]
           cybermac addon-probe inspect-factory-layer [--out <dir>] [--json] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--try-cr2w-decode]
           cybermac addon-probe analyze-factory-json <decoded-json-root> [--json]
@@ -982,7 +988,7 @@ struct CyberMacCLI {
 
     private func addonProbe() throws {
         guard arguments.count >= 2 else {
-            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|record-layer-probe|record-runtime-probe|compare-base-records|locate-tweakdb-storage|redscript-tweakdb-api-scan|inspect-tweakdb-bin|compare-tweakdb-bin|analyze-tweakdb-strings|analyze-tweakdb-reference-tables|analyze-tweakdb-item-indexes|inspect-tweakdb-structure|trace-tweakdb-record|stage-tweakdb-clone-record|compare-tweakdb-string-analysis|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
+            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|runtime-item-diagnostic-grant|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|record-layer-probe|record-runtime-probe|compare-base-records|locate-tweakdb-storage|redscript-tweakdb-api-scan|inspect-tweakdb-bin|compare-tweakdb-bin|analyze-tweakdb-strings|analyze-tweakdb-reference-tables|analyze-tweakdb-item-indexes|inspect-tweakdb-structure|trace-tweakdb-record|validate-tweakdb-runtime-lookup|stage-tweakdb-override-flat|stage-tweakdb-override-flat-dual|stage-tweakdb-clone-record|stage-tweakdb-clone-record-dual|stage-one-item-clothing-addon|compare-tweakdb-string-analysis|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
         }
 
         switch arguments[1] {
@@ -994,6 +1000,8 @@ struct CyberMacCLI {
             try addonProbeGrantTest()
         case "grant-test-many":
             try addonProbeGrantTestMany()
+        case "runtime-item-diagnostic-grant":
+            try addonProbeRuntimeItemDiagnosticGrant()
         case "atomiic-summary":
             try addonProbeAtomiicSummary()
         case "analyze-xl-factory":
@@ -1026,8 +1034,18 @@ struct CyberMacCLI {
             try addonProbeInspectTweakDBStructure()
         case "trace-tweakdb-record":
             try addonProbeTraceTweakDBRecord()
+        case "validate-tweakdb-runtime-lookup":
+            try addonProbeValidateTweakDBRuntimeLookup()
+        case "stage-tweakdb-override-flat":
+            try addonProbeStageTweakDBOverrideFlat()
+        case "stage-tweakdb-override-flat-dual":
+            try addonProbeStageTweakDBOverrideFlatDual()
         case "stage-tweakdb-clone-record":
             try addonProbeStageTweakDBCloneRecord()
+        case "stage-tweakdb-clone-record-dual":
+            try addonProbeStageTweakDBCloneRecordDual()
+        case "stage-one-item-clothing-addon":
+            try addonProbeStageOneItemClothingAddon()
         case "compare-tweakdb-string-analysis":
             try addonProbeCompareTweakDBStringAnalysis()
         case "inspect-factory-layer":
@@ -1143,6 +1161,35 @@ struct CyberMacCLI {
             modName: optionValue("--mod-name")
         ))
         print(AddonProbeGrantManyFormatter.format(result))
+    }
+
+    private func addonProbeRuntimeItemDiagnosticGrant() throws {
+        let valueFlags: Set<String> = ["--item", "--out", "--mod-name", "--check-cname"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty else {
+            throw CyberMacError.invalidInput("Unexpected positional argument: \(positionals[0]). Usage: cybermac addon-probe runtime-item-diagnostic-grant --item <Items.X> [--item <Items.Y> ...] --out <zip-path> [--mod-name <name>] [--money-markers] [--check-cname <Items.X.prop=value>] [--json]")
+        }
+
+        let itemIDs = optionValues("--item", after: 2)
+        guard !itemIDs.isEmpty else {
+            throw CyberMacError.invalidInput("At least one --item <Items.Some_Item_ID> is required")
+        }
+        guard let outputPath = optionValue("--out") else {
+            throw CyberMacError.invalidInput("Missing --out <zip-path>")
+        }
+
+        let result = try AddonProbeManager(home: home).runtimeItemDiagnosticGrant(request: AddonProbeRuntimeItemDiagnosticGrantRequest(
+            itemIDs: itemIDs,
+            outputZipURL: PathSafety.expandedURL(from: outputPath),
+            modName: optionValue("--mod-name"),
+            moneyMarkers: hasFlag("--money-markers"),
+            cNameChecks: try optionValues("--check-cname", after: 2).map(parseRuntimeCNameCheck)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeRuntimeItemDiagnosticGrantFormatter.formatJSON(result))
+        } else {
+            print(AddonProbeRuntimeItemDiagnosticGrantFormatter.format(result))
+        }
     }
 
     private func addonProbeAtomiicSummary() throws {
@@ -1563,6 +1610,90 @@ struct CyberMacCLI {
         }
     }
 
+    private func addonProbeValidateTweakDBRuntimeLookup() throws {
+        let valueFlags: Set<String> = ["--file", "--record", "--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let record = optionValue("--record"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe validate-tweakdb-runtime-lookup --file <tweakdb.bin> --record <Items.X> --out <dir> [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).validateTweakDBRuntimeLookup(request: AddonProbeTweakDBRuntimeLookupValidationRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            record: record,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath)
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBRuntimeLookupValidationFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBRuntimeLookupValidationFormatter.format(report))
+        }
+        if !report.validationSucceeded {
+            throw SilentExit(code: 1)
+        }
+    }
+
+    private func addonProbeStageTweakDBOverrideFlat() throws {
+        let valueFlags: Set<String> = ["--file", "--record", "--set-cname", "--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        let cNameOverrides = optionValues("--set-cname", after: 2)
+        guard positionals.isEmpty,
+              let filePath = optionValue("--file"),
+              let record = optionValue("--record"),
+              let outputDirectoryPath = optionValue("--out"),
+              cNameOverrides.count == 1
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-tweakdb-override-flat --file <tweakdb.bin> --record <Items.X> --set-cname <prop=val> --out <dir> [--json]")
+        }
+
+        let override = try parseCloneOverridePair(cNameOverrides[0], flag: "--set-cname")
+        let report = try AddonProbeManager(home: home).stageTweakDBOverrideFlat(request: AddonProbeTweakDBOverrideFlatRequest(
+            fileURL: PathSafety.expandedURL(from: filePath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            record: record,
+            property: override.property,
+            cNameValue: override.value
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBOverrideFlatFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBOverrideFlatFormatter.format(report))
+        }
+    }
+
+    private func addonProbeStageTweakDBOverrideFlatDual() throws {
+        let valueFlags: Set<String> = ["--base", "--ep1", "--record", "--set-cname", "--out"]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        let cNameOverrides = optionValues("--set-cname", after: 2)
+        guard positionals.isEmpty,
+              let basePath = optionValue("--base"),
+              let ep1Path = optionValue("--ep1"),
+              let record = optionValue("--record"),
+              let outputDirectoryPath = optionValue("--out"),
+              cNameOverrides.count == 1
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-tweakdb-override-flat-dual --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --record <Items.X> --set-cname <prop=val> --out <dir> [--json]")
+        }
+
+        let override = try parseCloneOverridePair(cNameOverrides[0], flag: "--set-cname")
+        let report = try AddonProbeManager(home: home).stageTweakDBDualOverrideFlat(request: AddonProbeTweakDBDualOverrideFlatRequest(
+            baseFileURL: PathSafety.expandedURL(from: basePath),
+            ep1FileURL: PathSafety.expandedURL(from: ep1Path),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            record: record,
+            property: override.property,
+            cNameValue: override.value
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBDualOverrideFlatFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBDualOverrideFlatFormatter.format(report))
+        }
+    }
+
     private func addonProbeStageTweakDBCloneRecord() throws {
         let valueFlags: Set<String> = [
             "--file", "--source-record", "--new-record", "--out",
@@ -1613,6 +1744,109 @@ struct CyberMacCLI {
         }
     }
 
+    private func addonProbeStageTweakDBCloneRecordDual() throws {
+        let valueFlags: Set<String> = [
+            "--base", "--ep1", "--source-record", "--new-record", "--out",
+            "--set-cname", "--set-string", "--set-tweakdbid", "--set-lockey"
+        ]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let basePath = optionValue("--base"),
+              let ep1Path = optionValue("--ep1"),
+              let sourceRecord = optionValue("--source-record"),
+              let newRecord = optionValue("--new-record"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-tweakdb-clone-record-dual --base <path-to-tweakdb.bin> --ep1 <path-to-tweakdb_ep1.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--set-cname <prop=val> ...] [--set-string <prop=val> ...] [--set-tweakdbid <prop=val> ...] [--set-lockey <prop=number> ...] [--json]")
+        }
+
+        var overrides: [AddonProbeTweakDBCloneOverride] = []
+        for raw in optionValues("--set-cname", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-cname")
+            overrides.append(.cName(property: parts.property, value: parts.value))
+        }
+        for raw in optionValues("--set-string", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-string")
+            overrides.append(.string(property: parts.property, value: parts.value))
+        }
+        for raw in optionValues("--set-tweakdbid", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-tweakdbid")
+            overrides.append(.tweakDBID(property: parts.property, value: parts.value))
+        }
+        for raw in optionValues("--set-lockey", after: 2) {
+            let parts = try parseCloneOverridePair(raw, flag: "--set-lockey")
+            guard let value = UInt64(parts.value) else {
+                throw CyberMacError.invalidInput("--set-lockey value must be a non-negative integer (got '\(parts.value)' for property '\(parts.property)').")
+            }
+            overrides.append(.locKey(property: parts.property, value: value))
+        }
+
+        let report = try AddonProbeManager(home: home).stageTweakDBDualCloneRecord(request: AddonProbeTweakDBDualCloneRecordRequest(
+            baseFileURL: PathSafety.expandedURL(from: basePath),
+            ep1FileURL: PathSafety.expandedURL(from: ep1Path),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            sourceRecord: sourceRecord,
+            newRecord: newRecord,
+            overrides: overrides
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTweakDBDualCloneRecordFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTweakDBDualCloneRecordFormatter.format(report))
+        }
+        if !report.verificationSucceeded {
+            throw SilentExit(code: 1)
+        }
+    }
+
+    private func addonProbeStageOneItemClothingAddon() throws {
+        let valueFlags: Set<String> = [
+            "--item", "--out", "--profile", "--yaml", "--source-record", "--target-archive",
+            "--base", "--ep1", "--cp77tools", "--game-app", "--db"
+        ]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.count == 1,
+              let itemID = optionValue("--item"),
+              let profileID = optionValue("--profile"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-one-item-clothing-addon <mod-path> --item <Items.X> --profile <profile-id> --out <dir> [--yaml <relative-yaml>] [--source-record <Items.X>] [--target-archive <relative-archive>] [--base <tweakdb.bin>] [--ep1 <tweakdb_ep1.bin>] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--json]")
+        }
+
+        let game = try GameInstallDetector().detect(preferredAppPath: optionValue("--game-app"))
+        let cp77toolsURL = try addonProbeCP77ToolsURL()
+        let baseTweakDBURL = optionValue("--base").map { PathSafety.expandedURL(from: $0) }
+            ?? game.dataURL.appendingPathComponent("r6/cache/tweakdb.bin")
+        let ep1TweakDBURL = optionValue("--ep1").map { PathSafety.expandedURL(from: $0) }
+            ?? game.dataURL.appendingPathComponent("r6/cache/tweakdb_ep1.bin")
+        let targetArchiveRelativePath = optionValue("--target-archive")
+            ?? "Data/archive/Mac/content/basegame_4_appearance.archive"
+        let databaseURL = optionValue("--db").map { PathSafety.expandedURL(from: $0) }
+
+        let report = try AddonProbeManager(home: home).stageOneItemClothingAddon(request: AddonProbeOneItemClothingPipelineRequest(
+            modURL: PathSafety.expandedURL(from: positionals[0]),
+            yamlRelativePath: optionValue("--yaml"),
+            baseTweakDBURL: baseTweakDBURL,
+            ep1TweakDBURL: ep1TweakDBURL,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            itemID: itemID,
+            sourceRecord: optionValue("--source-record"),
+            targetArchiveRelativePath: targetArchiveRelativePath,
+            profileID: profileID,
+            cp77toolsURL: cp77toolsURL,
+            gameInstall: game,
+            databaseURL: databaseURL
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeOneItemClothingPipelineFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeOneItemClothingPipelineFormatter.format(report))
+        }
+        if !report.verificationSucceeded {
+            throw SilentExit(code: 1)
+        }
+    }
+
     private func parseCloneOverridePair(_ raw: String, flag: String) throws -> (property: String, value: String) {
         guard let separator = raw.firstIndex(of: "=") else {
             throw CyberMacError.invalidInput("\(flag) value must be in the form property=value (got '\(raw)').")
@@ -1623,6 +1857,23 @@ struct CyberMacCLI {
             throw CyberMacError.invalidInput("\(flag) property must not be empty (got '\(raw)').")
         }
         return (property, value)
+    }
+
+    private func parseRuntimeCNameCheck(_ raw: String) throws -> RedscriptRuntimeCNameCheck {
+        guard let separator = raw.firstIndex(of: "=") else {
+            throw CyberMacError.invalidInput("--check-cname value must be in the form Items.Record.property=value (got '\(raw)').")
+        }
+        let left = String(raw[..<separator]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = String(raw[raw.index(after: separator)...])
+        guard let propertySeparator = left.lastIndex(of: ".") else {
+            throw CyberMacError.invalidInput("--check-cname left side must include a record and property (got '\(raw)').")
+        }
+        let record = String(left[..<propertySeparator])
+        let property = String(left[left.index(after: propertySeparator)...])
+        guard record.hasPrefix("Items."), !property.isEmpty else {
+            throw CyberMacError.invalidInput("--check-cname value must be in the form Items.Record.property=value (got '\(raw)').")
+        }
+        return RedscriptRuntimeCNameCheck(record: record, property: property, expectedValue: value)
     }
 
     private func addonProbeCompareTweakDBStringAnalysis() throws {

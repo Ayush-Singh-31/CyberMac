@@ -296,6 +296,68 @@ public struct AddonProbeGrantManyResult: Codable, Equatable, Sendable {
     }
 }
 
+public struct AddonProbeRuntimeItemDiagnosticGrantRequest: Sendable {
+    public let itemIDs: [String]
+    public let outputZipURL: URL
+    public let modName: String?
+    public let moneyMarkers: Bool
+    public let cNameChecks: [RedscriptRuntimeCNameCheck]
+
+    public init(
+        itemIDs: [String],
+        outputZipURL: URL,
+        modName: String? = nil,
+        moneyMarkers: Bool = false,
+        cNameChecks: [RedscriptRuntimeCNameCheck] = []
+    ) {
+        self.itemIDs = itemIDs
+        self.outputZipURL = outputZipURL
+        self.modName = modName
+        self.moneyMarkers = moneyMarkers
+        self.cNameChecks = cNameChecks
+    }
+}
+
+public struct AddonProbeRuntimeItemDiagnosticGrantResult: Codable, Equatable, Sendable {
+    public let outputZipPath: String
+    public let summaryPath: String
+    public let modName: String
+    public let redscriptEntryPath: String
+    public let itemIDs: [String]
+    public let expectedTweakDBIDHexByItemID: [String: String]
+    public let moneyMarkers: Bool
+    public let cNameChecks: [RedscriptRuntimeCNameCheck]
+    public let moneyMarkerLegend: [String]
+    public let moneyMarkerInterpretationExamples: [String]
+    public let warnings: [String]
+
+    public init(
+        outputZipPath: String,
+        summaryPath: String,
+        modName: String,
+        redscriptEntryPath: String,
+        itemIDs: [String],
+        expectedTweakDBIDHexByItemID: [String: String],
+        moneyMarkers: Bool = false,
+        cNameChecks: [RedscriptRuntimeCNameCheck] = [],
+        moneyMarkerLegend: [String] = [],
+        moneyMarkerInterpretationExamples: [String] = [],
+        warnings: [String]
+    ) {
+        self.outputZipPath = outputZipPath
+        self.summaryPath = summaryPath
+        self.modName = modName
+        self.redscriptEntryPath = redscriptEntryPath
+        self.itemIDs = itemIDs
+        self.expectedTweakDBIDHexByItemID = expectedTweakDBIDHexByItemID
+        self.moneyMarkers = moneyMarkers
+        self.cNameChecks = cNameChecks
+        self.moneyMarkerLegend = moneyMarkerLegend
+        self.moneyMarkerInterpretationExamples = moneyMarkerInterpretationExamples
+        self.warnings = warnings
+    }
+}
+
 public struct AddonProbeAtomiicSummaryReport: Codable, Equatable, Sendable {
     public let modPath: String
     public let totalExpandedItems: Int
@@ -626,6 +688,81 @@ public struct AddonProbeStageManifest: Codable, Equatable, Sendable {
         self.manualInstallCommand = manualInstallCommand
         self.warnings = warnings
     }
+}
+
+public struct AddonProbeOneItemClothingPipelineRequest: Sendable {
+    public let modURL: URL
+    public let yamlRelativePath: String?
+    public let baseTweakDBURL: URL
+    public let ep1TweakDBURL: URL
+    public let outputDirectoryURL: URL
+    public let itemID: String
+    public let sourceRecord: String?
+    public let targetArchiveRelativePath: String
+    public let profileID: String
+    public let cp77toolsURL: URL
+    public let gameInstall: GameInstall
+    public let databaseURL: URL?
+
+    public init(
+        modURL: URL,
+        yamlRelativePath: String? = nil,
+        baseTweakDBURL: URL,
+        ep1TweakDBURL: URL,
+        outputDirectoryURL: URL,
+        itemID: String,
+        sourceRecord: String? = nil,
+        targetArchiveRelativePath: String,
+        profileID: String,
+        cp77toolsURL: URL,
+        gameInstall: GameInstall,
+        databaseURL: URL? = nil
+    ) {
+        self.modURL = modURL
+        self.yamlRelativePath = yamlRelativePath
+        self.baseTweakDBURL = baseTweakDBURL
+        self.ep1TweakDBURL = ep1TweakDBURL
+        self.outputDirectoryURL = outputDirectoryURL
+        self.itemID = itemID
+        self.sourceRecord = sourceRecord
+        self.targetArchiveRelativePath = targetArchiveRelativePath
+        self.profileID = profileID
+        self.cp77toolsURL = cp77toolsURL
+        self.gameInstall = gameInstall
+        self.databaseURL = databaseURL
+    }
+}
+
+public struct AddonProbeOneItemClothingFlatOverrideReport: Codable, Equatable, Sendable {
+    public let property: String
+    public let yamlValue: String
+    public let sourceBaseTypeName: String?
+    public let sourceEP1TypeName: String?
+    public let overrideKind: String?
+    public let supported: Bool
+    public let baseMatched: Bool?
+    public let ep1Matched: Bool?
+    public let reason: String?
+}
+
+public struct AddonProbeOneItemClothingPipelineReport: Codable, Equatable, Sendable {
+    public let modPath: String
+    public let yamlPath: String
+    public let outputDirectoryPath: String
+    public let itemID: String
+    public let sourceRecord: String
+    public let targetArchiveRelativePath: String
+    public let profileID: String
+    public let expandedRecord: AddonProbeExpandedItemRecord
+    public let flatOverrides: [AddonProbeOneItemClothingFlatOverrideReport]
+    public let tweakDBReport: AddonProbeTweakDBDualCloneRecordReport
+    public let assetManifest: AddonProbeStageManifest
+    public let grantHelper: AddonProbeRuntimeItemDiagnosticGrantResult
+    public let manualInstallCommands: [String]
+    public let verificationSucceeded: Bool
+    public let warnings: [String]
+    public let reportPath: String
+    public let summaryPath: String
 }
 
 public struct AddonProbeRecordLayerQueryReport: Codable, Equatable, Sendable {
@@ -1804,6 +1941,13 @@ public struct AddonProbeManager: Sendable {
         var unresolvedTemplateExpressions: [String] = []
     }
 
+    private struct OneItemOverridePlanEntry {
+        let property: String
+        let yamlValue: String
+        let override: AddonProbeTweakDBCloneOverride?
+        let report: AddonProbeOneItemClothingFlatOverrideReport
+    }
+
     private struct Discovery {
         let root: ResolvedModRoot
         let archiveFiles: [String]
@@ -2003,6 +2147,139 @@ public struct AddonProbeManager: Sendable {
         return manifest
     }
 
+    public func stageOneItemClothingAddon(
+        request: AddonProbeOneItemClothingPipelineRequest
+    ) throws -> AddonProbeOneItemClothingPipelineReport {
+        try home.bootstrap()
+        let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL
+        try validateOutputDirectory(outputDirectoryURL, description: "One-item clothing pipeline output directory")
+
+        let root = try resolveModRoot(request.modURL)
+        let discovery = try discover(root: root)
+        let (yamlRelativePath, yamlURL, yamlAnalysis) = try oneItemYAMLAnalysis(
+            explicitRelativePath: request.yamlRelativePath,
+            itemID: request.itemID,
+            root: root,
+            discovery: discovery
+        )
+        guard let expandedRecord = yamlAnalysis.expandedItemRecords.first(where: { $0.recordID == request.itemID || $0.itemID == request.itemID }) else {
+            throw CyberMacError.invalidInput("Item \(request.itemID) was not expanded from YAML \(yamlRelativePath).")
+        }
+
+        let requestedSourceRecord = request.sourceRecord?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceRecord = requestedSourceRecord?.isEmpty == false
+            ? requestedSourceRecord!
+            : (expandedRecord.baseRecord ?? Self.inferredClothingBaseRecord(for: expandedRecord))
+        let baseSourceTrace = try TweakDBStructureInspector().trace(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: request.baseTweakDBURL,
+            record: sourceRecord,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("source-base-trace", isDirectory: true)
+        ))
+        let ep1SourceTrace = try TweakDBStructureInspector().trace(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: request.ep1TweakDBURL,
+            record: sourceRecord,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("source-ep1-trace", isDirectory: true)
+        ))
+        let overridePlan = Self.oneItemOverridePlan(
+            expandedRecord: expandedRecord,
+            baseSourceTrace: baseSourceTrace.trace,
+            ep1SourceTrace: ep1SourceTrace.trace
+        )
+        let overrides = overridePlan.compactMap(\.override)
+
+        let tweakDBReport = try stageTweakDBDualCloneRecord(request: AddonProbeTweakDBDualCloneRecordRequest(
+            baseFileURL: request.baseTweakDBURL,
+            ep1FileURL: request.ep1TweakDBURL,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("tweakdb", isDirectory: true),
+            sourceRecord: sourceRecord,
+            newRecord: request.itemID,
+            overrides: overrides
+        ))
+        let finalOverrideReports = Self.finalizeOneItemOverrideReports(
+            overridePlan,
+            tweakDBReport: tweakDBReport
+        )
+
+        let assetManifest = try stageAssets(request: AddonProbeStageAssetsRequest(
+            modURL: request.modURL,
+            targetArchiveRelativePath: request.targetArchiveRelativePath,
+            profileID: request.profileID,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("appearance-archive", isDirectory: true),
+            cp77toolsURL: request.cp77toolsURL,
+            gameInstall: request.gameInstall,
+            databaseURL: request.databaseURL
+        ))
+
+        let grantDirectory = outputDirectoryURL.appendingPathComponent("grant-helper", isDirectory: true)
+        try FileManager.default.createDirectory(at: grantDirectory, withIntermediateDirectories: true)
+        let grantURL = grantDirectory.appendingPathComponent("\(Self.safeFileComponent(request.itemID))-diagnostic.zip")
+        var runtimeCNameCheckWarnings: [String] = []
+        let cNameChecks = finalOverrideReports
+            .filter { $0.supported && $0.overrideKind == "cName" }
+            .compactMap { report -> RedscriptRuntimeCNameCheck? in
+                guard Self.isRuntimeCNameCheckValueSafe(report.yamlValue) else {
+                    runtimeCNameCheckWarnings.append("Skipped runtime CName check for \(report.property); value contains characters that cannot be embedded as a redscript CName literal.")
+                    return nil
+                }
+                return RedscriptRuntimeCNameCheck(record: request.itemID, property: report.property, expectedValue: report.yamlValue)
+            }
+        let grantHelper = try runtimeItemDiagnosticGrant(request: AddonProbeRuntimeItemDiagnosticGrantRequest(
+            itemIDs: [request.itemID],
+            outputZipURL: grantURL,
+            modName: "CyberMac Atomiic One Item Diagnostic",
+            moneyMarkers: true,
+            cNameChecks: cNameChecks
+        ))
+
+        let finalTweakDBBaseURL = request.gameInstall.dataURL.appendingPathComponent("r6/cache/tweakdb.bin")
+        let finalTweakDBEP1URL = request.gameInstall.dataURL.appendingPathComponent("r6/cache/tweakdb_ep1.bin")
+        let manualInstallCommands = [
+            "sudo cp \(PathSafety.shellQuoted(tweakDBReport.stagedBaseFilePath)) \(PathSafety.shellQuoted(finalTweakDBBaseURL.path))",
+            "sudo cp \(PathSafety.shellQuoted(tweakDBReport.stagedEP1FilePath)) \(PathSafety.shellQuoted(finalTweakDBEP1URL.path))",
+            assetManifest.manualInstallCommand,
+            "cybermac install \(PathSafety.shellQuoted(grantHelper.outputZipPath))",
+            "cybermac activate --bundle-mode"
+        ]
+
+        var warnings = discovery.warnings + yamlAnalysis.warnings + runtimeCNameCheckWarnings
+        warnings.append("YAML source: \(yamlRelativePath)")
+        warnings.append("Using source/base record \(sourceRecord) for \(request.itemID).")
+        for report in finalOverrideReports where !report.supported {
+            warnings.append("Unsupported YAML flat \(report.property)=\(report.yamlValue): \(report.reason ?? "not supported by the offline writer")")
+        }
+        warnings.append("Pipeline output is staged only. No game files were modified.")
+
+        let overrideVerificationSucceeded = finalOverrideReports.allSatisfy { report in
+            !report.supported || (report.baseMatched == true && report.ep1Matched == true)
+        }
+        let verificationSucceeded = tweakDBReport.verificationSucceeded && overrideVerificationSucceeded
+
+        let reportURL = outputDirectoryURL.appendingPathComponent("one-item-clothing-pipeline.json")
+        let summaryURL = outputDirectoryURL.appendingPathComponent("one-item-clothing-pipeline.txt")
+        let report = AddonProbeOneItemClothingPipelineReport(
+            modPath: root.sourceURL.path,
+            yamlPath: yamlURL.path,
+            outputDirectoryPath: outputDirectoryURL.path,
+            itemID: request.itemID,
+            sourceRecord: sourceRecord,
+            targetArchiveRelativePath: request.targetArchiveRelativePath,
+            profileID: request.profileID,
+            expandedRecord: expandedRecord,
+            flatOverrides: finalOverrideReports,
+            tweakDBReport: tweakDBReport,
+            assetManifest: assetManifest,
+            grantHelper: grantHelper,
+            manualInstallCommands: manualInstallCommands,
+            verificationSucceeded: verificationSucceeded,
+            warnings: AddonProbeManager.orderedUnique(warnings),
+            reportPath: reportURL.path,
+            summaryPath: summaryURL.path
+        )
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        try Self.writeOneItemClothingPipelineSummary(report, to: summaryURL)
+        return report
+    }
+
     public func grantTestMany(request: AddonProbeGrantManyRequest) throws -> AddonProbeGrantManyResult {
         try home.bootstrap()
         let inputURL = request.inputURL.standardizedFileURL
@@ -2051,6 +2328,51 @@ public struct AddonProbeManager: Sendable {
             redscriptEntryPath: result.redscriptEntryPath,
             itemIDs: result.normalizedItemIDs,
             warnings: Array(Set(warnings)).sorted()
+        )
+    }
+
+    public func runtimeItemDiagnosticGrant(
+        request: AddonProbeRuntimeItemDiagnosticGrantRequest
+    ) throws -> AddonProbeRuntimeItemDiagnosticGrantResult {
+        let generatorResult = try RedscriptRuntimeItemDiagnosticGrantGenerator().generate(request: RedscriptRuntimeItemDiagnosticGrantRequest(
+            itemIDs: request.itemIDs,
+            outputZipURL: request.outputZipURL,
+            modName: request.modName,
+            moneyMarkers: request.moneyMarkers,
+            cNameChecks: request.cNameChecks
+        ))
+        let warnings: [String]
+        if request.moneyMarkers, request.itemIDs.count == 1 {
+            warnings = [
+                "Generated diagnostic helper mutates inventory by attempting the listed item and granting Items.money marker amounts.",
+                "One-item money marker mode skips the vanilla proof grant; use +700000 as the diagnostic trigger marker.",
+                "The helper does not register custom records and does not patch game files directly."
+            ]
+        } else if request.moneyMarkers {
+            warnings = [
+                "Generated diagnostic helper mutates inventory by granting the first item, attempting the second item, and granting Items.money marker amounts.",
+                "Money marker mode uses the total eddies delta as the primary diagnostic result; DEBUG logs with [CyberMacItemDiag] are retained as secondary detail.",
+                "The helper does not register custom records and does not patch game files directly."
+            ]
+        } else {
+            warnings = [
+                "Generated diagnostic helper mutates inventory by calling GiveItem once for each listed item.",
+                "Install and activate this helper the same way as CyberMac's grant-test helper, then inspect DEBUG logs for [CyberMacItemDiag] lines.",
+                "The helper does not register custom records and does not patch game files directly."
+            ]
+        }
+        return AddonProbeRuntimeItemDiagnosticGrantResult(
+            outputZipPath: generatorResult.outputZipURL.path,
+            summaryPath: generatorResult.summaryURL.path,
+            modName: generatorResult.modName,
+            redscriptEntryPath: generatorResult.redscriptEntryPath,
+            itemIDs: generatorResult.normalizedItemIDs,
+            expectedTweakDBIDHexByItemID: generatorResult.expectedTweakDBIDHexByItemID,
+            moneyMarkers: generatorResult.moneyMarkers,
+            cNameChecks: generatorResult.cNameChecks,
+            moneyMarkerLegend: generatorResult.moneyMarkerLegend,
+            moneyMarkerInterpretationExamples: generatorResult.moneyMarkerInterpretationExamples,
+            warnings: warnings
         )
     }
 
@@ -2728,8 +3050,26 @@ public struct AddonProbeManager: Sendable {
         try TweakDBStructureInspector().trace(request: request)
     }
 
+    public func validateTweakDBRuntimeLookup(
+        request: AddonProbeTweakDBRuntimeLookupValidationRequest
+    ) throws -> AddonProbeTweakDBRuntimeLookupValidationReport {
+        try TweakDBStructureInspector().validateRuntimeLookup(request: request)
+    }
+
     public func stageTweakDBCloneRecord(request: AddonProbeTweakDBCloneRecordRequest) throws -> AddonProbeTweakDBCloneRecordReport {
         try TweakDBCloneRecordStager().stage(request: request)
+    }
+
+    public func stageTweakDBOverrideFlat(request: AddonProbeTweakDBOverrideFlatRequest) throws -> AddonProbeTweakDBOverrideFlatReport {
+        try TweakDBCloneRecordStager().stageOverrideFlat(request: request)
+    }
+
+    public func stageTweakDBDualOverrideFlat(request: AddonProbeTweakDBDualOverrideFlatRequest) throws -> AddonProbeTweakDBDualOverrideFlatReport {
+        try TweakDBCloneRecordStager().stageDualOverrideFlat(request: request)
+    }
+
+    public func stageTweakDBDualCloneRecord(request: AddonProbeTweakDBDualCloneRecordRequest) throws -> AddonProbeTweakDBDualCloneRecordReport {
+        try TweakDBCloneRecordStager().stageDualCloneRecord(request: request)
     }
 
     public func compareTweakDBPackedStringAnalyses(request: AddonProbeTweakDBPackedStringComparisonRequest) throws -> AddonProbeTweakDBPackedStringComparisonReport {
@@ -5510,6 +5850,15 @@ public struct AddonProbeManager: Sendable {
         data.prefix(count).map { String(format: "%02x", $0) }.joined(separator: " ")
     }
 
+    private static func tweakDBID(_ name: String) -> UInt64 {
+        let bytes = Array(name.utf8)
+        return (UInt64(bytes.count) << 32) | UInt64(TweakDBPackedStringAnalyzer.crc32(bytes))
+    }
+
+    private static func hex(_ value: UInt64) -> String {
+        String(format: "0x%016llx", value)
+    }
+
     private static func parseCSV(_ text: String) -> (headers: [String], rows: [[String: String]], warnings: [String]) {
         guard !text.isEmpty else {
             return ([], [], ["CSV is empty."])
@@ -5972,6 +6321,296 @@ public struct AddonProbeManager: Sendable {
             files.append(RegularFile(relativePath: relative, url: url.standardizedFileURL))
         }
         return files.sorted { $0.relativePath < $1.relativePath }
+    }
+
+    private func oneItemYAMLAnalysis(
+        explicitRelativePath: String?,
+        itemID: String,
+        root: ResolvedModRoot,
+        discovery: Discovery
+    ) throws -> (relativePath: String, url: URL, analysis: AddonProbeTweakXLAnalysis) {
+        let candidatePaths = explicitRelativePath.map { [$0] } ?? discovery.tweakFiles
+        for relativePath in candidatePaths {
+            let url = try resolvedFileURL(relativePath: relativePath, rootURL: root.rootURL, description: "TweakXL YAML")
+            guard let text = try readSmallTextFile(url) else { continue }
+            let analysis = Self.analyzeTweakXL(text)
+            if analysis.expandedItemRecords.contains(where: { $0.recordID == itemID || $0.itemID == itemID }) {
+                return (relativePath, url, analysis)
+            }
+        }
+        if let explicitRelativePath {
+            throw CyberMacError.invalidInput("YAML \(explicitRelativePath) did not expand item \(itemID).")
+        }
+        throw CyberMacError.invalidInput("No discovered YAML file expanded item \(itemID).")
+    }
+
+    private static func inferredClothingBaseRecord(for record: AddonProbeExpandedItemRecord) -> String {
+        if record.placementSlots.contains("OutfitSlots.TorsoInner") {
+            return "Items.GenericInnerChestClothing"
+        }
+        return "Items.TShirt_04_old_01"
+    }
+
+    private static func oneItemOverridePlan(
+        expandedRecord: AddonProbeExpandedItemRecord,
+        baseSourceTrace: AddonProbeTweakDBRecordTrace,
+        ep1SourceTrace: AddonProbeTweakDBRecordTrace
+    ) -> [OneItemOverridePlanEntry] {
+        var entries: [OneItemOverridePlanEntry] = []
+        if let appearanceName = expandedRecord.appearanceName {
+            entries.append(oneItemOverridePlanEntry(property: "appearanceName", yamlValue: appearanceName, baseSourceTrace: baseSourceTrace, ep1SourceTrace: ep1SourceTrace))
+        }
+        if let entityName = expandedRecord.entityName {
+            entries.append(oneItemOverridePlanEntry(property: "entityName", yamlValue: entityName, baseSourceTrace: baseSourceTrace, ep1SourceTrace: ep1SourceTrace))
+        }
+        if let displayName = expandedRecord.displayName {
+            entries.append(oneItemOverridePlanEntry(property: "displayName", yamlValue: displayName, baseSourceTrace: baseSourceTrace, ep1SourceTrace: ep1SourceTrace))
+            if flatTypeName(property: "localizedName", in: baseSourceTrace) != nil ||
+                flatTypeName(property: "localizedName", in: ep1SourceTrace) != nil {
+                entries.append(oneItemOverridePlanEntry(property: "localizedName", yamlValue: displayName, baseSourceTrace: baseSourceTrace, ep1SourceTrace: ep1SourceTrace))
+            }
+        }
+        if let localizedDescription = expandedRecord.localizedDescription {
+            entries.append(oneItemOverridePlanEntry(property: "localizedDescription", yamlValue: localizedDescription, baseSourceTrace: baseSourceTrace, ep1SourceTrace: ep1SourceTrace))
+        }
+        if let quality = expandedRecord.quality {
+            entries.append(oneItemOverridePlanEntry(property: "quality", yamlValue: quality, baseSourceTrace: baseSourceTrace, ep1SourceTrace: ep1SourceTrace))
+        }
+        for slot in expandedRecord.placementSlots {
+            entries.append(OneItemOverridePlanEntry(
+                property: "placementSlots",
+                yamlValue: slot,
+                override: nil,
+                report: AddonProbeOneItemClothingFlatOverrideReport(
+                    property: "placementSlots",
+                    yamlValue: slot,
+                    sourceBaseTypeName: flatTypeName(property: "placementSlots", in: baseSourceTrace),
+                    sourceEP1TypeName: flatTypeName(property: "placementSlots", in: ep1SourceTrace),
+                    overrideKind: nil,
+                    supported: false,
+                    baseMatched: nil,
+                    ep1Matched: nil,
+                    reason: "array append is inherited from the source record; the offline clone writer does not synthesize new array values"
+                )
+            ))
+        }
+        if let iconAtlasPath = expandedRecord.iconAtlasPath {
+            entries.append(unsupportedIconPlanEntry(property: "icon.atlasResourcePath", yamlValue: iconAtlasPath, reason: "icon atlas resource paths require a UIIcon/icon subrecord update that the clone writer does not synthesize"))
+        }
+        if let iconAtlasPart = expandedRecord.iconAtlasPart {
+            entries.append(unsupportedIconPlanEntry(property: "icon.atlasPartName", yamlValue: iconAtlasPart, reason: "icon atlas part names require a UIIcon/icon subrecord update that the clone writer does not synthesize"))
+        }
+        return entries
+    }
+
+    private static func oneItemOverridePlanEntry(
+        property: String,
+        yamlValue: String,
+        baseSourceTrace: AddonProbeTweakDBRecordTrace,
+        ep1SourceTrace: AddonProbeTweakDBRecordTrace
+    ) -> OneItemOverridePlanEntry {
+        let baseType = flatTypeName(property: property, in: baseSourceTrace)
+        let ep1Type = flatTypeName(property: property, in: ep1SourceTrace)
+        guard baseType == ep1Type, let typeName = baseType else {
+            return unsupportedPlanEntry(property: property, yamlValue: yamlValue, baseType: baseType, ep1Type: ep1Type, reason: "base and EP1 source flat types differ or are missing")
+        }
+
+        let override: AddonProbeTweakDBCloneOverride
+        switch typeName {
+        case "CName":
+            override = .cName(property: property, value: yamlValue)
+        case "String":
+            override = .string(property: property, value: yamlValue)
+        case "TweakDBID":
+            override = .tweakDBID(property: property, value: yamlValue)
+        case "gamedataLocKeyWrapper":
+            guard let value = UInt64(yamlValue) else {
+                return unsupportedPlanEntry(property: property, yamlValue: yamlValue, baseType: baseType, ep1Type: ep1Type, reason: "gamedataLocKeyWrapper override requires a numeric loc key; YAML provided a text localization key")
+            }
+            override = .locKey(property: property, value: value)
+        default:
+            return unsupportedPlanEntry(property: property, yamlValue: yamlValue, baseType: baseType, ep1Type: ep1Type, reason: "flat type \(typeName) is not supported by the offline scalar override writer")
+        }
+
+        return OneItemOverridePlanEntry(
+            property: property,
+            yamlValue: yamlValue,
+            override: override,
+            report: AddonProbeOneItemClothingFlatOverrideReport(
+                property: property,
+                yamlValue: yamlValue,
+                sourceBaseTypeName: baseType,
+                sourceEP1TypeName: ep1Type,
+                overrideKind: override.kind,
+                supported: true,
+                baseMatched: nil,
+                ep1Matched: nil,
+                reason: nil
+            )
+        )
+    }
+
+    private static func unsupportedIconPlanEntry(property: String, yamlValue: String, reason: String) -> OneItemOverridePlanEntry {
+        OneItemOverridePlanEntry(
+            property: property,
+            yamlValue: yamlValue,
+            override: nil,
+            report: AddonProbeOneItemClothingFlatOverrideReport(
+                property: property,
+                yamlValue: yamlValue,
+                sourceBaseTypeName: nil,
+                sourceEP1TypeName: nil,
+                overrideKind: nil,
+                supported: false,
+                baseMatched: nil,
+                ep1Matched: nil,
+                reason: reason
+            )
+        )
+    }
+
+    private static func unsupportedPlanEntry(
+        property: String,
+        yamlValue: String,
+        baseType: String?,
+        ep1Type: String?,
+        reason: String
+    ) -> OneItemOverridePlanEntry {
+        OneItemOverridePlanEntry(
+            property: property,
+            yamlValue: yamlValue,
+            override: nil,
+            report: AddonProbeOneItemClothingFlatOverrideReport(
+                property: property,
+                yamlValue: yamlValue,
+                sourceBaseTypeName: baseType,
+                sourceEP1TypeName: ep1Type,
+                overrideKind: nil,
+                supported: false,
+                baseMatched: nil,
+                ep1Matched: nil,
+                reason: reason
+            )
+        )
+    }
+
+    private static func finalizeOneItemOverrideReports(
+        _ plan: [OneItemOverridePlanEntry],
+        tweakDBReport: AddonProbeTweakDBDualCloneRecordReport
+    ) -> [AddonProbeOneItemClothingFlatOverrideReport] {
+        plan.map { entry in
+            guard entry.override != nil else { return entry.report }
+            return AddonProbeOneItemClothingFlatOverrideReport(
+                property: entry.report.property,
+                yamlValue: entry.report.yamlValue,
+                sourceBaseTypeName: entry.report.sourceBaseTypeName,
+                sourceEP1TypeName: entry.report.sourceEP1TypeName,
+                overrideKind: entry.report.overrideKind,
+                supported: true,
+                baseMatched: traceMatchesOverride(property: entry.property, yamlValue: entry.yamlValue, overrideKind: entry.report.overrideKind, trace: tweakDBReport.baseReport.verification),
+                ep1Matched: traceMatchesOverride(property: entry.property, yamlValue: entry.yamlValue, overrideKind: entry.report.overrideKind, trace: tweakDBReport.ep1Report.verification),
+                reason: nil
+            )
+        }
+    }
+
+    private static func traceMatchesOverride(
+        property: String,
+        yamlValue: String,
+        overrideKind: String?,
+        trace: AddonProbeTweakDBRecordTrace?
+    ) -> Bool {
+        guard let flat = trace?.knownFlats.first(where: { $0.property == property }) else { return false }
+        switch overrideKind {
+        case "cName", "string":
+            return flat.valueSummary == "\"\(yamlValue)\""
+        case "tweakDBID":
+            return flat.referencedTweakDBIDs.contains(hex(tweakDBID(yamlValue)))
+        case "locKey":
+            return flat.valueSummary == "LocKey \(yamlValue)"
+        default:
+            return false
+        }
+    }
+
+    private static func flatTypeName(property: String, in trace: AddonProbeTweakDBRecordTrace) -> String? {
+        trace.knownFlats.first { $0.property == property }?.typeName
+    }
+
+    private static func safeFileComponent(_ raw: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        return String(raw.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" })
+    }
+
+    private static func isRuntimeCNameCheckValueSafe(_ value: String) -> Bool {
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return value.allSatisfy { character in
+            character.unicodeScalars.allSatisfy { scalar in
+                let code = scalar.value
+                let isUpper = (0x41...0x5A).contains(code)
+                let isLower = (0x61...0x7A).contains(code)
+                let isDigit = (0x30...0x39).contains(code)
+                let isPunct = scalar == "_" || scalar == "-" || scalar == "." || scalar == ":" || scalar == "/"
+                return isUpper || isLower || isDigit || isPunct
+            }
+        }
+    }
+
+    private static func writeOneItemClothingPipelineSummary(
+        _ report: AddonProbeOneItemClothingPipelineReport,
+        to url: URL
+    ) throws {
+        var lines: [String] = [
+            "CyberMac one-item clothing add-on pipeline",
+            "Status: \(report.verificationSucceeded ? "verified offline" : "verification failed")",
+            "Mod: \(report.modPath)",
+            "YAML: \(report.yamlPath)",
+            "Item: \(report.itemID)",
+            "Source record: \(report.sourceRecord)",
+            "Target archive: \(report.targetArchiveRelativePath)",
+            "Profile: \(report.profileID)",
+            "Output directory: \(report.outputDirectoryPath)",
+            "",
+            "TweakDB:",
+            "- Base staged: \(report.tweakDBReport.stagedBaseFilePath)",
+            "- EP1 staged: \(report.tweakDBReport.stagedEP1FilePath)",
+            "- Base new record sorted index: \(report.tweakDBReport.baseNewRecordSortedIndex)",
+            "- EP1 new record sorted index: \(report.tweakDBReport.ep1NewRecordSortedIndex)",
+            "- Base verification: \(report.tweakDBReport.baseVerificationStatus)",
+            "- EP1 verification: \(report.tweakDBReport.ep1VerificationStatus)",
+            "",
+            "Appearance archive:",
+            "- Staged archive: \(report.assetManifest.stagedArchivePath)",
+            "- SHA-256: \(report.assetManifest.stagedSHA256)",
+            "",
+            "Grant helper:",
+            "- Output zip: \(report.grantHelper.outputZipPath)",
+            "- Summary: \(report.grantHelper.summaryPath)",
+            "",
+            "Flat overrides:"
+        ]
+        for override in report.flatOverrides {
+            let status: String
+            if override.supported {
+                status = "supported baseMatched=\(override.baseMatched == true) ep1Matched=\(override.ep1Matched == true)"
+            } else {
+                status = "unsupported reason=\(override.reason ?? "not supported")"
+            }
+            lines.append("- \(override.property)=\(override.yamlValue) \(status)")
+        }
+        lines.append("")
+        lines.append("Manual install commands:")
+        for command in report.manualInstallCommands {
+            lines.append(command)
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in report.warnings {
+                lines.append("- \(warning)")
+            }
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
     private func readSmallTextFile(_ url: URL) throws -> String? {
@@ -8035,6 +8674,114 @@ public enum AddonProbeGrantManyFormatter {
             }
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+public enum AddonProbeRuntimeItemDiagnosticGrantFormatter {
+    public static func format(_ result: AddonProbeRuntimeItemDiagnosticGrantResult) -> String {
+        var lines: [String] = [
+            "CyberMac add-on probe runtime item diagnostic grant helper",
+            result.moneyMarkers
+                ? (result.itemIDs.count == 1
+                    ? "Status: experimental runtime diagnostic; the listed item is probed directly and Items.money carries the marker result."
+                    : "Status: experimental runtime diagnostic; first item is the proof grant, second item is the clone probe, and Items.money carries the marker result.")
+                : "Status: experimental runtime diagnostic; this calls GiveItem once per listed item.",
+            "Output zip: \(PathSafety.redactUserPath(result.outputZipPath))",
+            "Summary: \(PathSafety.redactUserPath(result.summaryPath))",
+            "Mod name: \(result.modName)",
+            "Entry path: \(result.redscriptEntryPath)",
+            "Log prefix: [CyberMacItemDiag]",
+            "Money markers: \(result.moneyMarkers ? "enabled" : "disabled")",
+            "Item IDs (\(result.itemIDs.count)):"
+        ]
+        for itemID in result.itemIDs {
+            let hash = result.expectedTweakDBIDHexByItemID[itemID] ?? "unknown"
+            lines.append("  - \(itemID) expected_tdbid_hash=\(hash)")
+        }
+        if !result.cNameChecks.isEmpty {
+            lines.append("")
+            lines.append("CName checks:")
+            for check in result.cNameChecks {
+                lines.append("  - \(check.record).\(check.property)=\(check.expectedValue)")
+            }
+        }
+        if result.moneyMarkers {
+            lines.append("")
+            lines.append("Money marker legend:")
+            for marker in result.moneyMarkerLegend {
+                lines.append("- \(marker)")
+            }
+            if !result.moneyMarkerInterpretationExamples.isEmpty {
+                lines.append("")
+                lines.append("Interpretation examples:")
+                for example in result.moneyMarkerInterpretationExamples {
+                    lines.append("- \(example)")
+                }
+            }
+        }
+        if !result.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in result.warnings {
+                lines.append("- \(warning)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ result: AddonProbeRuntimeItemDiagnosticGrantResult) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(result), encoding: .utf8) ?? "{}"
+    }
+}
+
+public enum AddonProbeOneItemClothingPipelineFormatter {
+    public static func format(_ report: AddonProbeOneItemClothingPipelineReport) -> String {
+        var lines: [String] = [
+            "CyberMac one-item clothing add-on pipeline",
+            "Status: \(report.verificationSucceeded ? "verified offline; no game files were modified." : "verification failed; staged outputs should not be installed.")",
+            "Mod: \(PathSafety.redactUserPath(report.modPath))",
+            "YAML: \(PathSafety.redactUserPath(report.yamlPath))",
+            "Item: \(report.itemID)",
+            "Source record: \(report.sourceRecord)",
+            "Target archive: \(report.targetArchiveRelativePath)",
+            "Profile: \(report.profileID)",
+            "Base staged TweakDB: \(PathSafety.redactUserPath(report.tweakDBReport.stagedBaseFilePath))",
+            "EP1 staged TweakDB: \(PathSafety.redactUserPath(report.tweakDBReport.stagedEP1FilePath))",
+            "Base new record sorted index: \(report.tweakDBReport.baseNewRecordSortedIndex)",
+            "EP1 new record sorted index: \(report.tweakDBReport.ep1NewRecordSortedIndex)",
+            "Appearance archive: \(PathSafety.redactUserPath(report.assetManifest.stagedArchivePath))",
+            "Grant helper: \(PathSafety.redactUserPath(report.grantHelper.outputZipPath))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))"
+        ]
+        if !report.flatOverrides.isEmpty {
+            lines.append("")
+            lines.append("YAML flat overrides:")
+            for flat in report.flatOverrides {
+                if flat.supported {
+                    lines.append("- \(flat.property)=\(flat.yamlValue) \(flat.overrideKind ?? "override") baseMatched=\(flat.baseMatched == true) ep1Matched=\(flat.ep1Matched == true)")
+                } else {
+                    lines.append("- \(flat.property)=\(flat.yamlValue) unsupported: \(flat.reason ?? "not supported")")
+                }
+            }
+        }
+        lines.append("")
+        lines.append("Manual install commands:")
+        for command in report.manualInstallCommands {
+            lines.append(command)
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in report.warnings {
+                lines.append("- \(warning)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeOneItemClothingPipelineReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
     }
 }
 

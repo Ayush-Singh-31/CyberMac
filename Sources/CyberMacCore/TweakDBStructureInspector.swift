@@ -41,6 +41,13 @@ public enum AddonProbeTweakDBStructureConclusion: String, Codable, Equatable, Se
     case unresolved
 }
 
+public struct AddonProbeTweakDBIDOrderIssue: Codable, Equatable, Sendable {
+    public let previousIndex: Int
+    public let previousIDHex: String
+    public let currentIndex: Int
+    public let currentIDHex: String
+}
+
 public struct AddonProbeTweakDBParsedHeader: Codable, Equatable, Sendable {
     public let magic: UInt32
     public let magicHex: String
@@ -78,6 +85,8 @@ public struct AddonProbeTweakDBFlatTypeSection: Codable, Equatable, Sendable {
     public let parsedKeyCount: Int
     public let keyBlockOffset: Int?
     public let endOffset: Int?
+    public let keyTableSortedByID: Bool
+    public let firstUnsortedKeyPair: AddonProbeTweakDBIDOrderIssue?
     public let confidence: AddonProbeTweakDBStructureConfidence
     public let sampleValues: [String]
     public let sampleKeys: [String]
@@ -128,6 +137,8 @@ public struct AddonProbeTweakDBStructureReport: Codable, Equatable, Sendable {
     public let sections: [AddonProbeTweakDBStructureSection]
     public let flatTypeSections: [AddonProbeTweakDBFlatTypeSection]
     public let recordCount: Int
+    public let recordsSortedByID: Bool
+    public let firstUnsortedRecordPair: AddonProbeTweakDBIDOrderIssue?
     public let queryCount: Int
     public let groupTagCount: Int
     public let resolvedRecords: [AddonProbeTweakDBRecordTrace]
@@ -145,6 +156,58 @@ public struct AddonProbeTweakDBRecordTraceReport: Codable, Equatable, Sendable {
     public let header: AddonProbeTweakDBParsedHeader
     public let trace: AddonProbeTweakDBRecordTrace
     public let tracePath: String
+    public let reportPath: String
+    public let warnings: [String]
+}
+
+public struct AddonProbeTweakDBRuntimeLookupValidationRequest: Sendable {
+    public let fileURL: URL
+    public let record: String
+    public let outputDirectoryURL: URL
+
+    public init(fileURL: URL, record: String, outputDirectoryURL: URL) {
+        self.fileURL = fileURL
+        self.record = record
+        self.outputDirectoryURL = outputDirectoryURL
+    }
+}
+
+public struct AddonProbeTweakDBRuntimeLookupFlatValidation: Codable, Equatable, Sendable {
+    public let property: String
+    public let flatID: UInt64
+    public let flatIDHex: String
+    public let typeName: String?
+    public let typeHashHex: String
+    public let keyTableSortedByID: Bool
+    public let firstUnsortedKeyPair: AddonProbeTweakDBIDOrderIssue?
+    public let linearFound: Bool
+    public let linearKeyIndex: Int?
+    public let binaryFound: Bool
+    public let binaryKeyIndex: Int?
+    public let valueIndex: Int?
+    public let valueSummary: String?
+    public let validationStatus: [String]
+}
+
+public struct AddonProbeTweakDBRuntimeLookupValidationReport: Codable, Equatable, Sendable {
+    public let filePath: String
+    public let size: Int
+    public let sha256: String
+    public let recordName: String
+    public let recordID: UInt64
+    public let recordIDHex: String
+    public let recordsSortedByID: Bool
+    public let firstUnsortedRecordPair: AddonProbeTweakDBIDOrderIssue?
+    public let recordLinearFound: Bool
+    public let recordLinearIndex: Int?
+    public let recordBinaryFound: Bool
+    public let recordBinaryIndex: Int?
+    public let recordTypeHashHex: String?
+    public let recordTypeName: String?
+    public let flatValidations: [AddonProbeTweakDBRuntimeLookupFlatValidation]
+    public let validationSucceeded: Bool
+    public let validationStatus: [String]
+    public let summaryPath: String
     public let reportPath: String
     public let warnings: [String]
 }
@@ -227,6 +290,8 @@ public struct TweakDBStructureInspector: Sendable {
             sections: parsed.sections,
             flatTypeSections: parsed.flatTypeReports,
             recordCount: parsed.records.count,
+            recordsSortedByID: parsed.recordsSortedByID,
+            firstUnsortedRecordPair: parsed.firstUnsortedRecordPair,
             queryCount: parsed.queryCount,
             groupTagCount: parsed.groupTagCount,
             resolvedRecords: traces,
@@ -274,12 +339,106 @@ public struct TweakDBStructureInspector: Sendable {
         return report
     }
 
+    public func validateRuntimeLookup(
+        request: AddonProbeTweakDBRuntimeLookupValidationRequest
+    ) throws -> AddonProbeTweakDBRuntimeLookupValidationReport {
+        let fileURL = request.fileURL.standardizedFileURL
+        let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL
+        try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: fileURL, outputDirectoryURL: outputDirectoryURL)
+        try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
+
+        let data = try Self.readData(fileURL)
+        let parsed = try Self.parse(data: data)
+        let recordName = request.record.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !recordName.isEmpty else {
+            throw CyberMacError.invalidInput("--record must not be empty")
+        }
+
+        let recordID = Self.tweakDBID(recordName)
+        let linearRecordIndex = parsed.records.firstIndex { $0.recordID == recordID }
+        let binaryRecordIndex = Self.binarySearchRecords(parsed.records, id: recordID)
+        let recordEntry = linearRecordIndex.map { parsed.records[$0] }
+
+        var recordStatus: [String] = []
+        if parsed.recordsSortedByID {
+            recordStatus.append("recordsSorted")
+        } else {
+            recordStatus.append("recordsUnsorted")
+        }
+        if linearRecordIndex != nil {
+            recordStatus.append("recordLinearFound")
+        } else {
+            recordStatus.append("recordLinearMissing")
+        }
+        if binaryRecordIndex != nil {
+            recordStatus.append("recordBinaryFound")
+        } else {
+            recordStatus.append("recordBinaryMissing")
+        }
+        if linearRecordIndex != nil && binaryRecordIndex == nil {
+            recordStatus.append("recordLinearFoundButBinaryMissing")
+        }
+
+        let flatValidations = Self.runtimeFlatValidations(recordName: recordName, parsed: parsed)
+        let flatFailures = flatValidations.contains { validation in
+            !validation.keyTableSortedByID || (validation.linearFound && !validation.binaryFound)
+        }
+
+        var validationStatus = recordStatus
+        if flatValidations.isEmpty {
+            validationStatus.append("knownSchemaFlatsNotResolved")
+        } else {
+            validationStatus.append("knownSchemaFlatsResolved")
+        }
+        if flatFailures {
+            validationStatus.append("flatRuntimeLookupFailed")
+        }
+        let validationSucceeded = parsed.recordsSortedByID &&
+            linearRecordIndex != nil &&
+            binaryRecordIndex != nil &&
+            linearRecordIndex == binaryRecordIndex &&
+            !flatFailures
+        validationStatus.append(validationSucceeded ? "validationSucceeded" : "validationFailed")
+
+        let summaryURL = outputDirectoryURL.appendingPathComponent("tweakdb-runtime-lookup-validation.txt")
+        let reportURL = outputDirectoryURL.appendingPathComponent("tweakdb-runtime-lookup-validation.json")
+        let report = AddonProbeTweakDBRuntimeLookupValidationReport(
+            filePath: fileURL.path,
+            size: data.count,
+            sha256: try PathSafety.sha256(url: fileURL),
+            recordName: recordName,
+            recordID: recordID,
+            recordIDHex: Self.hex(recordID),
+            recordsSortedByID: parsed.recordsSortedByID,
+            firstUnsortedRecordPair: parsed.firstUnsortedRecordPair,
+            recordLinearFound: linearRecordIndex != nil,
+            recordLinearIndex: linearRecordIndex,
+            recordBinaryFound: binaryRecordIndex != nil,
+            recordBinaryIndex: binaryRecordIndex,
+            recordTypeHashHex: recordEntry.map { Self.hex($0.recordTypeHash) },
+            recordTypeName: recordEntry?.recordTypeName,
+            flatValidations: flatValidations,
+            validationSucceeded: validationSucceeded,
+            validationStatus: validationStatus,
+            summaryPath: summaryURL.path,
+            reportPath: reportURL.path,
+            warnings: Self.commonWarnings()
+        )
+
+        try Self.writeRuntimeValidation(report, to: summaryURL)
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        return report
+    }
+
     private struct ParsedFile {
         let header: AddonProbeTweakDBParsedHeader
         let sections: [AddonProbeTweakDBStructureSection]
         let flatTypeReports: [AddonProbeTweakDBFlatTypeSection]
+        let flatTypes: [ParsedFlatType]
         let records: [AddonProbeTweakDBRecordTableEntry]
         let recordsByID: [UInt64: AddonProbeTweakDBRecordTableEntry]
+        let recordsSortedByID: Bool
+        let firstUnsortedRecordPair: AddonProbeTweakDBIDOrderIssue?
         let flatEntriesByID: [UInt64: ParsedFlatEntry]
         let queryCount: Int
         let groupTagCount: Int
@@ -291,6 +450,7 @@ public struct TweakDBStructureInspector: Sendable {
         let valueIndex: Int
         let typeHash: UInt64
         let typeName: String?
+        let flatTypeIndex: Int
         let value: ParsedFlatValue?
     }
 
@@ -464,6 +624,7 @@ public struct TweakDBStructureInspector: Sendable {
         }
 
         let records = try parseRecords(bytes: bytes, offset: recordsOffset, endOffset: queriesOffset, recordHashNames: recordHashNames)
+        let firstUnsortedRecordPair = firstUnsortedPair(ids: records.map(\.recordID))
         let queries = try parseQueries(bytes: bytes, offset: queriesOffset, endOffset: groupTagsOffset)
         let groupTags = try parseGroupTags(bytes: bytes, offset: groupTagsOffset)
         let sections = try makeSections(
@@ -481,8 +642,11 @@ public struct TweakDBStructureInspector: Sendable {
             header: header,
             sections: sections,
             flatTypeReports: flatTypes.map(\.report),
+            flatTypes: flatTypes,
             records: records,
             recordsByID: Dictionary(uniqueKeysWithValues: records.map { ($0.recordID, $0) }),
+            recordsSortedByID: firstUnsortedRecordPair == nil,
+            firstUnsortedRecordPair: firstUnsortedRecordPair,
             flatEntriesByID: flatEntriesByID,
             queryCount: queries.count,
             groupTagCount: groupTags.count
@@ -516,12 +680,12 @@ public struct TweakDBStructureInspector: Sendable {
             ))
         }
 
-        return descriptors.map { descriptor in
-            parseFlatType(descriptor: descriptor, bytes: bytes)
+        return descriptors.enumerated().map { index, descriptor in
+            parseFlatType(descriptor: descriptor, typeIndex: index, bytes: bytes)
         }
     }
 
-    private static func parseFlatType(descriptor: FlatTypeDescriptor, bytes: [UInt8]) -> ParsedFlatType {
+    private static func parseFlatType(descriptor: FlatTypeDescriptor, typeIndex: Int, bytes: [UInt8]) -> ParsedFlatType {
         var warnings: [String] = []
         var values: [ParsedFlatValue] = []
         var entries: [ParsedFlatEntry] = []
@@ -555,6 +719,7 @@ public struct TweakDBStructureInspector: Sendable {
                     valueIndex: valueIndex,
                     typeHash: descriptor.typeHash,
                     typeName: descriptor.typeName,
+                    flatTypeIndex: typeIndex,
                     value: value
                 ))
             }
@@ -562,6 +727,7 @@ public struct TweakDBStructureInspector: Sendable {
         } catch {
             warnings.append(String(describing: error))
         }
+        let firstUnsortedKeyPair = firstUnsortedPair(ids: entries.map(\.id))
 
         let report = AddonProbeTweakDBFlatTypeSection(
             typeHashHex: hex(descriptor.typeHash),
@@ -574,6 +740,8 @@ public struct TweakDBStructureInspector: Sendable {
             parsedKeyCount: entries.count,
             keyBlockOffset: keyBlockOffset,
             endOffset: endOffset,
+            keyTableSortedByID: firstUnsortedKeyPair == nil,
+            firstUnsortedKeyPair: firstUnsortedKeyPair,
             confidence: warnings.isEmpty && descriptor.typeName != nil ? .high : (descriptor.typeName == nil ? .low : .medium),
             sampleValues: values.prefix(maxSampleCount).map(\.summary),
             sampleKeys: entries.prefix(maxSampleCount).map { "\(hex($0.id)) -> value[\($0.valueIndex)] \($0.value?.summary ?? "?")" },
@@ -789,7 +957,8 @@ public struct TweakDBStructureInspector: Sendable {
                 firstEntries: records.prefix(maxSampleCount).map { "\($0.recordIDHex) type=\($0.recordTypeName ?? $0.recordTypeHashHex) offset=\($0.offset)" },
                 lastEntries: records.suffix(maxSampleCount).map { "\($0.recordIDHex) type=\($0.recordTypeName ?? $0.recordTypeHashHex) offset=\($0.offset)" },
                 notes: [
-                    "Record names are not stored as plaintext here; resolving names requires computing TweakDBID from candidate names."
+                    "Record names are not stored as plaintext here; resolving names requires computing TweakDBID from candidate names.",
+                    "Sorted by TweakDBID: \(firstUnsortedPair(ids: records.map(\.recordID)) == nil ? "true" : "false")"
                 ]
             ),
             AddonProbeTweakDBStructureSection(
@@ -931,6 +1100,95 @@ public struct TweakDBStructureInspector: Sendable {
         )
     }
 
+    private static func runtimeFlatValidations(
+        recordName: String,
+        parsed: ParsedFile
+    ) -> [AddonProbeTweakDBRuntimeLookupFlatValidation] {
+        itemRecordProperties.compactMap { property -> AddonProbeTweakDBRuntimeLookupFlatValidation? in
+            let flatID = tweakDBID("\(recordName).\(property)")
+            guard let entry = parsed.flatEntriesByID[flatID],
+                  parsed.flatTypes.indices.contains(entry.flatTypeIndex)
+            else {
+                return nil
+            }
+            let flatType = parsed.flatTypes[entry.flatTypeIndex]
+            let linearKeyIndex = flatType.entries.firstIndex { $0.id == flatID }
+            let binaryKeyIndex = binarySearchFlatEntries(flatType.entries, id: flatID)
+
+            var status: [String] = []
+            if flatType.report.keyTableSortedByID {
+                status.append("flatKeyTableSorted")
+            } else {
+                status.append("flatKeyTableUnsorted")
+            }
+            if linearKeyIndex != nil {
+                status.append("flatLinearFound")
+            } else {
+                status.append("flatLinearMissing")
+            }
+            if binaryKeyIndex != nil {
+                status.append("flatBinaryFound")
+            } else {
+                status.append("flatBinaryMissing")
+            }
+            if linearKeyIndex != nil && binaryKeyIndex == nil {
+                status.append("flatLinearFoundButBinaryMissing")
+            }
+
+            return AddonProbeTweakDBRuntimeLookupFlatValidation(
+                property: property,
+                flatID: flatID,
+                flatIDHex: hex(flatID),
+                typeName: entry.typeName,
+                typeHashHex: hex(entry.typeHash),
+                keyTableSortedByID: flatType.report.keyTableSortedByID,
+                firstUnsortedKeyPair: flatType.report.firstUnsortedKeyPair,
+                linearFound: linearKeyIndex != nil,
+                linearKeyIndex: linearKeyIndex,
+                binaryFound: binaryKeyIndex != nil,
+                binaryKeyIndex: binaryKeyIndex,
+                valueIndex: entry.valueIndex,
+                valueSummary: entry.value?.summary,
+                validationStatus: status
+            )
+        }.sorted { $0.property < $1.property }
+    }
+
+    private static func binarySearchRecords(
+        _ records: [AddonProbeTweakDBRecordTableEntry],
+        id: UInt64
+    ) -> Int? {
+        var low = 0
+        var high = records.count - 1
+        while low <= high {
+            let mid = low + (high - low) / 2
+            let candidate = records[mid].recordID
+            if candidate == id { return mid }
+            if candidate < id {
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return nil
+    }
+
+    private static func binarySearchFlatEntries(_ entries: [ParsedFlatEntry], id: UInt64) -> Int? {
+        var low = 0
+        var high = entries.count - 1
+        while low <= high {
+            let mid = low + (high - low) / 2
+            let candidate = entries[mid].id
+            if candidate == id { return mid }
+            if candidate < id {
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return nil
+    }
+
     private static func conclusions(parsed: ParsedFile, traces: [AddonProbeTweakDBRecordTrace]) -> [AddonProbeTweakDBStructureConclusion] {
         var result: [AddonProbeTweakDBStructureConclusion] = []
         if parsed.header.validWolvenKitHeader { result.append(.wolvenKitHeaderMatched) }
@@ -948,6 +1206,19 @@ public struct TweakDBStructureInspector: Sendable {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return cleaned.isEmpty ? defaultRecords : AddonProbeManager.orderedUnique(cleaned)
+    }
+
+    private static func firstUnsortedPair(ids: [UInt64]) -> AddonProbeTweakDBIDOrderIssue? {
+        guard ids.count > 1 else { return nil }
+        for index in 1..<ids.count where ids[index - 1] > ids[index] {
+            return AddonProbeTweakDBIDOrderIssue(
+                previousIndex: index - 1,
+                previousIDHex: hex(ids[index - 1]),
+                currentIndex: index,
+                currentIDHex: hex(ids[index])
+            )
+        }
+        return nil
     }
 
     private static func commonWarnings() -> [String] {
@@ -1052,13 +1323,55 @@ public struct TweakDBStructureInspector: Sendable {
         return String(value.prefix(limit)) + "..."
     }
 
+    private static func writeRuntimeValidation(
+        _ report: AddonProbeTweakDBRuntimeLookupValidationReport,
+        to url: URL
+    ) throws {
+        var lines: [String] = [
+            "CyberMac TweakDB runtime lookup validation",
+            "Status: read-only; no game files were modified.",
+            "File: \(PathSafety.redactUserPath(report.filePath))",
+            "Record: \(report.recordName)",
+            "Record ID: \(report.recordIDHex)",
+            "Records sorted by ID: \(report.recordsSortedByID)",
+            "Record linear lookup: \(report.recordLinearFound ? "found" : "missing")\(report.recordLinearIndex.map { " index=\($0)" } ?? "")",
+            "Record binary lookup: \(report.recordBinaryFound ? "found" : "missing")\(report.recordBinaryIndex.map { " index=\($0)" } ?? "")",
+            "Validation: \(report.validationSucceeded ? "succeeded" : "failed")",
+            "Status codes: \(report.validationStatus.joined(separator: ", "))"
+        ]
+        if let issue = report.firstUnsortedRecordPair {
+            lines.append("First unsorted record pair: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+        }
+        if !report.flatValidations.isEmpty {
+            lines.append("")
+            lines.append("Known-schema flat runtime lookups:")
+            for flat in report.flatValidations {
+                lines.append("  .\(flat.property) \(flat.typeName ?? flat.typeHashHex) id=\(flat.flatIDHex) keysSorted=\(flat.keyTableSortedByID) linear=\(flat.linearFound ? "found" : "missing") binary=\(flat.binaryFound ? "found" : "missing") status=\(flat.validationStatus.joined(separator: ","))")
+                if let issue = flat.firstUnsortedKeyPair {
+                    lines.append("    first unsorted key: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+                }
+            }
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private static func writeSections(_ report: AddonProbeTweakDBStructureReport, to url: URL) throws {
         var lines: [String] = [
             "CyberMac TweakDB structure inspection",
             "Status: read-only; no game files were modified.",
             "Header: magic=\(report.header.magicHex) blob=\(report.header.blobVersion) parser=\(report.header.parserVersion) checksum=\(report.header.recordsChecksumHex)",
+            "Records sorted by ID: \(report.recordsSortedByID)",
             ""
         ]
+        if let issue = report.firstUnsortedRecordPair {
+            lines.append("First unsorted record pair: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+            lines.append("")
+        }
         for section in report.sections {
             lines.append("[\(section.name)] \(section.role)")
             lines.append("  offset=\(section.offset) size=\(section.size) count=\(section.count.map(String.init) ?? "?") confidence=\(section.confidence.rawValue)")
@@ -1078,7 +1391,10 @@ public struct TweakDBStructureInspector: Sendable {
         }
         lines.append("Flat type sections:")
         for flatType in report.flatTypeSections {
-            lines.append("- \(flatType.typeName ?? flatType.typeHashHex): values=\(flatType.valueCount) keys=\(flatType.keyCount) block=\(flatType.valueBlockOffset) parsedValues=\(flatType.parsedValueCount) parsedKeys=\(flatType.parsedKeyCount) confidence=\(flatType.confidence.rawValue)")
+            lines.append("- \(flatType.typeName ?? flatType.typeHashHex): values=\(flatType.valueCount) keys=\(flatType.keyCount) block=\(flatType.valueBlockOffset) parsedValues=\(flatType.parsedValueCount) parsedKeys=\(flatType.parsedKeyCount) keysSorted=\(flatType.keyTableSortedByID) confidence=\(flatType.confidence.rawValue)")
+            if let issue = flatType.firstUnsortedKeyPair {
+                lines.append("  first unsorted key: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+            }
             for warning in flatType.warnings {
                 lines.append("  warning: \(warning)")
             }
@@ -1125,6 +1441,7 @@ public enum AddonProbeTweakDBStructureFormatter {
             "Sections: \(report.sections.count)",
             "Flat type sections: \(report.flatTypeSections.count)",
             "Records: \(report.recordCount)",
+            "Records sorted by ID: \(report.recordsSortedByID)",
             "Queries: \(report.queryCount)",
             "Group tags: \(report.groupTagCount)",
             "Resolved record reports: \(report.resolvedRecords.count)",
@@ -1133,6 +1450,9 @@ public enum AddonProbeTweakDBStructureFormatter {
             "Sections: \(PathSafety.redactUserPath(report.sectionsPath))",
             "Record traces: \(PathSafety.redactUserPath(report.recordTracesPath))"
         ]
+        if let issue = report.firstUnsortedRecordPair {
+            lines.append("First unsorted record pair: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+        }
         appendWarnings(report.warnings, to: &lines)
         return lines.joined(separator: "\n")
     }
@@ -1179,6 +1499,39 @@ public enum AddonProbeTweakDBRecordTraceFormatter {
     }
 
     public static func formatJSON(_ report: AddonProbeTweakDBRecordTraceReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+}
+
+public enum AddonProbeTweakDBRuntimeLookupValidationFormatter {
+    public static func format(_ report: AddonProbeTweakDBRuntimeLookupValidationReport) -> String {
+        var lines: [String] = [
+            "CyberMac TweakDB runtime lookup validation",
+            "Status: read-only; no game files were modified.",
+            "File: \(PathSafety.redactUserPath(report.filePath))",
+            "Record: \(report.recordName)",
+            "Record ID: \(report.recordIDHex)",
+            "Records sorted by ID: \(report.recordsSortedByID)",
+            "Record linear lookup: \(report.recordLinearFound ? "found" : "missing")\(report.recordLinearIndex.map { " index=\($0)" } ?? "")",
+            "Record binary lookup: \(report.recordBinaryFound ? "found" : "missing")\(report.recordBinaryIndex.map { " index=\($0)" } ?? "")",
+            "Known-schema flats checked: \(report.flatValidations.count)",
+            "Validation: \(report.validationSucceeded ? "succeeded" : "failed")",
+            "Status codes: \(report.validationStatus.joined(separator: ", "))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))"
+        ]
+        if let issue = report.firstUnsortedRecordPair {
+            lines.append("First unsorted record pair: [\(issue.previousIndex)] \(issue.previousIDHex) > [\(issue.currentIndex)] \(issue.currentIDHex)")
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            lines.append(contentsOf: report.warnings.map { "- \($0)" })
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeTweakDBRuntimeLookupValidationReport) throws -> String {
         String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
     }
 }

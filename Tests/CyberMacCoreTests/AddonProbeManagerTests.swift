@@ -351,6 +351,176 @@ final class AddonProbeManagerTests: XCTestCase {
         XCTAssertFalse(source.contains("GiveItem"))
     }
 
+    func testRuntimeItemDiagnosticGrantGeneratesZipSummaryAndSafeRedscript() throws {
+        let outputZip = tempDir.appendingPathComponent("tweakdb-runtime-diag.zip")
+
+        let result = try makeManager().runtimeItemDiagnosticGrant(request: AddonProbeRuntimeItemDiagnosticGrantRequest(
+            itemIDs: [
+                "Items.TShirt_04_old_01",
+                "Items.cybermac_probe_tshirt_visible"
+            ],
+            outputZipURL: outputZip,
+            modName: "CyberMac TweakDB Runtime Diagnostic",
+            moneyMarkers: true,
+            cNameChecks: [
+                RedscriptRuntimeCNameCheck(
+                    record: "Items.TShirt_04_old_01",
+                    property: "appearanceName",
+                    expectedValue: "cybermac_existing_record_probe"
+                )
+            ]
+        ))
+
+        XCTAssertEqual(result.itemIDs, [
+            "Items.TShirt_04_old_01",
+            "Items.cybermac_probe_tshirt_visible"
+        ])
+        XCTAssertEqual(result.modName, "CyberMac TweakDB Runtime Diagnostic")
+        XCTAssertTrue(result.moneyMarkers)
+        XCTAssertEqual(result.redscriptEntryPath, "r6/scripts/CyberMacItemDiag/CyberMacItemDiag.reds")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.outputZipPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.summaryPath))
+
+        let archive = try XCTUnwrap(Archive(url: outputZip, accessMode: .read))
+        XCTAssertEqual(Array(archive).map(\.path), [result.redscriptEntryPath])
+
+        let source = try redscriptEntry(in: outputZip, path: result.redscriptEntryPath)
+        for itemID in result.itemIDs {
+            XCTAssertTrue(source.contains("t\"\(itemID)\""), "Missing TweakDBID literal for \(itemID)")
+            XCTAssertTrue(source.contains("n\"\(itemID)\""), "Missing log label for \(itemID)")
+        }
+        XCTAssertTrue(source.contains("[CyberMacItemDiag]"))
+        let logLines = source.split(separator: "\n").filter { $0.contains("LogChannel") }
+        XCTAssertFalse(logLines.isEmpty)
+        XCTAssertTrue(logLines.allSatisfy { $0.contains("s\"[CyberMacItemDiag]") })
+        XCTAssertTrue(source.contains("@wrapMethod(PlayerPuppet)"))
+        XCTAssertTrue(source.contains("OnGameAttached"))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.GrantProofItem(transactionSystem, this, t\"Items.TShirt_04_old_01\""))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.GrantMoneyMarker(transactionSystem, this, 700000);"))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.CheckCNameMarker(transactionSystem, this, t\"Items.TShirt_04_old_01\", t\".appearanceName\", n\"cybermac_existing_record_probe\""))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.ProbeCloneWithMoneyMarkers(transactionSystem, this, t\"Items.cybermac_probe_tshirt_visible\""))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetCName(recordID + flatSuffix, n\"__missing\")"))
+        XCTAssertTrue(source.contains("Equals(actualValue, expectedValue)"))
+        XCTAssertTrue(source.contains("ItemID.FromTDBID"))
+        XCTAssertTrue(source.contains("ItemID.GetTDBID"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetCName(tdbid + t\".appearanceName\", n\"__missing\")"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetCName(tdbid + t\".entityName\", n\"__missing\")"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetBool(tdbid + t\".isGarment\", false)"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetBool(tdbid + t\".canDrop\", false)"))
+        XCTAssertTrue(source.contains("transactionSystem.GetItemList(holder, items);"))
+        XCTAssertTrue(source.contains("transactionSystem.GiveItem(player, itemID, 1);"))
+        for amount in ["700000", "11000", "12000", "2100", "2200", "310", "320", "41", "42", "51", "52", "5000", "6000"] {
+            XCTAssertTrue(source.contains(amount), "Missing money marker amount \(amount)")
+        }
+        XCTAssertFalse(source.contains("GetTweakDBID"))
+        XCTAssertFalse(source.contains("gamedataItem_Record"))
+        XCTAssertFalse(source.contains("gamedataClothing_Record"))
+        XCTAssertFalse(source.contains("TweakDBInterface.GetItemRecord"))
+        XCTAssertFalse(source.contains("TweakDBInterface.GetRecord"))
+
+        let summary = try String(contentsOfFile: result.summaryPath, encoding: .utf8)
+        XCTAssertTrue(summary.contains("Log prefix: [CyberMacItemDiag]"))
+        XCTAssertTrue(summary.contains("Money marker legend:"))
+        XCTAssertTrue(summary.contains("+700000 trigger entered"))
+        XCTAssertTrue(summary.contains("+5000 checked existing CName equals expected value"))
+        XCTAssertTrue(summary.contains("Items.TShirt_04_old_01.appearanceName=cybermac_existing_record_probe"))
+        XCTAssertTrue(summary.contains("+713514 = trigger entered"))
+        XCTAssertTrue(summary.contains("Items.TShirt_04_old_01"))
+        XCTAssertTrue(summary.contains("Items.cybermac_probe_tshirt_visible"))
+
+        let commandSummary = AddonProbeRuntimeItemDiagnosticGrantFormatter.format(result)
+        XCTAssertTrue(commandSummary.contains("Money marker legend:"))
+        XCTAssertTrue(commandSummary.contains("+12000 clone appearanceName is __missing"))
+        XCTAssertTrue(commandSummary.contains("CName checks:"))
+
+        let json = try AddonProbeRuntimeItemDiagnosticGrantFormatter.formatJSON(result)
+        let decoded = try JSONDecoder.cybermac.decode(AddonProbeRuntimeItemDiagnosticGrantResult.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded, result)
+    }
+
+    func testRuntimeItemDiagnosticGrantSupportsOneItemMoneyMarkerMode() throws {
+        let itemID = "Items.atomiic_sexyofficedress_shirt_black"
+        let outputZip = tempDir.appendingPathComponent("atomiic-runtime-diag.zip")
+
+        let result = try makeManager().runtimeItemDiagnosticGrant(request: AddonProbeRuntimeItemDiagnosticGrantRequest(
+            itemIDs: [itemID],
+            outputZipURL: outputZip,
+            modName: "CyberMac Atomiic One Item Diagnostic",
+            moneyMarkers: true,
+            cNameChecks: [
+                RedscriptRuntimeCNameCheck(
+                    record: itemID,
+                    property: "appearanceName",
+                    expectedValue: "atomiic_sexyofficedress_shirt_w_black"
+                )
+            ]
+        ))
+
+        XCTAssertEqual(result.itemIDs, [itemID])
+        XCTAssertTrue(result.moneyMarkers)
+        let source = try redscriptEntry(in: outputZip, path: result.redscriptEntryPath)
+        XCTAssertTrue(source.contains("one-item money marker mode; skipping vanilla proof grant"))
+        XCTAssertFalse(source.contains("CyberMacItemDiagHelper.GrantProofItem(transactionSystem, this,"))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.GrantMoneyMarker(transactionSystem, this, 700000);"))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.CheckCNameMarker(transactionSystem, this, t\"\(itemID)\", t\".appearanceName\", n\"atomiic_sexyofficedress_shirt_w_black\""))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.ProbeCloneWithMoneyMarkers(transactionSystem, this, t\"\(itemID)\""))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetCName(tdbid + t\".appearanceName\", n\"__missing\")"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetCName(tdbid + t\".entityName\", n\"__missing\")"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetBool(tdbid + t\".isGarment\", false)"))
+        XCTAssertTrue(source.contains("TweakDBInterface.GetBool(tdbid + t\".canDrop\", false)"))
+
+        let summary = try String(contentsOfFile: result.summaryPath, encoding: .utf8)
+        XCTAssertTrue(summary.contains("The helper probes the listed item directly"))
+        XCTAssertTrue(summary.contains("+713514 = trigger entered"))
+        XCTAssertTrue(summary.contains(itemID))
+    }
+
+    func testRuntimeItemDiagnosticGrantRetainsLogOnlyMode() throws {
+        let outputZip = tempDir.appendingPathComponent("tweakdb-runtime-diag-log-only.zip")
+
+        let result = try makeManager().runtimeItemDiagnosticGrant(request: AddonProbeRuntimeItemDiagnosticGrantRequest(
+            itemIDs: ["Items.TShirt_04_old_01"],
+            outputZipURL: outputZip,
+            modName: "CyberMac TweakDB Runtime Diagnostic"
+        ))
+
+        XCTAssertFalse(result.moneyMarkers)
+        XCTAssertTrue(result.moneyMarkerLegend.isEmpty)
+        let source = try redscriptEntry(in: outputZip, path: result.redscriptEntryPath)
+        XCTAssertTrue(source.contains("Mode: log-only"))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.ProbeOne(transactionSystem, this, t\"Items.TShirt_04_old_01\""))
+        XCTAssertFalse(source.contains("CyberMacItemDiagHelper.GrantMoneyMarker(transactionSystem, this, 700000);"))
+        let summary = AddonProbeRuntimeItemDiagnosticGrantFormatter.format(result)
+        XCTAssertTrue(summary.contains("Money markers: disabled"))
+        XCTAssertFalse(summary.contains("Money marker legend:"))
+    }
+
+    func testRuntimeItemDiagnosticGrantInstallsAndActivationCompileSmokePasses() throws {
+        let outputZip = tempDir.appendingPathComponent("tweakdb-runtime-diag-smoke.zip")
+        _ = try makeManager().runtimeItemDiagnosticGrant(request: AddonProbeRuntimeItemDiagnosticGrantRequest(
+            itemIDs: [
+                "Items.TShirt_04_old_01",
+                "Items.cybermac_probe_tshirt_visible"
+            ],
+            outputZipURL: outputZip,
+            modName: "CyberMac TweakDB Runtime Diagnostic",
+            moneyMarkers: true
+        ))
+        let game = try makeActivatableGameInstall()
+        try installFakeActivationCompiler()
+
+        let manifest = try RedscriptModInstaller(home: home).install(zipURL: outputZip, gameInstall: game)
+        XCTAssertEqual(manifest.status, .enabled)
+        XCTAssertTrue(manifest.installedFiles.contains { $0.sourceInArchive == "r6/scripts/CyberMacItemDiag/CyberMacItemDiag.reds" })
+
+        _ = try BaseCacheManager(home: home).refreshBaseCache(gameInstall: game, dryRun: false)
+        let activation = try ActivationManager(home: home).activateBundleMode(gameInstall: game)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: activation.tempOutputPath))
+        let compiled = try String(contentsOfFile: activation.tempOutputPath, encoding: .utf8)
+        XCTAssertTrue(compiled.contains("compiled"))
+    }
+
     func testCompareBaseRecordsReportsUnresolvedWhenNoDefinitionsFound() throws {
         let modRoot = try makeAtomiicMod()
         let dbURL = try makeArchiveIndex(catalogs: [
@@ -1667,6 +1837,99 @@ final class AddonProbeManagerTests: XCTestCase {
         XCTAssertEqual(try PathSafety.sha256(url: archiveURL(gameInstall: game)), originalGameArchiveSHA)
     }
 
+    func testOneItemClothingPipelineStagesDualTweakDBAssetsAndDiagnostic() throws {
+        let game = try makeGameInstall()
+        let originalGameArchiveSHA = try PathSafety.sha256(url: archiveURL(gameInstall: game))
+        let backupManager = OfficialArchiveBackupManager(home: home)
+        let backup = try backupManager.backup(relativeArchivePath: relativeArchivePath, gameInstall: game)
+        _ = try OutfitRegistryManager(home: home).createProfile(request: OutfitProfileCreateRequest(
+            id: "appearance-main",
+            displayName: "Appearance Main",
+            targetArchiveRelativePath: relativeArchivePath,
+            backupID: backup.backupID
+        ))
+
+        let modRoot = try makeAtomiicMod()
+        let modArchive = modRoot.appendingPathComponent("archive/pc/mod/Atomiic_Sexy_Office_Dress_XL.archive")
+        let baseTweakDB = try makeFullSchemaClothingTweakDBFixture(name: "base-tweakdb.bin", cNameValue: "base_cloned_value")
+        let ep1TweakDB = try makeFullSchemaClothingTweakDBFixture(name: "ep1-tweakdb.bin", cNameValue: "ep1_cloned_value")
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            backup.backupFilePath: [
+                "base/garment/vanilla.mesh": "vanilla"
+            ],
+            modArchive.path: [
+                "base/atomiic/garment/atomiic_sexyofficedress_shirt.mesh": "shirt",
+                "base/atomiic/icons/atomiic_sexyofficedress.inkatlas": "icons"
+            ]
+        ])
+
+        let report = try makeManager(tooling: tooling).stageOneItemClothingAddon(request: AddonProbeOneItemClothingPipelineRequest(
+            modURL: modRoot,
+            yamlRelativePath: "r6/tweaks/atomiic/atomiic_sexyofficedress.yaml",
+            baseTweakDBURL: baseTweakDB,
+            ep1TweakDBURL: ep1TweakDB,
+            outputDirectoryURL: tempDir.appendingPathComponent("one-item-pipeline", isDirectory: true),
+            itemID: "Items.atomiic_sexyofficedress_shirt_black",
+            targetArchiveRelativePath: relativeArchivePath,
+            profileID: "appearance-main",
+            cp77toolsURL: cp77toolsURL,
+            gameInstall: game
+        ))
+
+        XCTAssertTrue(report.verificationSucceeded)
+        XCTAssertEqual(report.itemID, "Items.atomiic_sexyofficedress_shirt_black")
+        XCTAssertEqual(report.sourceRecord, "Items.GenericInnerChestClothing")
+        XCTAssertEqual(report.expandedRecord.appearanceName, "atomiic_sexyofficedress_shirt_w_black")
+        XCTAssertEqual(URL(fileURLWithPath: report.tweakDBReport.stagedBaseFilePath).lastPathComponent, "tweakdb.bin")
+        XCTAssertEqual(URL(fileURLWithPath: report.tweakDBReport.stagedEP1FilePath).lastPathComponent, "tweakdb_ep1.bin")
+        XCTAssertEqual(URL(fileURLWithPath: report.tweakDBReport.stagedBaseFilePath).deletingLastPathComponent().lastPathComponent, "staged")
+        XCTAssertEqual(URL(fileURLWithPath: report.tweakDBReport.stagedEP1FilePath).deletingLastPathComponent().lastPathComponent, "staged")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.tweakDBReport.stagedBaseFilePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.tweakDBReport.stagedEP1FilePath))
+        XCTAssertTrue(report.tweakDBReport.baseRuntimeLookupValidation.recordBinaryFound)
+        XCTAssertTrue(report.tweakDBReport.ep1RuntimeLookupValidation.recordBinaryFound)
+        XCTAssertGreaterThanOrEqual(report.tweakDBReport.baseNewRecordSortedIndex, 0)
+        XCTAssertGreaterThanOrEqual(report.tweakDBReport.ep1NewRecordSortedIndex, 0)
+        XCTAssertNotEqual(report.tweakDBReport.baseReport.stagedSHA256, report.tweakDBReport.ep1Report.stagedSHA256)
+
+        let overrides = Dictionary(uniqueKeysWithValues: report.flatOverrides.map { ($0.property, $0) })
+        XCTAssertEqual(overrides["appearanceName"]?.yamlValue, "atomiic_sexyofficedress_shirt_w_black")
+        XCTAssertEqual(overrides["entityName"]?.yamlValue, "atomiic_sexyofficedress_shirt_w")
+        XCTAssertEqual(overrides["displayName"]?.yamlValue, "Atomiic Sexy Office Dress Shirt black")
+        XCTAssertEqual(overrides["localizedName"]?.yamlValue, "Atomiic Sexy Office Dress Shirt black")
+        XCTAssertEqual(overrides["localizedDescription"]?.yamlValue, "Atomiic Sexy Office Dress localized description black")
+        XCTAssertEqual(overrides["quality"]?.yamlValue, "Quality.Legendary")
+        for property in ["appearanceName", "entityName", "displayName", "localizedName", "localizedDescription", "quality"] {
+            XCTAssertTrue(overrides[property]?.supported == true, "Expected supported override for \(property)")
+            XCTAssertTrue(overrides[property]?.baseMatched == true, "Expected base override match for \(property)")
+            XCTAssertTrue(overrides[property]?.ep1Matched == true, "Expected EP1 override match for \(property)")
+        }
+        XCTAssertFalse(overrides["placementSlots"]?.supported ?? true)
+        XCTAssertFalse(overrides["icon.atlasResourcePath"]?.supported ?? true)
+        XCTAssertFalse(overrides["icon.atlasPartName"]?.supported ?? true)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.assetManifest.stagedArchivePath))
+        XCTAssertEqual(tooling.packedFiles["base/garment/vanilla.mesh"], "vanilla")
+        XCTAssertEqual(tooling.packedFiles["base/atomiic/garment/atomiic_sexyofficedress_shirt.mesh"], "shirt")
+        XCTAssertEqual(tooling.packedFiles["base/atomiic/icons/atomiic_sexyofficedress.inkatlas"], "icons")
+        XCTAssertEqual(try PathSafety.sha256(url: archiveURL(gameInstall: game)), originalGameArchiveSHA)
+
+        XCTAssertEqual(report.grantHelper.itemIDs, ["Items.atomiic_sexyofficedress_shirt_black"])
+        XCTAssertTrue(report.grantHelper.moneyMarkers)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.grantHelper.outputZipPath))
+        let source = try redscriptEntry(in: URL(fileURLWithPath: report.grantHelper.outputZipPath), path: report.grantHelper.redscriptEntryPath)
+        XCTAssertTrue(source.contains("one-item money marker mode; skipping vanilla proof grant"))
+        XCTAssertFalse(source.contains("CyberMacItemDiagHelper.GrantProofItem(transactionSystem, this,"))
+        XCTAssertTrue(source.contains("CyberMacItemDiagHelper.ProbeCloneWithMoneyMarkers(transactionSystem, this, t\"Items.atomiic_sexyofficedress_shirt_black\""))
+
+        XCTAssertTrue(report.manualInstallCommands.contains { $0.contains("tweakdb.bin") })
+        XCTAssertTrue(report.manualInstallCommands.contains { $0.contains("tweakdb_ep1.bin") })
+        XCTAssertTrue(report.manualInstallCommands.contains { $0.contains(report.assetManifest.stagedArchivePath) })
+        XCTAssertTrue(report.manualInstallCommands.contains { $0.contains(report.grantHelper.outputZipPath) })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+    }
+
     func testFactoryCSVDetectsItemIDsResourcePathsAndKnownVanillaItems() throws {
         let summary = AddonProbeManager.analyzeFactoryCSV(
             resourcePath: "base/gameplay/factories/items/clothing.csv",
@@ -2350,6 +2613,21 @@ final class AddonProbeManagerTests: XCTestCase {
         data.replaceSubrange(offset..<(offset + 4), with: littleEndianUInt32Bytes(value))
     }
 
+    private func writeLittleEndianUInt64(_ value: UInt64, into data: inout Data, at offset: Int) {
+        data.replaceSubrange(offset..<(offset + 8), with: littleEndianUInt64Bytes(value))
+    }
+
+    private func encodeLengthPrefixedString(_ value: String) -> Data {
+        if value.isEmpty {
+            return Data([0])
+        }
+        let bytes = Array(value.utf8)
+        XCTAssertLessThan(bytes.count, 64, "Test helper encodes short ASCII strings only")
+        var data = Data([0x80 | UInt8(bytes.count)])
+        data.append(contentsOf: bytes)
+        return data
+    }
+
     private func tweakDBID(_ name: String) -> UInt64 {
         let bytes = Array(name.utf8)
         return (UInt64(bytes.count) << 32) | UInt64(TweakDBPackedStringAnalyzer.crc32(bytes))
@@ -2447,6 +2725,85 @@ final class AddonProbeManagerTests: XCTestCase {
         let url = tempDir.appendingPathComponent(name)
         try data.write(to: url, options: [.atomic])
         return FormatTweakDBFixture(url: url)
+    }
+
+    private func makeFullSchemaClothingTweakDBFixture(name: String, cNameValue: String) throws -> URL {
+        var data = Data()
+        appendLittleEndianUInt32(0x0BB1DB47, to: &data)
+        appendLittleEndianUInt32(8, to: &data)
+        appendLittleEndianUInt32(4, to: &data)
+        appendLittleEndianUInt32(0xDEADBEEF, to: &data)
+        appendLittleEndianUInt32(0x20, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        XCTAssertEqual(data.count, 0x20)
+
+        appendLittleEndianUInt32(2, to: &data)
+        let descriptorTableStart = data.count
+        data.append(Data(count: 40))
+
+        let cNameHash = TweakDBPackedStringAnalyzer.fnv1a64(Array("CName".utf8))
+        let cNameValues = [cNameValue]
+        let cNameBlockOffset = data.count
+        appendLittleEndianUInt32(UInt32(cNameValues.count), to: &data)
+        for value in cNameValues {
+            data.append(encodeLengthPrefixedString(value))
+        }
+        let cNameKeys: [(UInt64, Int32)] = TweakDBStructureInspector.itemRecordProperties
+            .filter { $0 != "quality" }
+            .map { (tweakDBID("Items.GenericInnerChestClothing.\($0)"), 0) }
+            .sorted { $0.0 < $1.0 }
+        appendLittleEndianUInt32(UInt32(cNameKeys.count), to: &data)
+        for key in cNameKeys {
+            appendLittleEndianUInt64(key.0, to: &data)
+            appendLittleEndianInt32(key.1, to: &data)
+        }
+
+        let tweakDBIDHash = TweakDBPackedStringAnalyzer.fnv1a64(Array("TweakDBID".utf8))
+        let tweakDBIDValues = [tweakDBID("Quality.Common")]
+        let tweakDBIDBlockOffset = data.count
+        appendLittleEndianUInt32(UInt32(tweakDBIDValues.count), to: &data)
+        for value in tweakDBIDValues {
+            appendLittleEndianUInt64(value, to: &data)
+        }
+        let tweakDBIDKeys: [(UInt64, Int32)] = [
+            (tweakDBID("Items.GenericInnerChestClothing.quality"), 0)
+        ]
+        appendLittleEndianUInt32(UInt32(tweakDBIDKeys.count), to: &data)
+        for key in tweakDBIDKeys {
+            appendLittleEndianUInt64(key.0, to: &data)
+            appendLittleEndianInt32(key.1, to: &data)
+        }
+
+        writeLittleEndianUInt64(cNameHash, into: &data, at: descriptorTableStart)
+        writeLittleEndianUInt32(UInt32(cNameValues.count), into: &data, at: descriptorTableStart + 8)
+        writeLittleEndianUInt32(UInt32(cNameKeys.count), into: &data, at: descriptorTableStart + 12)
+        writeLittleEndianUInt32(UInt32(cNameBlockOffset), into: &data, at: descriptorTableStart + 16)
+        let tweakDBIDDescriptorOffset = descriptorTableStart + 20
+        writeLittleEndianUInt64(tweakDBIDHash, into: &data, at: tweakDBIDDescriptorOffset)
+        writeLittleEndianUInt32(UInt32(tweakDBIDValues.count), into: &data, at: tweakDBIDDescriptorOffset + 8)
+        writeLittleEndianUInt32(UInt32(tweakDBIDKeys.count), into: &data, at: tweakDBIDDescriptorOffset + 12)
+        writeLittleEndianUInt32(UInt32(tweakDBIDBlockOffset), into: &data, at: tweakDBIDDescriptorOffset + 16)
+
+        let recordsOffset = data.count
+        appendLittleEndianUInt32(1, to: &data)
+        appendLittleEndianUInt64(tweakDBID("Items.GenericInnerChestClothing"), to: &data)
+        appendLittleEndianUInt32(murmur3_32("Clothing", seed: 0x5EEDBA5E), to: &data)
+
+        let queriesOffset = data.count
+        appendLittleEndianUInt32(0, to: &data)
+
+        let groupTagsOffset = data.count
+        appendLittleEndianUInt32(0, to: &data)
+
+        writeLittleEndianUInt32(UInt32(recordsOffset), into: &data, at: 20)
+        writeLittleEndianUInt32(UInt32(queriesOffset), into: &data, at: 24)
+        writeLittleEndianUInt32(UInt32(groupTagsOffset), into: &data, at: 28)
+
+        let url = tempDir.appendingPathComponent(name)
+        try data.write(to: url, options: [.atomic])
+        return url
     }
 
     private func makeReferenceTableFixture(name: String) throws -> ReferenceTableFixture {
@@ -2970,6 +3327,84 @@ final class AddonProbeManagerTests: XCTestCase {
             storefront: .macAppStore,
             displayName: "Cyberpunk 2077"
         )
+    }
+
+    private func makeActivatableGameInstall() throws -> GameInstall {
+        let appURL = tempDir.appendingPathComponent("Cyberpunk 2077 Activation Test.app", isDirectory: true)
+        let contentsURL = appURL.appendingPathComponent("Contents", isDirectory: true)
+        let dataURL = contentsURL.appendingPathComponent("Data", isDirectory: true)
+        let executableURL = contentsURL.appendingPathComponent("MacOS/Cyberpunk2077")
+        let receiptURL = contentsURL.appendingPathComponent("_MASReceipt/receipt")
+        let cacheURL = dataURL.appendingPathComponent("r6/cache/final.redscripts")
+        try FileManager.default.createDirectory(at: executableURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: receiptURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "game-executable".write(to: executableURL, atomically: true, encoding: .utf8)
+        try "receipt".write(to: receiptURL, atomically: true, encoding: .utf8)
+        try "vanilla-cache".write(to: cacheURL, atomically: true, encoding: .utf8)
+        let plist: [String: String] = [
+            "CFBundleIdentifier": "com.cdprojektred.cyberpunk2077",
+            "CFBundleShortVersionString": "2.2",
+            "CFBundleVersion": "100"
+        ]
+        let plistData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try plistData.write(to: contentsURL.appendingPathComponent("Info.plist"), options: [.atomic])
+
+        return GameInstall(
+            appURL: appURL,
+            executableURL: executableURL,
+            dataURL: dataURL,
+            archiveMacURL: dataURL.appendingPathComponent("archive/Mac", isDirectory: true),
+            r6URL: dataURL.appendingPathComponent("r6", isDirectory: true),
+            storefront: .macAppStore,
+            displayName: "Cyberpunk 2077"
+        )
+    }
+
+    private func installFakeActivationCompiler() throws {
+        let sccURL = home.redscriptRuntimeURL.appendingPathComponent("engine/tools/scc")
+        try FileManager.default.createDirectory(at: sccURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let script = """
+        #!/bin/sh
+        if [ "$1" = "-compile" ] && [ "$2" = "-h" ]; then
+          echo "compile help"
+          exit 0
+        fi
+        scripts=""
+        out=""
+        while [ "$#" -gt 0 ]; do
+          case "$1" in
+            -compile)
+              shift
+              scripts="$1"
+              ;;
+            -outputCacheFile)
+              shift
+              out="$1"
+              ;;
+          esac
+          shift
+        done
+        if grep -R "GetTweakDBID" "$scripts" >/dev/null 2>&1; then
+          echo "forbidden GetTweakDBID in generated script" >&2
+          exit 42
+        fi
+        if grep -R "gamedataItem_Record" "$scripts" >/dev/null 2>&1; then
+          echo "forbidden gamedataItem_Record in generated script" >&2
+          exit 43
+        fi
+        cache_dir="$(dirname "$scripts")/cache"
+        if [ ! -f "$cache_dir/final.redscripts" ]; then
+          echo "Could not copy the base script cache file" >&2
+          exit 1
+        fi
+        echo "timestamp" > "$cache_dir/final.redscripts.ts"
+        mkdir -p "$(dirname "$out")"
+        cat "$cache_dir/final.redscripts" > "$out"
+        echo "compiled" >> "$out"
+        """
+        try script.write(to: sccURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sccURL.path)
     }
 
     @discardableResult

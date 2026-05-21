@@ -61,9 +61,104 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
         XCTAssertEqual(report.verificationStatus, "newRecordResolvedInStagedFile")
         XCTAssertEqual(report.verification?.knownFlatCount, 4)
         XCTAssertEqual(report.verification?.recordTableEntry?.recordTypeName, "Item")
+        XCTAssertEqual(report.newRecordSortedIndex, 0)
+        XCTAssertNil(report.previousRecord)
+        XCTAssertEqual(report.nextRecord?.recordName, "Items.Source")
+        XCTAssertTrue(report.stagedRecordsSortedByID)
+        XCTAssertFalse(report.touchedFlatKeyTables.isEmpty)
+        XCTAssertTrue(report.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID))
         XCTAssertTrue(FileManager.default.fileExists(atPath: report.stagedFilePath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
         XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+    }
+
+    func testStagedCloneInsertsNewRecordIntoSortedPosition() throws {
+        XCTAssertLessThan(tweakDBID("Items.Clone"), tweakDBID("Items.Source"))
+        let fixture = try makeCloneFixture(name: "clone-sorted-record.bin")
+        let outDir = tempDir.appendingPathComponent("clone-sorted-record-out", isDirectory: true)
+
+        let report = try makeManager().stageTweakDBCloneRecord(request: AddonProbeTweakDBCloneRecordRequest(
+            fileURL: fixture.url,
+            outputDirectoryURL: outDir,
+            sourceRecord: "Items.Source",
+            newRecord: "Items.Clone"
+        ))
+
+        XCTAssertEqual(report.newRecordSortedIndex, 0)
+        XCTAssertEqual(report.verification?.recordTableEntry?.tableIndex, 0)
+        XCTAssertTrue(report.stagedRecordsSortedByID)
+    }
+
+    func testRuntimeLookupValidationFindsStagedCloneByBinarySearch() throws {
+        let fixture = try makeCloneFixture(name: "clone-runtime-lookup.bin")
+        let outDir = tempDir.appendingPathComponent("clone-runtime-lookup-out", isDirectory: true)
+        let report = try makeManager().stageTweakDBCloneRecord(request: AddonProbeTweakDBCloneRecordRequest(
+            fileURL: fixture.url,
+            outputDirectoryURL: outDir,
+            sourceRecord: "Items.Source",
+            newRecord: "Items.Clone"
+        ))
+
+        let validation = try makeManager().validateTweakDBRuntimeLookup(request: AddonProbeTweakDBRuntimeLookupValidationRequest(
+            fileURL: URL(fileURLWithPath: report.stagedFilePath),
+            record: "Items.Clone",
+            outputDirectoryURL: tempDir.appendingPathComponent("clone-runtime-lookup-validate", isDirectory: true)
+        ))
+
+        XCTAssertTrue(validation.validationSucceeded)
+        XCTAssertTrue(validation.recordsSortedByID)
+        XCTAssertTrue(validation.recordLinearFound)
+        XCTAssertTrue(validation.recordBinaryFound)
+        XCTAssertEqual(validation.recordBinaryIndex, report.newRecordSortedIndex)
+        XCTAssertTrue(validation.validationStatus.contains("recordBinaryFound"))
+        XCTAssertFalse(validation.flatValidations.isEmpty)
+        XCTAssertTrue(validation.flatValidations.allSatisfy { $0.binaryFound && $0.keyTableSortedByID })
+    }
+
+    func testTouchedFlatKeyTablesRemainSortedAfterOverrides() throws {
+        let fixture = try makeCloneFixture(name: "clone-touched-flat-sorted.bin")
+        let outDir = tempDir.appendingPathComponent("clone-touched-flat-sorted-out", isDirectory: true)
+
+        let report = try makeManager().stageTweakDBCloneRecord(request: AddonProbeTweakDBCloneRecordRequest(
+            fileURL: fixture.url,
+            outputDirectoryURL: outDir,
+            sourceRecord: "Items.Source",
+            newRecord: "Items.Clone",
+            overrides: [
+                .cName(property: "appearanceName", value: "cybermac_probe_appearance"),
+                .string(property: "localizedDescription", value: "hello")
+            ]
+        ))
+
+        XCTAssertFalse(report.touchedFlatKeyTables.isEmpty)
+        XCTAssertTrue(report.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID))
+        XCTAssertTrue(report.touchedFlatKeyTables.contains { $0.typeName == "String" })
+
+        let inspectorReport = try makeManager().inspectTweakDBStructure(request: AddonProbeTweakDBStructureInspectRequest(
+            fileURL: URL(fileURLWithPath: report.stagedFilePath),
+            outputDirectoryURL: tempDir.appendingPathComponent("clone-touched-flat-sorted-inspect", isDirectory: true),
+            records: ["Items.Clone"]
+        ))
+        XCTAssertTrue(inspectorReport.recordsSortedByID)
+        XCTAssertTrue(inspectorReport.flatTypeSections.filter { section in
+            report.touchedFlatKeyTables.contains { $0.typeHashHex == section.typeHashHex }
+        }.allSatisfy(\.keyTableSortedByID))
+    }
+
+    func testRuntimeLookupValidationFailsUnsortedRecordTable() throws {
+        let fixture = try makeUnsortedRecordTableFixture(name: "runtime-unsorted-records.bin")
+        let validation = try makeManager().validateTweakDBRuntimeLookup(request: AddonProbeTweakDBRuntimeLookupValidationRequest(
+            fileURL: fixture,
+            record: "Items.Clone",
+            outputDirectoryURL: tempDir.appendingPathComponent("runtime-unsorted-records-validate", isDirectory: true)
+        ))
+
+        XCTAssertFalse(validation.validationSucceeded)
+        XCTAssertFalse(validation.recordsSortedByID)
+        XCTAssertTrue(validation.recordLinearFound)
+        XCTAssertFalse(validation.recordBinaryFound)
+        XCTAssertTrue(validation.validationStatus.contains("recordsUnsorted"))
+        XCTAssertTrue(validation.validationStatus.contains("recordLinearFoundButBinaryMissing"))
     }
 
     func testCNameOverrideReusesExistingValueIndex() throws {
@@ -120,6 +215,176 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
 
         let appearanceFlat = try XCTUnwrap(report.verification?.knownFlats.first { $0.property == "appearanceName" })
         XCTAssertEqual(appearanceFlat.valueSummary, "\"cybermac_probe_appearance\"")
+    }
+
+    func testExistingCNameFlatOverrideAppendsValueAndVerifiesOffline() throws {
+        let fixture = try makeCloneFixture(name: "override-flat-cname-append.bin")
+        let outDir = tempDir.appendingPathComponent("override-flat-cname-append-out", isDirectory: true)
+
+        let report = try makeManager().stageTweakDBOverrideFlat(request: AddonProbeTweakDBOverrideFlatRequest(
+            fileURL: fixture.url,
+            outputDirectoryURL: outDir,
+            record: "Items.Source",
+            property: "appearanceName",
+            cNameValue: "cybermac_existing_record_probe"
+        ))
+
+        XCTAssertEqual(report.record, "Items.Source")
+        XCTAssertEqual(report.property, "appearanceName")
+        XCTAssertEqual(report.originalValue, "appearance_source")
+        XCTAssertEqual(report.newValue, "cybermac_existing_record_probe")
+        XCTAssertEqual(report.originalValueIndex, 0)
+        XCTAssertEqual(report.newValueIndex, fixture.initialCNameValueCount)
+        XCTAssertEqual(report.cNameValueCountBefore, fixture.initialCNameValueCount)
+        XCTAssertEqual(report.cNameValueCountAfter, fixture.initialCNameValueCount + 1)
+        XCTAssertFalse(report.cNameValueReused)
+        XCTAssertTrue(report.cNameValueAppended)
+        XCTAssertFalse(report.keyTableCountChanged)
+        XCTAssertTrue(report.keyValueIndexChanged)
+        XCTAssertTrue(report.valueBlockChanged)
+        XCTAssertTrue(report.cNamePoolChanged)
+        XCTAssertTrue(report.touchedFlatKeyTable.keyTableSortedByID)
+        XCTAssertTrue(report.verificationSucceeded)
+        XCTAssertTrue(report.conclusions.contains(.offlineValueVerified))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.stagedFilePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+
+        let appearanceFlat = try XCTUnwrap(report.verification?.knownFlats.first { $0.property == "appearanceName" })
+        XCTAssertEqual(appearanceFlat.valueIndex, fixture.initialCNameValueCount)
+        XCTAssertEqual(appearanceFlat.valueSummary, "\"cybermac_existing_record_probe\"")
+
+        let formatted = AddonProbeTweakDBOverrideFlatFormatter.format(report)
+        XCTAssertTrue(formatted.contains("Original value: appearance_source"))
+        XCTAssertTrue(formatted.contains("New value: cybermac_existing_record_probe"))
+        XCTAssertTrue(formatted.contains("Key table count changed: false"))
+    }
+
+    func testExistingCNameFlatOverrideReusesExistingValue() throws {
+        let fixture = try makeCloneFixture(name: "override-flat-cname-reuse.bin")
+        let outDir = tempDir.appendingPathComponent("override-flat-cname-reuse-out", isDirectory: true)
+
+        let report = try makeManager().stageTweakDBOverrideFlat(request: AddonProbeTweakDBOverrideFlatRequest(
+            fileURL: fixture.url,
+            outputDirectoryURL: outDir,
+            record: "Items.Source",
+            property: "appearanceName",
+            cNameValue: "extra_cname"
+        ))
+
+        XCTAssertEqual(report.originalValueIndex, 0)
+        XCTAssertEqual(report.newValueIndex, 1)
+        XCTAssertEqual(report.cNameValueCountBefore, fixture.initialCNameValueCount)
+        XCTAssertEqual(report.cNameValueCountAfter, fixture.initialCNameValueCount)
+        XCTAssertTrue(report.cNameValueReused)
+        XCTAssertFalse(report.cNameValueAppended)
+        XCTAssertFalse(report.keyTableCountChanged)
+        XCTAssertTrue(report.keyValueIndexChanged)
+        XCTAssertFalse(report.valueBlockChanged)
+        XCTAssertFalse(report.cNamePoolChanged)
+        XCTAssertTrue(report.verificationSucceeded)
+    }
+
+    func testDualExistingCNameFlatOverrideStagesBaseAndEP1Outputs() throws {
+        let base = try makeCloneFixture(name: "dual-override-base.bin")
+        let ep1 = try makeCloneFixture(name: "dual-override-ep1.bin")
+        let outDir = tempDir.appendingPathComponent("dual-override-out", isDirectory: true)
+
+        let report = try makeManager().stageTweakDBDualOverrideFlat(request: AddonProbeTweakDBDualOverrideFlatRequest(
+            baseFileURL: base.url,
+            ep1FileURL: ep1.url,
+            outputDirectoryURL: outDir,
+            record: "Items.Source",
+            property: "appearanceName",
+            cNameValue: "cybermac_existing_record_probe"
+        ))
+
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedBaseFilePath).lastPathComponent, "tweakdb.bin")
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedEP1FilePath).lastPathComponent, "tweakdb_ep1.bin")
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedBaseFilePath).deletingLastPathComponent().lastPathComponent, "staged")
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedEP1FilePath).deletingLastPathComponent().lastPathComponent, "staged")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.stagedBaseFilePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.stagedEP1FilePath))
+        XCTAssertTrue(report.baseVerificationSucceeded)
+        XCTAssertTrue(report.ep1VerificationSucceeded)
+        XCTAssertTrue(report.verificationSucceeded)
+        XCTAssertTrue(report.conclusions.contains(.baseOfflineValueVerified))
+        XCTAssertTrue(report.conclusions.contains(.ep1OfflineValueVerified))
+        XCTAssertEqual(report.baseReport.newValue, "cybermac_existing_record_probe")
+        XCTAssertEqual(report.ep1Report.newValue, "cybermac_existing_record_probe")
+        XCTAssertFalse(report.baseReport.keyTableCountChanged)
+        XCTAssertFalse(report.ep1Report.keyTableCountChanged)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+
+        let baseTrace = try makeManager().traceTweakDBRecord(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: URL(fileURLWithPath: report.stagedBaseFilePath),
+            record: "Items.Source",
+            outputDirectoryURL: outDir.appendingPathComponent("base-final-trace", isDirectory: true)
+        ))
+        let ep1Trace = try makeManager().traceTweakDBRecord(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: URL(fileURLWithPath: report.stagedEP1FilePath),
+            record: "Items.Source",
+            outputDirectoryURL: outDir.appendingPathComponent("ep1-final-trace", isDirectory: true)
+        ))
+        XCTAssertEqual(baseTrace.trace.knownFlats.first { $0.property == "appearanceName" }?.valueSummary, "\"cybermac_existing_record_probe\"")
+        XCTAssertEqual(ep1Trace.trace.knownFlats.first { $0.property == "appearanceName" }?.valueSummary, "\"cybermac_existing_record_probe\"")
+
+        let formatted = AddonProbeTweakDBDualOverrideFlatFormatter.format(report)
+        XCTAssertTrue(formatted.contains("Base staged:"))
+        XCTAssertTrue(formatted.contains("EP1 staged:"))
+        XCTAssertTrue(formatted.contains("Verification succeeded: true"))
+    }
+
+    func testDualCloneRecordStagesBaseAndEP1OutputsWithBinaryLookupReports() throws {
+        let base = try makeFullSchemaCloneFixture(name: "dual-clone-base.bin", cNameValue: "base_schema_value")
+        let ep1 = try makeFullSchemaCloneFixture(name: "dual-clone-ep1.bin", cNameValue: "ep1_schema_value")
+        let outDir = tempDir.appendingPathComponent("dual-clone-out", isDirectory: true)
+
+        let report = try makeManager().stageTweakDBDualCloneRecord(request: AddonProbeTweakDBDualCloneRecordRequest(
+            baseFileURL: base.url,
+            ep1FileURL: ep1.url,
+            outputDirectoryURL: outDir,
+            sourceRecord: "Items.Source",
+            newRecord: "Items.Clone"
+        ))
+
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedBaseFilePath).lastPathComponent, "tweakdb.bin")
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedEP1FilePath).lastPathComponent, "tweakdb_ep1.bin")
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedBaseFilePath).deletingLastPathComponent().lastPathComponent, "staged")
+        XCTAssertEqual(URL(fileURLWithPath: report.stagedEP1FilePath).deletingLastPathComponent().lastPathComponent, "staged")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.stagedBaseFilePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.stagedEP1FilePath))
+
+        XCTAssertNotEqual(report.baseReport.reportPath, report.ep1Report.reportPath)
+        XCTAssertNotEqual(report.baseReport.summaryPath, report.ep1Report.summaryPath)
+        XCTAssertNotEqual(report.baseReport.stagedSHA256, report.ep1Report.stagedSHA256)
+
+        XCTAssertTrue(report.baseRuntimeLookupValidation.recordBinaryFound)
+        XCTAssertTrue(report.ep1RuntimeLookupValidation.recordBinaryFound)
+        XCTAssertEqual(report.baseRuntimeLookupValidation.recordBinaryIndex, report.baseNewRecordSortedIndex)
+        XCTAssertEqual(report.ep1RuntimeLookupValidation.recordBinaryIndex, report.ep1NewRecordSortedIndex)
+        XCTAssertTrue(report.baseNewRecordResolved)
+        XCTAssertTrue(report.ep1NewRecordResolved)
+        XCTAssertTrue(report.baseRecordsSortedByID)
+        XCTAssertTrue(report.ep1RecordsSortedByID)
+        XCTAssertTrue(report.baseTouchedFlatKeyTablesSorted)
+        XCTAssertTrue(report.ep1TouchedFlatKeyTablesSorted)
+        XCTAssertEqual(report.expectedKnownClothingFlatCount, TweakDBStructureInspector.itemRecordProperties.count)
+        XCTAssertEqual(report.expectedKnownClothingFlatCount, 82)
+        XCTAssertEqual(report.baseKnownClothingFlatCount, report.expectedKnownClothingFlatCount)
+        XCTAssertEqual(report.ep1KnownClothingFlatCount, report.expectedKnownClothingFlatCount)
+        XCTAssertTrue(report.baseKnownClothingFlatsResolved)
+        XCTAssertTrue(report.ep1KnownClothingFlatsResolved)
+        XCTAssertTrue(report.verificationSucceeded)
+        XCTAssertTrue(report.conclusions.contains(.baseKnownClothingFlatsResolved))
+        XCTAssertTrue(report.conclusions.contains(.ep1KnownClothingFlatsResolved))
+
+        let formatted = AddonProbeTweakDBDualCloneRecordFormatter.format(report)
+        XCTAssertTrue(formatted.contains("Base new record sorted index:"))
+        XCTAssertTrue(formatted.contains("EP1 new record sorted index:"))
+        XCTAssertTrue(formatted.contains("Base known Clothing flats:"))
+        XCTAssertTrue(formatted.contains("EP1 known Clothing flats:"))
     }
 
     func testStringOverrideAddsNewFlatForUnclonedProperty() throws {
@@ -570,6 +835,70 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
         )
     }
 
+    private func makeFullSchemaCloneFixture(name: String, cNameValue: String) throws -> CloneFixture {
+        var data = Data()
+        appendUInt32(0x0BB1DB47, to: &data)
+        appendUInt32(8, to: &data)
+        appendUInt32(4, to: &data)
+        appendUInt32(0xDEADBEEF, to: &data)
+        appendUInt32(0x20, to: &data)
+        appendUInt32(0, to: &data) // recordsOffset patched later
+        appendUInt32(0, to: &data) // queriesOffset patched later
+        appendUInt32(0, to: &data) // groupTagsOffset patched later
+        XCTAssertEqual(data.count, 0x20)
+
+        appendUInt32(1, to: &data) // CName only
+        let descriptorTableStart = data.count
+        data.append(Data(count: 20))
+
+        let cNameHash = TweakDBPackedStringAnalyzer.fnv1a64(Array("CName".utf8))
+        let cNameValues = [cNameValue]
+        let cNameBlockOffset = data.count
+        appendUInt32(UInt32(cNameValues.count), to: &data)
+        for value in cNameValues {
+            data.append(encodeLengthPrefixedString(value))
+        }
+        let cNameKeys: [(UInt64, Int32)] = TweakDBStructureInspector.itemRecordProperties.map {
+            (tweakDBID("Items.Source.\($0)"), 0)
+        }
+        appendUInt32(UInt32(cNameKeys.count), to: &data)
+        for key in cNameKeys {
+            appendUInt64(key.0, to: &data)
+            appendInt32(key.1, to: &data)
+        }
+
+        writeUInt64(cNameHash, into: &data, at: descriptorTableStart)
+        writeUInt32(UInt32(cNameValues.count), into: &data, at: descriptorTableStart + 8)
+        writeUInt32(UInt32(cNameKeys.count), into: &data, at: descriptorTableStart + 12)
+        writeUInt32(UInt32(cNameBlockOffset), into: &data, at: descriptorTableStart + 16)
+
+        let recordsOffset = data.count
+        appendUInt32(1, to: &data)
+        appendUInt64(tweakDBID("Items.Source"), to: &data)
+        appendUInt32(murmur3_32("Clothing", seed: 0x5EEDBA5E), to: &data)
+
+        let queriesOffset = data.count
+        appendUInt32(0, to: &data)
+
+        let groupTagsOffset = data.count
+        appendUInt32(0, to: &data)
+
+        writeUInt32(UInt32(recordsOffset), into: &data, at: 20)
+        writeUInt32(UInt32(queriesOffset), into: &data, at: 24)
+        writeUInt32(UInt32(groupTagsOffset), into: &data, at: 28)
+
+        let url = tempDir.appendingPathComponent(name)
+        try data.write(to: url, options: [.atomic])
+        return CloneFixture(
+            url: url,
+            initialCNameValueCount: cNameValues.count,
+            initialStringValueCount: 0,
+            initialTweakDBIDValueCount: 0,
+            initialLocKeyValueCount: 0,
+            initialInt32ValueCount: 0
+        )
+    }
+
     private struct MismatchedCloneFixture {
         let url: URL
         let arrayTweakDBIDDescriptorValueCount: Int
@@ -749,6 +1078,42 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
             cNameBlockValueCount: cNameValues.count,
             cNameIsMismatched: mismatchCName
         )
+    }
+
+    private func makeUnsortedRecordTableFixture(name: String) throws -> URL {
+        var data = Data()
+        appendUInt32(0x0BB1DB47, to: &data)
+        appendUInt32(8, to: &data)
+        appendUInt32(4, to: &data)
+        appendUInt32(0xDEADBEEF, to: &data)
+        appendUInt32(0x20, to: &data)
+        appendUInt32(0, to: &data) // recordsOffset patched later
+        appendUInt32(0, to: &data) // queriesOffset patched later
+        appendUInt32(0, to: &data) // groupTagsOffset patched later
+        XCTAssertEqual(data.count, 0x20)
+
+        appendUInt32(0, to: &data) // no flat type sections
+
+        let recordsOffset = data.count
+        appendUInt32(2, to: &data)
+        appendUInt64(tweakDBID("Items.Source"), to: &data)
+        appendUInt32(murmur3_32("Item", seed: 0x5EEDBA5E), to: &data)
+        appendUInt64(tweakDBID("Items.Clone"), to: &data)
+        appendUInt32(murmur3_32("Item", seed: 0x5EEDBA5E), to: &data)
+
+        let queriesOffset = data.count
+        appendUInt32(0, to: &data)
+
+        let groupTagsOffset = data.count
+        appendUInt32(0, to: &data)
+
+        writeUInt32(UInt32(recordsOffset), into: &data, at: 20)
+        writeUInt32(UInt32(queriesOffset), into: &data, at: 24)
+        writeUInt32(UInt32(groupTagsOffset), into: &data, at: 28)
+
+        let url = tempDir.appendingPathComponent(name)
+        try data.write(to: url, options: [.atomic])
+        return url
     }
 
     private func appendUInt32(_ value: UInt32, to data: inout Data) {
