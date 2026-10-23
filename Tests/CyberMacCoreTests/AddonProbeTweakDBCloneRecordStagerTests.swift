@@ -672,6 +672,88 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
         XCTAssertEqual(appearance.sourceValueIndex, appearance.newValueIndex)
     }
 
+    func testVanillaBackedVisualControlClonesInBothFilesAndPreservesVisualFlats() throws {
+        let base = try makeFullSchemaCloneFixture(name: "vbvc-base.bin", cNameValue: "base_schema_value")
+        let ep1 = try makeFullSchemaCloneFixture(name: "vbvc-ep1.bin", cNameValue: "ep1_schema_value")
+        let outDir = tempDir.appendingPathComponent("vbvc-out", isDirectory: true)
+
+        let report = try makeManager().stageVanillaBackedVisualControl(request: AddonProbeVanillaBackedVisualControlRequest(
+            baseTweakDBURL: base.url,
+            ep1TweakDBURL: ep1.url,
+            sourceRecord: "Items.Source",
+            newRecord: "Items.Clone",
+            outputDirectoryURL: outDir
+        ))
+
+        XCTAssertEqual(report.sourceRecord, "Items.Source")
+        XCTAssertEqual(report.newRecord, "Items.Clone")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.tweakDBReport.stagedBaseFilePath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.tweakDBReport.stagedEP1FilePath))
+        XCTAssertEqual(URL(fileURLWithPath: report.tweakDBReport.stagedBaseFilePath).lastPathComponent, "tweakdb.bin")
+        XCTAssertEqual(URL(fileURLWithPath: report.tweakDBReport.stagedEP1FilePath).lastPathComponent, "tweakdb_ep1.bin")
+        XCTAssertTrue(report.tweakDBReport.verificationSucceeded)
+        XCTAssertTrue(report.preservedFlatsVerified)
+        XCTAssertTrue(report.verificationSucceeded)
+
+        let expectedProperties = AddonProbeVanillaBackedVisualControlReport.preservedFlatProperties
+        XCTAssertEqual(report.preservedFlats.map(\.property), expectedProperties)
+        for flat in report.preservedFlats {
+            XCTAssertTrue(flat.preserved, "expected \(flat.property) preserved in both files")
+            XCTAssertTrue(flat.baseSourceFlatPresent)
+            XCTAssertTrue(flat.baseClonedFlatPresent)
+            XCTAssertTrue(flat.ep1SourceFlatPresent)
+            XCTAssertTrue(flat.ep1ClonedFlatPresent)
+            XCTAssertEqual(flat.baseSourceValueSummary, flat.baseClonedValueSummary)
+            XCTAssertEqual(flat.ep1SourceValueSummary, flat.ep1ClonedValueSummary)
+        }
+        let baseAppearance = try XCTUnwrap(report.preservedFlats.first { $0.property == "appearanceName" })
+        XCTAssertEqual(baseAppearance.baseClonedValueSummary, "\"base_schema_value\"")
+        XCTAssertEqual(baseAppearance.ep1ClonedValueSummary, "\"ep1_schema_value\"")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.grantHelper.outputZipPath))
+        XCTAssertEqual(report.grantHelper.itemIDs, ["Items.Clone"])
+        XCTAssertTrue(report.grantHelper.moneyMarkers)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+        let formatted = AddonProbeVanillaBackedVisualControlFormatter.format(report)
+        XCTAssertTrue(formatted.contains("Preserved visual flats verified: true"))
+        XCTAssertTrue(formatted.contains("Manual install commands:"))
+
+        XCTAssertTrue(report.manualInstallCommands.contains(where: { $0.contains(base.url.path) }))
+        XCTAssertTrue(report.manualInstallCommands.contains(where: { $0.contains(ep1.url.path) }))
+    }
+
+    func testVanillaBackedVisualControlAppliesDisplayNameLocKeyOverrideWithoutDisturbingVisualFlats() throws {
+        let base = try makeFullSchemaCloneFixture(name: "vbvc-displayname-base.bin", cNameValue: "shared_value")
+        let ep1 = try makeFullSchemaCloneFixture(name: "vbvc-displayname-ep1.bin", cNameValue: "shared_value")
+        let outDir = tempDir.appendingPathComponent("vbvc-displayname-out", isDirectory: true)
+
+        let report = try makeManager().stageVanillaBackedVisualControl(request: AddonProbeVanillaBackedVisualControlRequest(
+            baseTweakDBURL: base.url,
+            ep1TweakDBURL: ep1.url,
+            sourceRecord: "Items.Source",
+            newRecord: "Items.Clone",
+            outputDirectoryURL: outDir,
+            displayNameLocKey: 99999,
+            localizedNameLocKey: 77777
+        ))
+
+        XCTAssertEqual(report.displayNameLocKey, 99999)
+        XCTAssertEqual(report.localizedNameLocKey, 77777)
+        XCTAssertTrue(report.preservedFlatsVerified)
+        XCTAssertTrue(report.verificationSucceeded)
+
+        let baseDisplayOverride = try XCTUnwrap(report.tweakDBReport.baseReport.appliedOverrides.first { $0.property == "displayName" })
+        XCTAssertEqual(baseDisplayOverride.typeName, "gamedataLocKeyWrapper")
+        let ep1LocalizedOverride = try XCTUnwrap(report.tweakDBReport.ep1Report.appliedOverrides.first { $0.property == "localizedName" })
+        XCTAssertEqual(ep1LocalizedOverride.typeName, "gamedataLocKeyWrapper")
+
+        for flat in report.preservedFlats {
+            XCTAssertTrue(flat.preserved, "expected preserved flat \(flat.property) to remain unchanged when only displayName/localizedName are overridden")
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeManager() -> AddonProbeManager {

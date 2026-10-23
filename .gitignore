@@ -1,5 +1,8 @@
 .DS_Store
 
+# Local research checkouts and audit output
+.research/
+
 # Swift / Xcode local state
 .build/
 .swiftpm/

@@ -209,6 +209,9 @@ struct CyberMacCLI {
           cybermac addon-probe stage-tweakdb-clone-record --file <tweakdb.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--set-cname <prop=val> ...] [--set-string <prop=val> ...] [--set-tweakdbid <prop=val> ...] [--set-lockey <prop=number> ...] [--json]
           cybermac addon-probe stage-tweakdb-clone-record-dual --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--set-cname <prop=val> ...] [--set-string <prop=val> ...] [--set-tweakdbid <prop=val> ...] [--set-lockey <prop=number> ...] [--json]
           cybermac addon-probe stage-one-item-clothing-addon <mod-path> --item <Items.X> --profile <profile-id> --out <dir> [--yaml <relative-yaml>] [--source-record <Items.X>] [--target-archive <relative-archive>] [--base <tweakdb.bin>] [--ep1 <tweakdb_ep1.bin>] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--json]
+          cybermac addon-probe stage-vanilla-backed-visual-control --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--display-name-lockey <number>] [--localized-name-lockey <number>] [--json]
+          cybermac addon-probe audit-visual-variant-sharing --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --appearance-archive <basegame_4_appearance.archive> --item <Items.X> --out <dir> --cp77tools <path> [--debug-dump-tweakdb] [--allow-full-archive-scan] [--max-resource-files <n>] [--max-output-mb <n>] [--json]
+          cybermac addon-probe stage-targeted-variant-replacer --target-item <Items.X> --source-archive <external.archive> --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --appearance-archive <basegame_4_appearance.archive> --out <dir> --cp77tools <path> [--probe-resource-only-swap] [--json]
           cybermac addon-probe compare-tweakdb-string-analysis --base <base-analysis.json> --ep1 <ep1-analysis.json> --out <dir> [--json]
           cybermac addon-probe inspect-factory-layer [--out <dir>] [--json] [--cp77tools <path>] [--game-app /path/to/Cyberpunk.app] [--db <path>] [--try-cr2w-decode]
           cybermac addon-probe analyze-factory-json <decoded-json-root> [--json]
@@ -988,7 +991,7 @@ struct CyberMacCLI {
 
     private func addonProbe() throws {
         guard arguments.count >= 2 else {
-            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|runtime-item-diagnostic-grant|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|record-layer-probe|record-runtime-probe|compare-base-records|locate-tweakdb-storage|redscript-tweakdb-api-scan|inspect-tweakdb-bin|compare-tweakdb-bin|analyze-tweakdb-strings|analyze-tweakdb-reference-tables|analyze-tweakdb-item-indexes|inspect-tweakdb-structure|trace-tweakdb-record|validate-tweakdb-runtime-lookup|stage-tweakdb-override-flat|stage-tweakdb-override-flat-dual|stage-tweakdb-clone-record|stage-tweakdb-clone-record-dual|stage-one-item-clothing-addon|compare-tweakdb-string-analysis|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
+            throw CyberMacError.invalidInput("Missing addon-probe subcommand. Usage: cybermac addon-probe {inspect|stage-assets|grant-test|grant-test-many|runtime-item-diagnostic-grant|atomiic-summary|analyze-xl-factory|stage-xl-factory-registry|search-record-layer|record-layer-probe|record-runtime-probe|compare-base-records|locate-tweakdb-storage|redscript-tweakdb-api-scan|inspect-tweakdb-bin|compare-tweakdb-bin|analyze-tweakdb-strings|analyze-tweakdb-reference-tables|analyze-tweakdb-item-indexes|inspect-tweakdb-structure|trace-tweakdb-record|validate-tweakdb-runtime-lookup|stage-tweakdb-override-flat|stage-tweakdb-override-flat-dual|stage-tweakdb-clone-record|stage-tweakdb-clone-record-dual|stage-one-item-clothing-addon|stage-vanilla-backed-visual-control|audit-visual-variant-sharing|stage-targeted-variant-replacer|compare-tweakdb-string-analysis|inspect-factory-layer|analyze-factory-json|roundtrip-factory-resource|clone-factory-row|plan} ...")
         }
 
         switch arguments[1] {
@@ -1046,6 +1049,12 @@ struct CyberMacCLI {
             try addonProbeStageTweakDBCloneRecordDual()
         case "stage-one-item-clothing-addon":
             try addonProbeStageOneItemClothingAddon()
+        case "stage-vanilla-backed-visual-control":
+            try addonProbeStageVanillaBackedVisualControl()
+        case "audit-visual-variant-sharing":
+            try addonProbeAuditVisualVariantSharing()
+        case "stage-targeted-variant-replacer":
+            try addonProbeStageTargetedVariantReplacer()
         case "compare-tweakdb-string-analysis":
             try addonProbeCompareTweakDBStringAnalysis()
         case "inspect-factory-layer":
@@ -1843,6 +1852,152 @@ struct CyberMacCLI {
             print(AddonProbeOneItemClothingPipelineFormatter.format(report))
         }
         if !report.verificationSucceeded {
+            throw SilentExit(code: 1)
+        }
+    }
+
+    private func addonProbeStageVanillaBackedVisualControl() throws {
+        let valueFlags: Set<String> = [
+            "--base", "--ep1", "--source-record", "--new-record", "--out",
+            "--display-name-lockey", "--localized-name-lockey"
+        ]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let basePath = optionValue("--base"),
+              let ep1Path = optionValue("--ep1"),
+              let sourceRecord = optionValue("--source-record"),
+              let newRecord = optionValue("--new-record"),
+              let outputDirectoryPath = optionValue("--out")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-vanilla-backed-visual-control --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --source-record <Items.X> --new-record <Items.Y> --out <dir> [--display-name-lockey <number>] [--localized-name-lockey <number>] [--json]")
+        }
+
+        let displayNameLocKey: UInt64?
+        if let raw = optionValue("--display-name-lockey") {
+            guard let parsed = UInt64(raw) else {
+                throw CyberMacError.invalidInput("--display-name-lockey value must be a non-negative integer (got '\(raw)').")
+            }
+            displayNameLocKey = parsed
+        } else {
+            displayNameLocKey = nil
+        }
+        let localizedNameLocKey: UInt64?
+        if let raw = optionValue("--localized-name-lockey") {
+            guard let parsed = UInt64(raw) else {
+                throw CyberMacError.invalidInput("--localized-name-lockey value must be a non-negative integer (got '\(raw)').")
+            }
+            localizedNameLocKey = parsed
+        } else {
+            localizedNameLocKey = nil
+        }
+
+        let report = try AddonProbeManager(home: home).stageVanillaBackedVisualControl(request: AddonProbeVanillaBackedVisualControlRequest(
+            baseTweakDBURL: PathSafety.expandedURL(from: basePath),
+            ep1TweakDBURL: PathSafety.expandedURL(from: ep1Path),
+            sourceRecord: sourceRecord,
+            newRecord: newRecord,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            displayNameLocKey: displayNameLocKey,
+            localizedNameLocKey: localizedNameLocKey
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeVanillaBackedVisualControlFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeVanillaBackedVisualControlFormatter.format(report))
+        }
+        if !report.verificationSucceeded {
+            throw SilentExit(code: 1)
+        }
+    }
+
+    private func addonProbeAuditVisualVariantSharing() throws {
+        let valueFlags: Set<String> = [
+            "--base", "--ep1", "--appearance-archive", "--item", "--out", "--cp77tools",
+            "--max-resource-files", "--max-output-mb"
+        ]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let basePath = optionValue("--base"),
+              let ep1Path = optionValue("--ep1"),
+              let appearanceArchivePath = optionValue("--appearance-archive"),
+              let itemID = optionValue("--item"),
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe audit-visual-variant-sharing --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --appearance-archive <basegame_4_appearance.archive> --item <Items.X> --out <dir> --cp77tools <path> [--debug-dump-tweakdb] [--allow-full-archive-scan] [--max-resource-files <n>] [--max-output-mb <n>] [--json]")
+        }
+        let maxResourceFiles: Int
+        if let rawMaxResourceFiles = optionValue("--max-resource-files") {
+            guard let parsed = Int(rawMaxResourceFiles), parsed > 0 else {
+                throw CyberMacError.invalidInput("--max-resource-files must be a positive integer (got '\(rawMaxResourceFiles)').")
+            }
+            maxResourceFiles = parsed
+        } else {
+            maxResourceFiles = AddonProbeVisualVariantSharingAuditRequest.defaultMaxResourceFiles
+        }
+        let maxOutputMegabytes: Int
+        if let rawMaxOutputMegabytes = optionValue("--max-output-mb") {
+            guard let parsed = Int(rawMaxOutputMegabytes), parsed > 0 else {
+                throw CyberMacError.invalidInput("--max-output-mb must be a positive integer (got '\(rawMaxOutputMegabytes)').")
+            }
+            maxOutputMegabytes = parsed
+        } else {
+            maxOutputMegabytes = AddonProbeVisualVariantSharingAuditRequest.defaultMaxOutputMegabytes
+        }
+
+        let report = try AddonProbeManager(home: home).auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: PathSafety.expandedURL(from: basePath),
+            ep1TweakDBURL: PathSafety.expandedURL(from: ep1Path),
+            appearanceArchiveURL: PathSafety.expandedURL(from: appearanceArchivePath),
+            itemID: itemID,
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            debugDumpTweakDB: hasFlag("--debug-dump-tweakdb"),
+            allowFullArchiveScan: hasFlag("--allow-full-archive-scan"),
+            maxResourceFiles: maxResourceFiles,
+            maxOutputMegabytes: maxOutputMegabytes
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeVisualVariantSharingAuditFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeVisualVariantSharingAuditFormatter.format(report))
+        }
+    }
+
+    private func addonProbeStageTargetedVariantReplacer() throws {
+        let valueFlags: Set<String> = [
+            "--target-item", "--source-archive", "--base", "--ep1", "--appearance-archive",
+            "--out", "--cp77tools"
+        ]
+        let positionals = positionals(after: 2, valueFlags: valueFlags)
+        guard positionals.isEmpty,
+              let targetItemID = optionValue("--target-item"),
+              let sourceArchivePath = optionValue("--source-archive"),
+              let basePath = optionValue("--base"),
+              let ep1Path = optionValue("--ep1"),
+              let appearanceArchivePath = optionValue("--appearance-archive"),
+              let outputDirectoryPath = optionValue("--out"),
+              let cp77toolsPath = optionValue("--cp77tools")
+        else {
+            throw CyberMacError.invalidInput("Usage: cybermac addon-probe stage-targeted-variant-replacer --target-item <Items.X> --source-archive <external.archive> --base <tweakdb.bin> --ep1 <tweakdb_ep1.bin> --appearance-archive <basegame_4_appearance.archive> --out <dir> --cp77tools <path> [--probe-resource-only-swap] [--json]")
+        }
+
+        let report = try AddonProbeManager(home: home).stageTargetedVariantReplacer(request: AddonProbeTargetedVariantReplacerRequest(
+            targetItemID: targetItemID,
+            sourceArchiveURL: PathSafety.expandedURL(from: sourceArchivePath),
+            baseTweakDBURL: PathSafety.expandedURL(from: basePath),
+            ep1TweakDBURL: PathSafety.expandedURL(from: ep1Path),
+            appearanceArchiveURL: PathSafety.expandedURL(from: appearanceArchivePath),
+            outputDirectoryURL: PathSafety.expandedURL(from: outputDirectoryPath),
+            cp77toolsURL: PathSafety.expandedURL(from: cp77toolsPath),
+            probeResourceOnlySwap: hasFlag("--probe-resource-only-swap")
+        ))
+        if hasFlag("--json") {
+            print(try AddonProbeTargetedVariantReplacerFormatter.formatJSON(report))
+        } else {
+            print(AddonProbeTargetedVariantReplacerFormatter.format(report))
+        }
+        if report.conclusion != .stagedArchiveProduced {
             throw SilentExit(code: 1)
         }
     }

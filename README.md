@@ -8,6 +8,10 @@ CyberMac is an experimental macOS mod manager focused on redscript-based Cyberpu
 
 This is a source-only developer preview. CyberMac does not bundle redscript, input-loader, mods, Cyberpunk game files, or downloaded runtime files.
 
+The current development priority is [appearance mods for feminine V](docs/appearance-mods-plan.md):
+clothing first, followed by body shapes and matching clothing refits. Those
+capabilities are still under investigation on the Mac App Store 2.5 build.
+
 ## Current support
 
 Supported:
@@ -72,6 +76,9 @@ If you want to test the UI, use SwiftPM. If you want to test compatibility, pref
 
 ```bash
 swift run cybermac doctor
+swift run cybermac refresh-base-cache --dry-run
+# After confirming this is an unmodified game installation:
+swift run cybermac refresh-base-cache
 swift run cybermac scan "$HOME/Downloads/mod.zip"
 swift run cybermac install "$HOME/Downloads/mod.zip"
 swift run cybermac activate --bundle-mode
@@ -112,6 +119,16 @@ CyberMac stores its sidecar files under:
 ## Development status
 
 v0.1 developer preview. API/UI may change. Source-only release.
+
+For the fresh 2.5 installation results and next milestones, see the
+[24 October 2026 reinstall check](docs/reinstall-check-2026-10-24.md). The
+[23 October development audit](docs/development-audit-2026-10-23.md) records the
+fixture tests and steps to resume after reinstalling the game.
+Deleting CyberMac's support folder removes its installed runtimes, managed mods,
+cache snapshots, indexes, and backups. Re-import runtimes and create a fresh base
+cache from the unmodified installation before activating mods. Old backups are
+not needed to start again. Runtime import and base-cache creation currently use
+the CLI; the desktop app does not yet expose those setup actions.
 
 ## Contributing/testing
 

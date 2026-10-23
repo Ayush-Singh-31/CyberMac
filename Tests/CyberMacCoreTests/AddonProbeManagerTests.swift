@@ -1837,6 +1837,414 @@ final class AddonProbeManagerTests: XCTestCase {
         XCTAssertEqual(try PathSafety.sha256(url: archiveURL(gameInstall: game)), originalGameArchiveSHA)
     }
 
+    func testAuditVisualVariantSharingReportsTargetFieldsAndSingleVariantGraph() throws {
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-audit-base.bin", variants: [
+            VisualVariantFixture(
+                itemID: "Items.Visual_Black",
+                entityName: "base/visual/black.ent",
+                appearanceName: "visual_black",
+                appearanceResourceName: "base/visual/black.app"
+            )
+        ])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-audit-ep1.bin", variants: [
+            VisualVariantFixture(
+                itemID: "Items.Visual_Black",
+                entityName: "base/visual/black.ent",
+                appearanceName: "visual_black",
+                appearanceResourceName: "base/visual/black.app"
+            )
+        ])
+        let appearanceArchive = try write("visual-audit/appearance.archive", under: tempDir, contents: "appearance archive")
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            appearanceArchive.path: visualVariantArchiveFiles(prefix: "black", mesh: "base/visual/black.mesh")
+        ])
+
+        let report = try makeManager(tooling: tooling).auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            itemID: "Items.Visual_Black",
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-audit-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            debugDumpTweakDB: true,
+            allowFullArchiveScan: true
+        ))
+
+        XCTAssertEqual(report.baseFields.entityName, "base/visual/black.ent")
+        XCTAssertEqual(report.baseFields.appearanceName, "visual_black")
+        XCTAssertEqual(report.baseFields.appearanceResourceName, "base/visual/black.app")
+        XCTAssertEqual(report.baseFields.placementSlots, "OutfitSlots.TorsoInner")
+        XCTAssertEqual(report.targetGraph.meshPaths, ["base/visual/black.mesh"])
+        XCTAssertEqual(report.targetGraph.materialPaths, ["base/visual/black.mi", "base/visual/black.mlsetup"])
+        XCTAssertTrue(report.canReplaceSharedMeshSafely)
+        XCTAssertEqual(report.affectedVariantCount, 1)
+        XCTAssertTrue(report.exactSiblingItems.isEmpty)
+        XCTAssertFalse(report.requiresSplitResourceChain)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+        XCTAssertTrue(report.meshPathGroups.contains { $0.key == "base/visual/black.mesh" && $0.itemIDs == ["Items.Visual_Black"] })
+        XCTAssertTrue(try AddonProbeVisualVariantSharingAuditFormatter.formatJSON(report).contains("\"canReplaceSharedMeshSafely\""))
+        XCTAssertTrue(AddonProbeVisualVariantSharingAuditFormatter.format(report).contains("Affected variant count: 1"))
+    }
+
+    func testVisualVariantFamilyDerivesTShirtRootFromAppearanceVariant() {
+        XCTAssertEqual(
+            AddonProbeManager.deriveVisualFamily(appearanceName: "t1_tshirt_04_old_01_"),
+            "t1_tshirt_04"
+        )
+    }
+
+    func testAuditVisualVariantFastPathWritesExpectedFamilyReportWithoutBroadDumps() throws {
+        let variant = VisualVariantFixture(
+            itemID: "Items.TShirt_04_old_01",
+            entityName: "player_inner_torso_item",
+            appearanceName: "t1_tshirt_04_old_01_",
+            appearanceResourceName: "None"
+        )
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-fast-base.bin", variants: [variant])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-fast-ep1.bin", variants: [variant])
+        let appearanceArchive = try write("visual-fast/appearance.archive", under: tempDir, contents: "appearance archive")
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            appearanceArchive.path: [
+                "base/characters/appearances/player/items/torso/t1_tshirt_04.app": "would only exist after extraction"
+            ]
+        ])
+
+        let report = try makeManager(tooling: tooling).auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            itemID: variant.itemID,
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-fast-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL
+        ))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+        XCTAssertTrue(report.targetVisualFamilyTrace.visualFamilyResolved)
+        XCTAssertEqual(report.targetVisualFamilyTrace.expectedAppPath, "base/characters/appearances/player/items/torso/t1_tshirt_04.app")
+        XCTAssertEqual(report.targetVisualFamilyTrace.expectedVisualEntPath, "base/characters/entities/player/items/torso/t1_tshirt_04.ent")
+        XCTAssertEqual(report.targetVisualFamilyTrace.expectedGameplayEntPath, "base/gameplay/items/equipment/torso/player_inner_torso_item.ent")
+        XCTAssertEqual(report.targetVisualFamilyTrace.expectedEP1GameplayEntPath, "ep1/gameplay/items/equipment/torso/player_inner_torso_item_ep1.ent")
+        XCTAssertNil(report.targetVisualFamilyTrace.appearanceEntryFound)
+        XCTAssertFalse(report.targetVisualFamilyTrace.meshGraphResolved)
+        XCTAssertNil(report.affectedVariantCount)
+        XCTAssertFalse(report.canReplaceSharedMeshSafely)
+
+        let createdPaths = recursiveRelativePaths(under: URL(fileURLWithPath: report.outputDirectoryPath, isDirectory: true))
+        XCTAssertFalse(createdPaths.contains { $0.hasSuffix("tweakdb-packed-strings.tsv") })
+        XCTAssertFalse(createdPaths.contains { $0.hasSuffix("tweakdb-packed-regions.txt") })
+        XCTAssertFalse(createdPaths.contains { $0.contains("tweakdb-base-structure") })
+        XCTAssertFalse(createdPaths.contains { $0.contains("appearance-extracted") })
+    }
+
+    func testAuditVisualVariantWritesFinalReportWhenResourceScanFails() throws {
+        let variant = VisualVariantFixture(
+            itemID: "Items.TShirt_04_old_01",
+            entityName: "player_inner_torso_item",
+            appearanceName: "t1_tshirt_04_old_01_",
+            appearanceResourceName: "None"
+        )
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-scan-fail-base.bin", variants: [variant])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-scan-fail-ep1.bin", variants: [variant])
+        let appearanceArchive = try write("visual-scan-fail/appearance.archive", under: tempDir, contents: "appearance archive")
+        let tooling = FakeAddonProbeTooling()
+        tooling.extractFailureMessage = "synthetic resource scan failure"
+
+        let report = try makeManager(tooling: tooling).auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            itemID: variant.itemID,
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-scan-fail-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            allowFullArchiveScan: true
+        ))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.summaryPath))
+        XCTAssertTrue(report.unresolvedDiagnostics.contains { $0.contains("synthetic resource scan failure") })
+        XCTAssertFalse(report.targetVisualFamilyTrace.meshGraphResolved)
+        XCTAssertNil(report.affectedVariantCount)
+    }
+
+    func testAuditVisualVariantOutputCapStopsOptedInArchiveExtraction() throws {
+        let variant = VisualVariantFixture(
+            itemID: "Items.TShirt_04_old_01",
+            entityName: "player_inner_torso_item",
+            appearanceName: "t1_tshirt_04_old_01_",
+            appearanceResourceName: "None"
+        )
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-cap-base.bin", variants: [variant])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-cap-ep1.bin", variants: [variant])
+        let appearanceArchive = try write("visual-cap/appearance.archive", under: tempDir, contents: "appearance archive")
+        let tooling = FakeAddonProbeTooling(dataByArchivePath: [
+            appearanceArchive.path: [
+                "base/characters/appearances/player/items/torso/t1_tshirt_04.app": Data(repeating: 0x41, count: 1_200_000)
+            ]
+        ])
+
+        let report = try makeManager(tooling: tooling).auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            itemID: variant.itemID,
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-cap-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            allowFullArchiveScan: true,
+            maxOutputMegabytes: 1
+        ))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: report.reportPath))
+        XCTAssertTrue(report.unresolvedDiagnostics.contains { $0.contains("--max-output-mb 1") })
+        XCTAssertTrue(report.warnings.contains { $0.contains("Output cap stopped") })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: report.extractedAppearancePath))
+    }
+
+    func testAuditVisualVariantFamilyIgnoresNoneResourceAndReportsUnknownMeshCount() throws {
+        let variant = VisualVariantFixture(
+            itemID: "Items.TShirt_04_old_01",
+            entityName: "player_inner_torso_item",
+            appearanceName: "t1_tshirt_04_old_01_",
+            appearanceResourceName: "None"
+        )
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-family-base.bin", variants: [variant])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-family-ep1.bin", variants: [variant])
+        let appearanceArchive = try write("visual-family/appearance.archive", under: tempDir, contents: "appearance archive")
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            appearanceArchive.path: [
+                "base/characters/appearances/player/items/torso/t1_tshirt_04.app":
+                    "appearance t1_tshirt_04_old_01_ base/characters/entities/player/items/torso/t1_tshirt_04.ent",
+                "base/characters/entities/player/items/torso/t1_tshirt_04.ent": "entity has no decoded mesh path"
+            ]
+        ])
+
+        let report = try makeManager(tooling: tooling).auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            itemID: "Items.TShirt_04_old_01",
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-family-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            allowFullArchiveScan: true
+        ))
+
+        XCTAssertNil(report.baseFields.appearanceResourceName)
+        XCTAssertEqual(report.targetVisualFamilyTrace.visualFamily, "t1_tshirt_04")
+        XCTAssertEqual(
+            report.targetVisualFamilyTrace.appearanceAppResource,
+            "base/characters/appearances/player/items/torso/t1_tshirt_04.app"
+        )
+        XCTAssertEqual(
+            report.targetVisualFamilyTrace.visualEntityResource,
+            "base/characters/entities/player/items/torso/t1_tshirt_04.ent"
+        )
+        XCTAssertTrue(report.targetVisualFamilyTrace.visualFamilyResolved)
+        XCTAssertTrue(report.targetVisualFamilyTrace.appearanceResourceResolved)
+        XCTAssertEqual(report.targetVisualFamilyTrace.appearanceEntryFound, true)
+        XCTAssertFalse(report.targetVisualFamilyTrace.meshGraphResolved)
+        XCTAssertNil(report.affectedVariantCount)
+        XCTAssertTrue(AddonProbeVisualVariantSharingAuditFormatter.format(report).contains("Affected variant count: unknown"))
+    }
+
+    func testAuditVisualVariantSiblingCandidatesExcludeNonClothingFamilySpam() throws {
+        let target = VisualVariantFixture(
+            itemID: "Items.TShirt_04_old_01",
+            entityName: "player_inner_torso_item",
+            appearanceName: "t1_tshirt_04_old_01_",
+            appearanceResourceName: "None"
+        )
+        let nonClothing = VisualVariantFixture(
+            itemID: "Items.TShirt_04_metadata_spam",
+            entityName: "player_inner_torso_item",
+            appearanceName: "t1_tshirt_04_old_02_",
+            appearanceResourceName: "None",
+            itemType: "ItemType.Weapon",
+            itemCategory: "ItemCategory.Weapon",
+            tags: "Weapon",
+            recordTypeName: "WeaponItem"
+        )
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-family-filter-base.bin", variants: [target, nonClothing])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-family-filter-ep1.bin", variants: [target, nonClothing])
+        let appearanceArchive = try write("visual-family-filter/appearance.archive", under: tempDir, contents: "appearance archive")
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            appearanceArchive.path: [
+                "base/characters/appearances/player/items/torso/t1_tshirt_04.app":
+                    "appearance t1_tshirt_04_old_01_ t1_tshirt_04_old_02_ base/characters/entities/player/items/torso/t1_tshirt_04.ent",
+                "base/characters/entities/player/items/torso/t1_tshirt_04.ent": "entity has no decoded mesh path"
+            ]
+        ])
+
+        let report = try makeManager(tooling: tooling).auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            itemID: "Items.TShirt_04_old_01",
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-family-filter-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            debugDumpTweakDB: true,
+            allowFullArchiveScan: true
+        ))
+
+        XCTAssertEqual(report.analyzedItemCount, 1)
+        XCTAssertFalse(report.siblingVariants.contains { $0.itemID == nonClothing.itemID })
+    }
+
+    func testTargetedVariantReplacerStagesResourceOnlySwapForIsolatedVariant() throws {
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-stage-base.bin", variants: [
+            VisualVariantFixture(
+                itemID: "Items.Visual_Black",
+                entityName: "base/visual/black.ent",
+                appearanceName: "visual_black",
+                appearanceResourceName: "base/visual/black.app"
+            )
+        ])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-stage-ep1.bin", variants: [
+            VisualVariantFixture(
+                itemID: "Items.Visual_Black",
+                entityName: "base/visual/black.ent",
+                appearanceName: "visual_black",
+                appearanceResourceName: "base/visual/black.app"
+            )
+        ])
+        let appearanceArchive = try write("visual-stage/appearance.archive", under: tempDir, contents: "appearance archive")
+        let sourceArchive = try write("visual-stage/donor.archive", under: tempDir, contents: "donor archive")
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            appearanceArchive.path: visualVariantArchiveFiles(prefix: "black", mesh: "base/visual/black.mesh"),
+            sourceArchive.path: [
+                "base/visual/black.mesh": "donor mesh"
+            ]
+        ])
+
+        let report = try makeManager(tooling: tooling).stageTargetedVariantReplacer(request: AddonProbeTargetedVariantReplacerRequest(
+            targetItemID: "Items.Visual_Black",
+            sourceArchiveURL: sourceArchive,
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-stage-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            probeResourceOnlySwap: true
+        ))
+
+        XCTAssertEqual(report.conclusion, .stagedArchiveProduced)
+        XCTAssertTrue(report.probeResourceOnlySwap)
+        XCTAssertNil(report.refusal)
+        XCTAssertEqual(report.affectedVariantCount, 1)
+        XCTAssertEqual(report.affectedItems, ["Items.Visual_Black"])
+        XCTAssertEqual(report.resourceChanges.map(\.resourcePath), ["base/visual/black.mesh"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(report.stagedAppearanceArchivePath)))
+        XCTAssertEqual(tooling.packedFiles["base/visual/black.mesh"], "donor mesh")
+        XCTAssertTrue(report.warnings.contains { $0.contains("equip identity stable") })
+    }
+
+    func testTargetedVariantReplacerRefusesSharedMeshAndNamesSiblingSplitEdits() throws {
+        let variants = [
+            VisualVariantFixture(
+                itemID: "Items.Visual_Black",
+                entityName: "base/visual/black.ent",
+                appearanceName: "visual_black",
+                appearanceResourceName: "base/visual/black.app"
+            ),
+            VisualVariantFixture(
+                itemID: "Items.Visual_Red",
+                entityName: "base/visual/red.ent",
+                appearanceName: "visual_red",
+                appearanceResourceName: "base/visual/red.app"
+            )
+        ]
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-shared-base.bin", variants: variants)
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-shared-ep1.bin", variants: variants)
+        let appearanceArchive = try write("visual-shared/appearance.archive", under: tempDir, contents: "appearance archive")
+        let sourceArchive = try write("visual-shared/donor.archive", under: tempDir, contents: "donor archive")
+        var appearanceFiles = visualVariantArchiveFiles(prefix: "black", mesh: "base/visual/shared.mesh")
+        appearanceFiles.merge(visualVariantArchiveFiles(prefix: "red", mesh: "base/visual/shared.mesh")) { current, _ in current }
+        appearanceFiles["base/visual/shared.mesh"] = "mesh base/visual/shared.mlsetup base/visual/shared.mi"
+        appearanceFiles["base/visual/shared.mlsetup"] = "shared setup"
+        appearanceFiles["base/visual/shared.mi"] = "shared mi"
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            appearanceArchive.path: appearanceFiles,
+            sourceArchive.path: [
+                "base/visual/shared.mesh": "donor shared mesh"
+            ]
+        ])
+
+        let report = try makeManager(tooling: tooling).stageTargetedVariantReplacer(request: AddonProbeTargetedVariantReplacerRequest(
+            targetItemID: "Items.Visual_Black",
+            sourceArchiveURL: sourceArchive,
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: appearanceArchive,
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-shared-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL
+        ))
+
+        XCTAssertEqual(report.conclusion, .refusedSharedVanillaResource)
+        XCTAssertNil(report.stagedAppearanceArchivePath)
+        XCTAssertEqual(report.affectedVariantCount, 2)
+        XCTAssertEqual(report.auditReport.exactSiblingItems, ["Items.Visual_Red"])
+        let refusal = try XCTUnwrap(report.refusal)
+        XCTAssertEqual(refusal.exactSiblingItems, ["Items.Visual_Red"])
+        XCTAssertTrue(refusal.sharedResourcePaths.contains("base/visual/shared.mesh"))
+        XCTAssertTrue(refusal.requiredReferenceEdits.contains { $0.contains(".ent mesh reference") })
+        XCTAssertTrue(refusal.unsupportedEditBoundary.contains(".app/.ent/.mesh"))
+    }
+
+    func testTargetedVariantReplacerRefusesUnresolvedGraphAndMissingDonorPath() throws {
+        let base = try makeVisualVariantTweakDBFixture(name: "visual-refusal-base.bin", variants: [
+            VisualVariantFixture(
+                itemID: "Items.Visual_Black",
+                entityName: "base/visual/black.ent",
+                appearanceName: "visual_black",
+                appearanceResourceName: "base/visual/black.app"
+            )
+        ])
+        let ep1 = try makeVisualVariantTweakDBFixture(name: "visual-refusal-ep1.bin", variants: [
+            VisualVariantFixture(
+                itemID: "Items.Visual_Black",
+                entityName: "base/visual/black.ent",
+                appearanceName: "visual_black",
+                appearanceResourceName: "base/visual/black.app"
+            )
+        ])
+        let unresolvedArchive = try write("visual-refusal/unresolved.archive", under: tempDir, contents: "appearance archive")
+        let missingDonorArchive = try write("visual-refusal/missing-donor.archive", under: tempDir, contents: "donor archive")
+        let tooling = FakeAddonProbeTooling(filesByArchivePath: [
+            unresolvedArchive.path: [
+                "base/visual/black.app": "app base/visual/black.ent",
+                "base/visual/black.ent": "ent base/visual/missing.mesh"
+            ],
+            missingDonorArchive.path: [
+                "base/visual/different.mesh": "donor different mesh"
+            ]
+        ])
+        let unresolvedReport = try makeManager(tooling: tooling).stageTargetedVariantReplacer(request: AddonProbeTargetedVariantReplacerRequest(
+            targetItemID: "Items.Visual_Black",
+            sourceArchiveURL: missingDonorArchive,
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: unresolvedArchive,
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-unresolved-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL
+        ))
+        XCTAssertEqual(unresolvedReport.conclusion, .refusedUnresolvedSafety)
+        XCTAssertTrue(unresolvedReport.auditReport.unresolvedDiagnostics.contains { $0.contains("missing.mesh") })
+
+        let completeArchive = try write("visual-refusal/complete.archive", under: tempDir, contents: "appearance archive")
+        tooling.filesByArchivePath[completeArchive.path] = visualVariantArchiveFiles(prefix: "black", mesh: "base/visual/black.mesh")
+        let missingDonorReport = try makeManager(tooling: tooling).stageTargetedVariantReplacer(request: AddonProbeTargetedVariantReplacerRequest(
+            targetItemID: "Items.Visual_Black",
+            sourceArchiveURL: missingDonorArchive,
+            baseTweakDBURL: base,
+            ep1TweakDBURL: ep1,
+            appearanceArchiveURL: completeArchive,
+            outputDirectoryURL: tempDir.appendingPathComponent("visual-missing-donor-out", isDirectory: true),
+            cp77toolsURL: cp77toolsURL
+        ))
+        XCTAssertEqual(missingDonorReport.conclusion, .refusedNoUnambiguousDonorResource)
+        XCTAssertTrue(try XCTUnwrap(missingDonorReport.refusal).reason.contains("exact target-only"))
+    }
+
     func testOneItemClothingPipelineStagesDualTweakDBAssetsAndDiagnostic() throws {
         let game = try makeGameInstall()
         let originalGameArchiveSHA = try PathSafety.sha256(url: archiveURL(gameInstall: game))
@@ -2489,6 +2897,16 @@ final class AddonProbeManagerTests: XCTestCase {
         return url
     }
 
+    private func recursiveRelativePaths(under rootURL: URL) -> [String] {
+        guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        return enumerator.compactMap { item -> String? in
+            guard let url = item as? URL else { return nil }
+            return try? PathSafety.relativePath(of: url, in: rootURL)
+        }
+    }
+
     private func makeFakeTweakDBBinary(name: String, strings: [String]) throws -> (url: URL, offsets: [String: Int]) {
         var data = Data([0x47, 0xdb, 0xb1, 0x0b, 0x08, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00])
         data.append(contentsOf: [0x00, 0x00, 0x00, 0x00])
@@ -2804,6 +3222,158 @@ final class AddonProbeManagerTests: XCTestCase {
         let url = tempDir.appendingPathComponent(name)
         try data.write(to: url, options: [.atomic])
         return url
+    }
+
+    private struct VisualVariantFixture {
+        let itemID: String
+        let entityName: String
+        let appearanceName: String
+        let appearanceResourceName: String
+
+        let placementSlots: String
+        let equipArea: String
+        let itemType: String
+        let itemCategory: String
+        let tags: String
+        let suffixes: String
+        let icon: String
+        let iconPath: String
+        let recordTypeName: String
+
+        init(
+            itemID: String,
+            entityName: String,
+            appearanceName: String,
+            appearanceResourceName: String,
+            placementSlots: String = "OutfitSlots.TorsoInner",
+            equipArea: String = "EquipmentArea.InnerChest",
+            itemType: String = "ItemType.Clothing",
+            itemCategory: String = "ItemCategory.Clothing",
+            tags: String = "Clothing",
+            suffixes: String = "player",
+            icon: String = "UIIcon.Visual",
+            iconPath: String = "base/visual/icon.xbm",
+            recordTypeName: String = "Clothing"
+        ) {
+            self.itemID = itemID
+            self.entityName = entityName
+            self.appearanceName = appearanceName
+            self.appearanceResourceName = appearanceResourceName
+            self.placementSlots = placementSlots
+            self.equipArea = equipArea
+            self.itemType = itemType
+            self.itemCategory = itemCategory
+            self.tags = tags
+            self.suffixes = suffixes
+            self.icon = icon
+            self.iconPath = iconPath
+            self.recordTypeName = recordTypeName
+        }
+    }
+
+    private func makeVisualVariantTweakDBFixture(name: String, variants: [VisualVariantFixture]) throws -> URL {
+        var data = Data()
+        appendLittleEndianUInt32(0x0BB1DB47, to: &data)
+        appendLittleEndianUInt32(8, to: &data)
+        appendLittleEndianUInt32(4, to: &data)
+        appendLittleEndianUInt32(0xA11D17ED, to: &data)
+        appendLittleEndianUInt32(0x20, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        appendLittleEndianUInt32(0, to: &data)
+        XCTAssertEqual(data.count, 0x20)
+
+        appendLittleEndianUInt32(1, to: &data)
+        let descriptorOffset = data.count
+        data.append(Data(count: 20))
+
+        let properties: [(String, (VisualVariantFixture) -> String)] = [
+            ("entityName", \.entityName),
+            ("appearanceName", \.appearanceName),
+            ("appearanceResourceName", \.appearanceResourceName),
+            ("appearanceSuffixes", \.suffixes),
+            ("placementSlots", \.placementSlots),
+            ("equipArea", \.equipArea),
+            ("itemType", \.itemType),
+            ("itemCategory", \.itemCategory),
+            ("tags", \.tags),
+            ("icon", \.icon),
+            ("iconPath", \.iconPath)
+        ]
+        var values: [String] = []
+        var valueIndexes: [String: Int] = [:]
+        func valueIndex(for value: String) -> Int {
+            if let existing = valueIndexes[value] { return existing }
+            let index = values.count
+            values.append(value)
+            valueIndexes[value] = index
+            return index
+        }
+        var keys: [(UInt64, Int32)] = []
+        for variant in variants {
+            for (property, accessor) in properties {
+                keys.append((
+                    tweakDBID("\(variant.itemID).\(property)"),
+                    Int32(valueIndex(for: accessor(variant)))
+                ))
+            }
+        }
+        keys.sort { $0.0 < $1.0 }
+        let valueBlockOffset = data.count
+        appendLittleEndianUInt32(UInt32(values.count), to: &data)
+        for value in values {
+            data.append(encodeLengthPrefixedString(value))
+        }
+        appendLittleEndianUInt32(UInt32(keys.count), to: &data)
+        for key in keys {
+            appendLittleEndianUInt64(key.0, to: &data)
+            appendLittleEndianInt32(key.1, to: &data)
+        }
+        writeLittleEndianUInt64(TweakDBPackedStringAnalyzer.fnv1a64(Array("CName".utf8)), into: &data, at: descriptorOffset)
+        writeLittleEndianUInt32(UInt32(values.count), into: &data, at: descriptorOffset + 8)
+        writeLittleEndianUInt32(UInt32(keys.count), into: &data, at: descriptorOffset + 12)
+        writeLittleEndianUInt32(UInt32(valueBlockOffset), into: &data, at: descriptorOffset + 16)
+
+        let recordsOffset = data.count
+        let records = variants
+            .map { tweakDBID($0.itemID) }
+            .sorted()
+        appendLittleEndianUInt32(UInt32(records.count), to: &data)
+        for recordID in records {
+            let recordTypeName = variants.first { tweakDBID($0.itemID) == recordID }?.recordTypeName ?? "Clothing"
+            appendLittleEndianUInt64(recordID, to: &data)
+            appendLittleEndianUInt32(murmur3_32(recordTypeName, seed: 0x5EEDBA5E), to: &data)
+        }
+        let queriesOffset = data.count
+        appendLittleEndianUInt32(0, to: &data)
+        let groupTagsOffset = data.count
+        appendLittleEndianUInt32(0, to: &data)
+
+        writeLittleEndianUInt32(UInt32(recordsOffset), into: &data, at: 20)
+        writeLittleEndianUInt32(UInt32(queriesOffset), into: &data, at: 24)
+        writeLittleEndianUInt32(UInt32(groupTagsOffset), into: &data, at: 28)
+
+        for itemID in variants.map(\.itemID) {
+            let utf8 = Array(itemID.utf8)
+            XCTAssertLessThan(utf8.count, 32)
+            data.append(UInt8(0xA0 | utf8.count))
+            data.append(contentsOf: utf8)
+        }
+
+        let url = tempDir.appendingPathComponent(name)
+        try data.write(to: url, options: [.atomic])
+        return url
+    }
+
+    private func visualVariantArchiveFiles(prefix: String, mesh: String) -> [String: String] {
+        [
+            "base/visual/\(prefix).app": "app base/visual/\(prefix).ent",
+            "base/visual/\(prefix).ent": "ent \(mesh)",
+            mesh: "mesh base/visual/\(prefix).mlsetup base/visual/\(prefix).mi",
+            "base/visual/\(prefix).mlsetup": "mlsetup",
+            "base/visual/\(prefix).mi": "mi",
+            "base/visual/icon.xbm": "icon"
+        ]
     }
 
     private func makeReferenceTableFixture(name: String) throws -> ReferenceTableFixture {
@@ -3443,6 +4013,7 @@ final class AddonProbeManagerTests: XCTestCase {
 private final class FakeAddonProbeTooling: @unchecked Sendable, OfficialArchiveSwapTooling {
     var filesByArchivePath: [String: [String: String]]
     var dataByArchivePath: [String: [String: Data]]
+    var extractFailureMessage: String?
     private(set) var packedFiles: [String: String] = [:]
 
     init(filesByArchivePath: [String: [String: String]] = [:], dataByArchivePath: [String: [String: Data]] = [:]) {
@@ -3451,6 +4022,9 @@ private final class FakeAddonProbeTooling: @unchecked Sendable, OfficialArchiveS
     }
 
     func extractArchive(cp77toolsURL: URL, sourceArchiveURL: URL, outputDirectoryURL: URL) throws {
+        if let extractFailureMessage {
+            throw CyberMacError.fileSystem(extractFailureMessage)
+        }
         try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
         for (assetPath, contents) in filesByArchivePath[sourceArchiveURL.path, default: [:]] {
             let url = assetPath

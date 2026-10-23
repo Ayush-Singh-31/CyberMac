@@ -765,6 +765,311 @@ public struct AddonProbeOneItemClothingPipelineReport: Codable, Equatable, Senda
     public let summaryPath: String
 }
 
+public struct AddonProbeVanillaBackedVisualControlRequest: Sendable {
+    public let baseTweakDBURL: URL
+    public let ep1TweakDBURL: URL
+    public let sourceRecord: String
+    public let newRecord: String
+    public let outputDirectoryURL: URL
+    public let displayNameLocKey: UInt64?
+    public let localizedNameLocKey: UInt64?
+
+    public init(
+        baseTweakDBURL: URL,
+        ep1TweakDBURL: URL,
+        sourceRecord: String,
+        newRecord: String,
+        outputDirectoryURL: URL,
+        displayNameLocKey: UInt64? = nil,
+        localizedNameLocKey: UInt64? = nil
+    ) {
+        self.baseTweakDBURL = baseTweakDBURL
+        self.ep1TweakDBURL = ep1TweakDBURL
+        self.sourceRecord = sourceRecord
+        self.newRecord = newRecord
+        self.outputDirectoryURL = outputDirectoryURL
+        self.displayNameLocKey = displayNameLocKey
+        self.localizedNameLocKey = localizedNameLocKey
+    }
+}
+
+public struct AddonProbeVanillaBackedVisualPreservedFlatStatus: Codable, Equatable, Sendable {
+    public let property: String
+    public let baseSourceFlatPresent: Bool
+    public let baseClonedFlatPresent: Bool
+    public let baseSourceValueSummary: String?
+    public let baseClonedValueSummary: String?
+    public let basePreserved: Bool
+    public let ep1SourceFlatPresent: Bool
+    public let ep1ClonedFlatPresent: Bool
+    public let ep1SourceValueSummary: String?
+    public let ep1ClonedValueSummary: String?
+    public let ep1Preserved: Bool
+
+    public var preserved: Bool { basePreserved && ep1Preserved }
+}
+
+public struct AddonProbeVanillaBackedVisualControlReport: Codable, Equatable, Sendable {
+    public static let preservedFlatProperties: [String] = [
+        "appearanceName",
+        "entityName",
+        "appearanceResourceName",
+        "appearanceSuffixes",
+        "appearanceSuffixesOwnerOverride",
+        "placementSlots",
+        "equipArea",
+        "itemType",
+        "itemCategory",
+        "tags",
+        "slotPartList"
+    ]
+
+    public let outputDirectoryPath: String
+    public let baseTweakDBPath: String
+    public let ep1TweakDBPath: String
+    public let sourceRecord: String
+    public let newRecord: String
+    public let displayNameLocKey: UInt64?
+    public let localizedNameLocKey: UInt64?
+    public let tweakDBReport: AddonProbeTweakDBDualCloneRecordReport
+    public let preservedFlats: [AddonProbeVanillaBackedVisualPreservedFlatStatus]
+    public let preservedFlatsVerified: Bool
+    public let grantHelper: AddonProbeRuntimeItemDiagnosticGrantResult
+    public let manualInstallCommands: [String]
+    public let verificationSucceeded: Bool
+    public let warnings: [String]
+    public let reportPath: String
+    public let summaryPath: String
+}
+
+public struct AddonProbeVisualVariantSharingAuditRequest: Sendable {
+    public static let defaultMaxResourceFiles = 10
+    public static let defaultMaxOutputMegabytes = 250
+
+    public let baseTweakDBURL: URL
+    public let ep1TweakDBURL: URL
+    public let appearanceArchiveURL: URL
+    public let itemID: String
+    public let outputDirectoryURL: URL
+    public let cp77toolsURL: URL
+    public let debugDumpTweakDB: Bool
+    public let allowFullArchiveScan: Bool
+    public let maxResourceFiles: Int
+    public let maxOutputMegabytes: Int
+
+    public init(
+        baseTweakDBURL: URL,
+        ep1TweakDBURL: URL,
+        appearanceArchiveURL: URL,
+        itemID: String,
+        outputDirectoryURL: URL,
+        cp77toolsURL: URL,
+        debugDumpTweakDB: Bool = false,
+        allowFullArchiveScan: Bool = false,
+        maxResourceFiles: Int = Self.defaultMaxResourceFiles,
+        maxOutputMegabytes: Int = Self.defaultMaxOutputMegabytes
+    ) {
+        self.baseTweakDBURL = baseTweakDBURL
+        self.ep1TweakDBURL = ep1TweakDBURL
+        self.appearanceArchiveURL = appearanceArchiveURL
+        self.itemID = itemID
+        self.outputDirectoryURL = outputDirectoryURL
+        self.cp77toolsURL = cp77toolsURL
+        self.debugDumpTweakDB = debugDumpTweakDB
+        self.allowFullArchiveScan = allowFullArchiveScan
+        self.maxResourceFiles = maxResourceFiles
+        self.maxOutputMegabytes = maxOutputMegabytes
+    }
+}
+
+public struct AddonProbeVisualVariantTweakDBFields: Codable, Equatable, Sendable {
+    public let filePath: String
+    public let recordID: String
+    public let recordIDHex: String
+    public let recordResolved: Bool
+    public let recordTypeName: String?
+    public let entityName: String?
+    public let appearanceName: String?
+    public let appearanceResourceName: String?
+    public let appearanceSuffixes: String?
+    public let placementSlots: String?
+    public let equipArea: String?
+    public let itemType: String?
+    public let itemCategory: String?
+    public let tags: String?
+    public let icon: String?
+    public let iconPath: String?
+}
+
+public struct AddonProbeVisualResourceEdge: Codable, Equatable, Hashable, Sendable {
+    public let fromPath: String
+    public let toPath: String
+    public let resolver: String
+}
+
+public struct AddonProbeVisualResourceNode: Codable, Equatable, Sendable {
+    public let path: String
+    public let kind: String
+    public let extractedPath: String?
+    public let existsInAppearanceArchive: Bool
+    public let referencePaths: [String]
+    public let resolvers: [String]
+    public let unresolvedReason: String?
+}
+
+public struct AddonProbeVisualResourceGraph: Codable, Equatable, Sendable {
+    public let seedPaths: [String]
+    public let nodes: [AddonProbeVisualResourceNode]
+    public let edges: [AddonProbeVisualResourceEdge]
+    public let meshPaths: [String]
+    public let materialPaths: [String]
+    public let unresolvedPaths: [String]
+}
+
+public struct AddonProbeVisualVariantSibling: Codable, Equatable, Sendable {
+    public let itemID: String
+    public let matchReasons: [String]
+    public let entityName: String?
+    public let appearanceName: String?
+    public let visualFamily: String?
+    public let appearanceResourceName: String?
+    public let equipArea: String?
+    public let placementSlots: String?
+    public let meshPaths: [String]
+    public let materialPaths: [String]
+    public let graphUnresolvedPaths: [String]
+}
+
+public struct AddonProbeVisualFamilyTrace: Codable, Equatable, Sendable {
+    public let record: String
+    public let entityName: String?
+    public let appearanceName: String?
+    public let visualFamily: String?
+    public let gameplayEntityResource: String?
+    public let appearanceAppResource: String?
+    public let visualEntityResource: String?
+    public let expectedAppPath: String?
+    public let expectedVisualEntPath: String?
+    public let expectedGameplayEntPath: String?
+    public let expectedEP1GameplayEntPath: String?
+    public let visualFamilyResolved: Bool
+    public let appearanceResourceResolved: Bool
+    public let meshGraphResolved: Bool
+    public let appearanceEntryFound: Bool?
+    public let meshRefs: [String]
+    public let materialRefs: [String]
+}
+
+public struct AddonProbeVisualVariantGroup: Codable, Equatable, Sendable {
+    public let key: String
+    public let itemIDs: [String]
+}
+
+public struct AddonProbeVisualVariantResourceOwners: Codable, Equatable, Sendable {
+    public let resourcePath: String
+    public let itemIDs: [String]
+}
+
+public struct AddonProbeVisualVariantSharingAuditReport: Codable, Equatable, Sendable {
+    public let outputDirectoryPath: String
+    public let baseTweakDBPath: String
+    public let ep1TweakDBPath: String
+    public let appearanceArchivePath: String
+    public let itemID: String
+    public let baseFields: AddonProbeVisualVariantTweakDBFields
+    public let ep1Fields: AddonProbeVisualVariantTweakDBFields
+    public let analyzedItemCount: Int
+    public let candidateDiscoveryComplete: Bool
+    public let targetVisualFamilyTrace: AddonProbeVisualFamilyTrace
+    public let targetGraph: AddonProbeVisualResourceGraph
+    public let siblingVariants: [AddonProbeVisualVariantSibling]
+    public let resourceOwners: [AddonProbeVisualVariantResourceOwners]
+    public let entityNameGroups: [AddonProbeVisualVariantGroup]
+    public let appearanceNameGroups: [AddonProbeVisualVariantGroup]
+    public let meshPathGroups: [AddonProbeVisualVariantGroup]
+    public let materialPathGroups: [AddonProbeVisualVariantGroup]
+    public let canReplaceSharedMeshSafely: Bool
+    public let affectedVariantCount: Int?
+    public let exactSiblingItems: [String]
+    public let requiresSplitResourceChain: Bool
+    public let unresolvedDiagnostics: [String]
+    public let extractedAppearancePath: String
+    public let reportPath: String
+    public let summaryPath: String
+    public let warnings: [String]
+}
+
+public struct AddonProbeTargetedVariantReplacerRequest: Sendable {
+    public let targetItemID: String
+    public let sourceArchiveURL: URL
+    public let baseTweakDBURL: URL
+    public let ep1TweakDBURL: URL
+    public let appearanceArchiveURL: URL
+    public let outputDirectoryURL: URL
+    public let cp77toolsURL: URL
+    public let probeResourceOnlySwap: Bool
+
+    public init(
+        targetItemID: String,
+        sourceArchiveURL: URL,
+        baseTweakDBURL: URL,
+        ep1TweakDBURL: URL,
+        appearanceArchiveURL: URL,
+        outputDirectoryURL: URL,
+        cp77toolsURL: URL,
+        probeResourceOnlySwap: Bool = false
+    ) {
+        self.targetItemID = targetItemID
+        self.sourceArchiveURL = sourceArchiveURL
+        self.baseTweakDBURL = baseTweakDBURL
+        self.ep1TweakDBURL = ep1TweakDBURL
+        self.appearanceArchiveURL = appearanceArchiveURL
+        self.outputDirectoryURL = outputDirectoryURL
+        self.cp77toolsURL = cp77toolsURL
+        self.probeResourceOnlySwap = probeResourceOnlySwap
+    }
+}
+
+public enum AddonProbeTargetedVariantReplacerConclusion: String, Codable, Equatable, Sendable {
+    case stagedArchiveProduced
+    case refusedSharedVanillaResource
+    case refusedUnresolvedSafety
+    case refusedNoUnambiguousDonorResource
+}
+
+public struct AddonProbeTargetedVariantResourceChange: Codable, Equatable, Sendable {
+    public let resourcePath: String
+    public let targetSHA256: String
+    public let donorSHA256: String
+}
+
+public struct AddonProbeTargetedVariantRefusal: Codable, Equatable, Sendable {
+    public let reason: String
+    public let sharedResourcePaths: [String]
+    public let exactSiblingItems: [String]
+    public let requiredReferenceEdits: [String]
+    public let unsupportedEditBoundary: String
+}
+
+public struct AddonProbeTargetedVariantReplacerReport: Codable, Equatable, Sendable {
+    public let outputDirectoryPath: String
+    public let targetItemID: String
+    public let sourceArchivePath: String
+    public let appearanceArchivePath: String
+    public let probeResourceOnlySwap: Bool
+    public let auditReport: AddonProbeVisualVariantSharingAuditReport
+    public let resourceChanges: [AddonProbeTargetedVariantResourceChange]
+    public let affectedItems: [String]
+    public let affectedVariantCount: Int?
+    public let stagedAppearanceArchivePath: String?
+    public let stagedAppearanceArchiveSHA256: String?
+    public let refusal: AddonProbeTargetedVariantRefusal?
+    public let conclusion: AddonProbeTargetedVariantReplacerConclusion
+    public let reportPath: String
+    public let summaryPath: String
+    public let warnings: [String]
+}
+
 public struct AddonProbeRecordLayerQueryReport: Codable, Equatable, Sendable {
     public let query: String
     public let command: String
@@ -1948,6 +2253,24 @@ public struct AddonProbeManager: Sendable {
         let report: AddonProbeOneItemClothingFlatOverrideReport
     }
 
+    private struct VisualVariantRecord {
+        let itemID: String
+        let fields: AddonProbeVisualVariantTweakDBFields
+        let visualFamilyTrace: AddonProbeVisualFamilyTrace
+        let graph: AddonProbeVisualResourceGraph
+    }
+
+    private struct VisualFamilyResourceResolution {
+        let visualFamily: String?
+        let gameplayEntityResource: String?
+        let appearanceAppResource: String?
+        let visualEntityResource: String?
+        let expectedAppPath: String?
+        let expectedVisualEntPath: String?
+        let expectedGameplayEntPath: String?
+        let expectedEP1GameplayEntPath: String?
+    }
+
     private struct Discovery {
         let root: ResolvedModRoot
         let archiveFiles: [String]
@@ -2277,6 +2600,1445 @@ public struct AddonProbeManager: Sendable {
         )
         try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
         try Self.writeOneItemClothingPipelineSummary(report, to: summaryURL)
+        return report
+    }
+
+    public func stageVanillaBackedVisualControl(
+        request: AddonProbeVanillaBackedVisualControlRequest
+    ) throws -> AddonProbeVanillaBackedVisualControlReport {
+        try home.bootstrap()
+        let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL
+        try validateOutputDirectory(outputDirectoryURL, description: "Vanilla-backed visual control output directory")
+        try FileManager.default.createDirectory(at: outputDirectoryURL, withIntermediateDirectories: true)
+
+        let inspector = TweakDBStructureInspector()
+        let baseSourceTrace = try inspector.trace(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: request.baseTweakDBURL,
+            record: request.sourceRecord,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("source-base-trace", isDirectory: true)
+        ))
+        let ep1SourceTrace = try inspector.trace(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: request.ep1TweakDBURL,
+            record: request.sourceRecord,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("source-ep1-trace", isDirectory: true)
+        ))
+
+        var overrides: [AddonProbeTweakDBCloneOverride] = []
+        if let displayNameLocKey = request.displayNameLocKey {
+            overrides.append(.locKey(property: "displayName", value: displayNameLocKey))
+        }
+        if let localizedNameLocKey = request.localizedNameLocKey {
+            overrides.append(.locKey(property: "localizedName", value: localizedNameLocKey))
+        }
+
+        let tweakDBReport = try stageTweakDBDualCloneRecord(request: AddonProbeTweakDBDualCloneRecordRequest(
+            baseFileURL: request.baseTweakDBURL,
+            ep1FileURL: request.ep1TweakDBURL,
+            outputDirectoryURL: outputDirectoryURL.appendingPathComponent("tweakdb", isDirectory: true),
+            sourceRecord: request.sourceRecord,
+            newRecord: request.newRecord,
+            overrides: overrides
+        ))
+
+        let baseClonedFlats = Self.flatTraceByProperty(tweakDBReport.baseReport.verification)
+        let ep1ClonedFlats = Self.flatTraceByProperty(tweakDBReport.ep1Report.verification)
+        let baseSourceFlats = Self.flatTraceByProperty(baseSourceTrace.trace)
+        let ep1SourceFlats = Self.flatTraceByProperty(ep1SourceTrace.trace)
+
+        let preservedFlats = AddonProbeVanillaBackedVisualControlReport.preservedFlatProperties.map { property -> AddonProbeVanillaBackedVisualPreservedFlatStatus in
+            let baseSource = baseSourceFlats[property]
+            let baseCloned = baseClonedFlats[property]
+            let ep1Source = ep1SourceFlats[property]
+            let ep1Cloned = ep1ClonedFlats[property]
+            let basePreserved: Bool
+            if let baseSource, let baseCloned {
+                basePreserved = baseSource.valueSummary == baseCloned.valueSummary
+            } else if baseSource == nil, baseCloned == nil {
+                basePreserved = true
+            } else {
+                basePreserved = false
+            }
+            let ep1Preserved: Bool
+            if let ep1Source, let ep1Cloned {
+                ep1Preserved = ep1Source.valueSummary == ep1Cloned.valueSummary
+            } else if ep1Source == nil, ep1Cloned == nil {
+                ep1Preserved = true
+            } else {
+                ep1Preserved = false
+            }
+            return AddonProbeVanillaBackedVisualPreservedFlatStatus(
+                property: property,
+                baseSourceFlatPresent: baseSource != nil,
+                baseClonedFlatPresent: baseCloned != nil,
+                baseSourceValueSummary: baseSource?.valueSummary,
+                baseClonedValueSummary: baseCloned?.valueSummary,
+                basePreserved: basePreserved,
+                ep1SourceFlatPresent: ep1Source != nil,
+                ep1ClonedFlatPresent: ep1Cloned != nil,
+                ep1SourceValueSummary: ep1Source?.valueSummary,
+                ep1ClonedValueSummary: ep1Cloned?.valueSummary,
+                ep1Preserved: ep1Preserved
+            )
+        }
+        let preservedFlatsVerified = preservedFlats.allSatisfy(\.preserved)
+
+        let grantDirectory = outputDirectoryURL.appendingPathComponent("grant-helper", isDirectory: true)
+        try FileManager.default.createDirectory(at: grantDirectory, withIntermediateDirectories: true)
+        let grantURL = grantDirectory.appendingPathComponent("\(Self.safeFileComponent(request.newRecord))-diagnostic.zip")
+        let grantHelper = try runtimeItemDiagnosticGrant(request: AddonProbeRuntimeItemDiagnosticGrantRequest(
+            itemIDs: [request.newRecord],
+            outputZipURL: grantURL,
+            modName: "CyberMac Vanilla-Backed Visual Control",
+            moneyMarkers: true,
+            cNameChecks: []
+        ))
+
+        let manualInstallCommands = [
+            "sudo cp \(PathSafety.shellQuoted(tweakDBReport.stagedBaseFilePath)) \(PathSafety.shellQuoted(request.baseTweakDBURL.path))",
+            "sudo cp \(PathSafety.shellQuoted(tweakDBReport.stagedEP1FilePath)) \(PathSafety.shellQuoted(request.ep1TweakDBURL.path))",
+            "cybermac install \(PathSafety.shellQuoted(grantHelper.outputZipPath))",
+            "cybermac activate --bundle-mode"
+        ]
+
+        var warnings: [String] = [
+            "Vanilla-backed visual control stages add-on TweakDB records only. No archive changes are produced.",
+            "Install staged TweakDB files manually; this command does not mutate game files.",
+            "After install, equip \(request.newRecord) — if it visually appears as \(request.sourceRecord), add-on item visual binding works."
+        ]
+        for flat in preservedFlats where !flat.preserved {
+            warnings.append("Visual flat \(flat.property) was not preserved: basePreserved=\(flat.basePreserved) ep1Preserved=\(flat.ep1Preserved)")
+        }
+        if request.displayNameLocKey != nil {
+            warnings.append("displayName locKey was overridden; this is intentional and does not affect visual binding.")
+        }
+        if request.localizedNameLocKey != nil {
+            warnings.append("localizedName locKey was overridden; this is intentional and does not affect visual binding.")
+        }
+
+        let verificationSucceeded = tweakDBReport.verificationSucceeded && preservedFlatsVerified
+
+        let reportURL = outputDirectoryURL.appendingPathComponent("vanilla-backed-visual-control.json")
+        let summaryURL = outputDirectoryURL.appendingPathComponent("vanilla-backed-visual-control.txt")
+        let report = AddonProbeVanillaBackedVisualControlReport(
+            outputDirectoryPath: outputDirectoryURL.path,
+            baseTweakDBPath: request.baseTweakDBURL.path,
+            ep1TweakDBPath: request.ep1TweakDBURL.path,
+            sourceRecord: request.sourceRecord,
+            newRecord: request.newRecord,
+            displayNameLocKey: request.displayNameLocKey,
+            localizedNameLocKey: request.localizedNameLocKey,
+            tweakDBReport: tweakDBReport,
+            preservedFlats: preservedFlats,
+            preservedFlatsVerified: preservedFlatsVerified,
+            grantHelper: grantHelper,
+            manualInstallCommands: manualInstallCommands,
+            verificationSucceeded: verificationSucceeded,
+            warnings: AddonProbeManager.orderedUnique(warnings),
+            reportPath: reportURL.path,
+            summaryPath: summaryURL.path
+        )
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        try Self.writeVanillaBackedVisualControlSummary(report, to: summaryURL)
+        return report
+    }
+
+    public func auditVisualVariantSharing(
+        request: AddonProbeVisualVariantSharingAuditRequest
+    ) throws -> AddonProbeVisualVariantSharingAuditReport {
+        guard request.maxResourceFiles > 0 else {
+            throw CyberMacError.invalidInput("--max-resource-files must be greater than zero.")
+        }
+        guard request.maxOutputMegabytes > 0 else {
+            throw CyberMacError.invalidInput("--max-output-mb must be greater than zero.")
+        }
+        try home.bootstrap()
+        let itemID = try Self.validatedVisualVariantItemID(request.itemID)
+        let baseTweakDBURL = request.baseTweakDBURL.standardizedFileURL
+        let ep1TweakDBURL = request.ep1TweakDBURL.standardizedFileURL
+        let appearanceArchiveURL = request.appearanceArchiveURL.standardizedFileURL
+        let cp77toolsURL = request.cp77toolsURL.standardizedFileURL
+        try validateRegularFile(baseTweakDBURL, description: "Visual variant audit base TweakDB")
+        try validateRegularFile(ep1TweakDBURL, description: "Visual variant audit EP1 TweakDB")
+        try validateRegularFile(appearanceArchiveURL, description: "Visual variant audit appearance archive")
+        try validateExecutableFile(cp77toolsURL, description: "cp77tools path")
+
+        let outputRootURL = request.outputDirectoryURL.standardizedFileURL
+        try validateOutputDirectory(outputRootURL, description: "Visual variant audit output directory")
+        let workRootURL = outputRootURL.appendingPathComponent(
+            "visual-variant-sharing-\(Self.safeFilename(itemID))-\(stageID())",
+            isDirectory: true
+        )
+        guard !FileManager.default.fileExists(atPath: workRootURL.path) else {
+            throw CyberMacError.invalidInput("Visual variant audit output already exists: \(workRootURL.path)")
+        }
+        let extractedAppearanceURL = workRootURL.appendingPathComponent("appearance-extracted", isDirectory: true)
+        let decodedResourceURL = workRootURL.appendingPathComponent("resource-decode", isDirectory: true)
+        let reportURL = workRootURL.appendingPathComponent("visual-variant-sharing-audit.json")
+        let summaryURL = workRootURL.appendingPathComponent("visual-variant-sharing-audit.txt")
+        let outputByteLimit = request.maxOutputMegabytes * 1_048_576
+        try FileManager.default.createDirectory(at: workRootURL, withIntermediateDirectories: true)
+        let structureInspector = TweakDBStructureInspector()
+        let baseTraceReport = try structureInspector.trace(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: baseTweakDBURL,
+            record: itemID,
+            outputDirectoryURL: workRootURL.appendingPathComponent("tweakdb-base-target-trace", isDirectory: true)
+        ))
+        let ep1TraceReport = try structureInspector.trace(request: AddonProbeTweakDBRecordTraceRequest(
+            fileURL: ep1TweakDBURL,
+            record: itemID,
+            outputDirectoryURL: workRootURL.appendingPathComponent("tweakdb-ep1-target-trace", isDirectory: true)
+        ))
+        var baseTraces = [itemID: baseTraceReport.trace]
+        var ep1Traces = [itemID: ep1TraceReport.trace]
+        let baseTargetTrace = baseTraces[itemID] ?? Self.missingVisualVariantTrace(itemID)
+        let ep1TargetTrace = ep1Traces[itemID] ?? Self.missingVisualVariantTrace(itemID)
+        let baseFields = Self.visualVariantFields(
+            trace: baseTargetTrace,
+            filePath: baseTweakDBURL.path
+        )
+        let ep1Fields = Self.visualVariantFields(
+            trace: ep1TargetTrace,
+            filePath: ep1TweakDBURL.path
+        )
+        let targetFieldsForComparison = baseFields.recordResolved ? baseFields : ep1Fields
+        var graphWarnings: [String] = []
+        var warnings = baseTraceReport.warnings + ep1TraceReport.warnings
+        warnings.append("Bounded visual variant audit writes the target report before archive resource scanning.")
+        warnings.append("Default audit mode skips full appearance archive extraction and broad TweakDB packed-string dumps.")
+        var unresolvedDiagnostics: [String] = []
+        var appearanceAssets: [String: ExtractedAsset] = [:]
+        var records: [VisualVariantRecord] = []
+        var candidateDiscoveryComplete = false
+        var discoveredItemIDs: [String] = []
+        let archiveIndexURL = existingDefaultDatabaseURL()
+        var targetResolution = visualFamilyResourceResolution(
+            fields: targetFieldsForComparison,
+            appearanceAssets: appearanceAssets,
+            archiveIndexURL: archiveIndexURL,
+            warnings: &graphWarnings
+        )
+        var targetGraph = Self.emptyVisualResourceGraph(seedPaths: Self.visualSeedResourcePaths(
+            fields: targetFieldsForComparison,
+            familyResolution: targetResolution
+        ))
+        var targetVisualFamilyTrace = Self.visualFamilyTrace(
+            fields: targetFieldsForComparison,
+            resolution: targetResolution,
+            graph: targetGraph,
+            appearanceAssets: appearanceAssets
+        )
+        if targetFieldsForComparison.recordResolved {
+            records = [VisualVariantRecord(
+                itemID: itemID,
+                fields: targetFieldsForComparison,
+                visualFamilyTrace: targetVisualFamilyTrace,
+                graph: targetGraph
+            )]
+        }
+
+        func currentReport() -> AddonProbeVisualVariantSharingAuditReport {
+            let resourceOwnerGroups = Self.visualResourceOwnerGroups(records: records)
+            let resourceOwnersByPath = Dictionary(uniqueKeysWithValues: resourceOwnerGroups.map { ($0.resourcePath, $0.itemIDs) })
+            let siblings = records
+                .filter { $0.itemID != itemID }
+                .compactMap { candidate -> AddonProbeVisualVariantSibling? in
+                    let reasons = Self.visualVariantMatchReasons(
+                        targetTrace: targetVisualFamilyTrace,
+                        targetGraph: targetGraph,
+                        candidateTrace: candidate.visualFamilyTrace,
+                        candidateGraph: candidate.graph
+                    )
+                    guard !reasons.isEmpty else { return nil }
+                    return AddonProbeVisualVariantSibling(
+                        itemID: candidate.itemID,
+                        matchReasons: reasons,
+                        entityName: candidate.fields.entityName,
+                        appearanceName: candidate.fields.appearanceName,
+                        visualFamily: candidate.visualFamilyTrace.visualFamily,
+                        appearanceResourceName: candidate.fields.appearanceResourceName,
+                        equipArea: candidate.fields.equipArea,
+                        placementSlots: candidate.fields.placementSlots,
+                        meshPaths: candidate.graph.meshPaths,
+                        materialPaths: candidate.graph.materialPaths,
+                        graphUnresolvedPaths: candidate.graph.unresolvedPaths
+                    )
+                }
+                .sorted { $0.itemID < $1.itemID }
+            let affectedItems = Self.orderedUnique(
+                targetGraph.meshPaths.flatMap { resourceOwnersByPath[$0] ?? [] }
+            ).sorted()
+            let exactSiblingItems = affectedItems.filter { $0 != itemID }
+            var diagnostics = unresolvedDiagnostics
+            if !baseFields.recordResolved {
+                diagnostics.append("Target item \(itemID) did not resolve in the base TweakDB record table.")
+            }
+            if !ep1Fields.recordResolved {
+                diagnostics.append("Target item \(itemID) did not resolve in the EP1 TweakDB record table.")
+            }
+            if !candidateDiscoveryComplete {
+                diagnostics.append("Broad Items.* candidate discovery was not completed; affected variant count remains unknown.")
+            }
+            if targetGraph.seedPaths.isEmpty {
+                diagnostics.append("Target visual family and TweakDB fields did not resolve a seed .app/.ent/.mesh/.mlsetup/.mi/.xbm/.inkatlas path.")
+            }
+            if targetGraph.meshPaths.isEmpty {
+                diagnostics.append("Target visual graph did not resolve a mesh path.")
+            }
+            if !targetGraph.unresolvedPaths.isEmpty {
+                diagnostics.append("Target visual graph has unresolved archive paths: \(targetGraph.unresolvedPaths.joined(separator: ", ")).")
+            }
+            for sibling in siblings where !sibling.graphUnresolvedPaths.isEmpty {
+                diagnostics.append("Sibling candidate \(sibling.itemID) has unresolved graph paths: \(sibling.graphUnresolvedPaths.joined(separator: ", ")).")
+            }
+            if !targetGraph.meshPaths.isEmpty, !affectedItems.contains(itemID) {
+                diagnostics.append("Resolved target mesh paths were not owned by the target graph in the sharing index.")
+            }
+            let affectedVariantCount = targetVisualFamilyTrace.meshGraphResolved && candidateDiscoveryComplete
+                ? affectedItems.count
+                : nil
+            let exactDiagnostics = Self.orderedUnique(diagnostics)
+            let canReplaceSharedMeshSafely = candidateDiscoveryComplete &&
+                exactDiagnostics.isEmpty &&
+                affectedVariantCount == 1 &&
+                exactSiblingItems.isEmpty
+            let requiresSplitResourceChain = (affectedVariantCount ?? 0) > 1 || !exactSiblingItems.isEmpty
+            return AddonProbeVisualVariantSharingAuditReport(
+                outputDirectoryPath: workRootURL.path,
+                baseTweakDBPath: baseTweakDBURL.path,
+                ep1TweakDBPath: ep1TweakDBURL.path,
+                appearanceArchivePath: appearanceArchiveURL.path,
+                itemID: itemID,
+                baseFields: baseFields,
+                ep1Fields: ep1Fields,
+                analyzedItemCount: records.count,
+                candidateDiscoveryComplete: candidateDiscoveryComplete,
+                targetVisualFamilyTrace: targetVisualFamilyTrace,
+                targetGraph: targetGraph,
+                siblingVariants: siblings,
+                resourceOwners: resourceOwnerGroups,
+                entityNameGroups: Self.visualVariantGroups(records: records, key: \.fields.entityName),
+                appearanceNameGroups: Self.visualVariantGroups(records: records, key: \.fields.appearanceName),
+                meshPathGroups: Self.visualVariantGraphGroups(records: records, key: \.meshPaths),
+                materialPathGroups: Self.visualVariantGraphGroups(records: records, key: \.materialPaths),
+                canReplaceSharedMeshSafely: canReplaceSharedMeshSafely,
+                affectedVariantCount: affectedVariantCount,
+                exactSiblingItems: exactSiblingItems,
+                requiresSplitResourceChain: requiresSplitResourceChain,
+                unresolvedDiagnostics: exactDiagnostics,
+                extractedAppearancePath: extractedAppearanceURL.path,
+                reportPath: reportURL.path,
+                summaryPath: summaryURL.path,
+                warnings: Self.orderedUnique(warnings + graphWarnings)
+            )
+        }
+        func writeReport() throws -> AddonProbeVisualVariantSharingAuditReport {
+            let report = currentReport()
+            try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+            try Self.writeVisualVariantSharingAuditSummary(report, to: summaryURL)
+            return report
+        }
+        func outputCapReached(after phase: String) throws -> AddonProbeVisualVariantSharingAuditReport? {
+            let usedBytes = try visualAuditOutputBytes(under: workRootURL, stopAfter: outputByteLimit)
+            guard usedBytes > outputByteLimit else { return nil }
+            unresolvedDiagnostics.append("Audit output exceeded --max-output-mb \(request.maxOutputMegabytes) after \(phase); bounded audit stopped.")
+            warnings.append("Output cap stopped visual variant audit after \(phase). Generated archive/debug extraction directories were discarded before the final report.")
+            try discardVisualAuditBulkDirectories(in: workRootURL)
+            return try writeReport()
+        }
+
+        // Phase 1: target-only TweakDB traces. Keep the audit files useful before any archive work starts.
+        var report = try writeReport()
+        if let capped = try outputCapReached(after: "target TweakDB trace") { return capped }
+
+        if !request.allowFullArchiveScan {
+            warnings.append("Appearance archive bytes were not extracted. Pass --allow-full-archive-scan for the capped legacy archive walk.")
+            report = try writeReport()
+            if !request.debugDumpTweakDB {
+                return report
+            }
+        } else {
+            do {
+                try FileManager.default.createDirectory(at: decodedResourceURL, withIntermediateDirectories: true)
+            try tooling.extractArchive(
+                cp77toolsURL: cp77toolsURL,
+                sourceArchiveURL: appearanceArchiveURL,
+                outputDirectoryURL: extractedAppearanceURL
+            )
+            report = try writeReport()
+            if let capped = try outputCapReached(after: "appearance archive extraction") { return capped }
+            let extractedFiles = try regularFiles(
+                under: extractedAppearanceURL,
+                description: "Visual variant appearance archive extraction"
+            )
+            guard extractedFiles.count <= request.maxResourceFiles else {
+                unresolvedDiagnostics.append("Appearance archive extraction produced \(extractedFiles.count) files, exceeding --max-resource-files \(request.maxResourceFiles); resource graph scan stopped.")
+                warnings.append("Resource extraction cap stopped visual variant audit after the opted-in full archive scan.")
+                try discardVisualAuditBulkDirectories(in: workRootURL)
+                return try writeReport()
+            }
+            appearanceAssets = try collectExtractedAssets(
+                under: extractedAppearanceURL,
+                description: "Visual variant appearance archive extraction"
+            )
+            targetResolution = visualFamilyResourceResolution(
+                fields: targetFieldsForComparison,
+                appearanceAssets: appearanceAssets,
+                archiveIndexURL: archiveIndexURL,
+                warnings: &graphWarnings
+            )
+            targetGraph = visualResourceGraph(
+                seedPaths: Self.visualSeedResourcePaths(fields: targetFieldsForComparison, familyResolution: targetResolution),
+                appearanceAssets: appearanceAssets,
+                cp77toolsURL: cp77toolsURL,
+                decodedRootURL: decodedResourceURL.appendingPathComponent(Self.safeFilename(itemID), isDirectory: true),
+                attemptSerialization: true,
+                appearanceName: targetFieldsForComparison.appearanceName,
+                warnings: &graphWarnings
+            )
+            targetVisualFamilyTrace = Self.visualFamilyTrace(
+                fields: targetFieldsForComparison,
+                resolution: targetResolution,
+                graph: targetGraph,
+                appearanceAssets: appearanceAssets
+            )
+            if targetFieldsForComparison.recordResolved {
+                records = [VisualVariantRecord(
+                    itemID: itemID,
+                    fields: targetFieldsForComparison,
+                    visualFamilyTrace: targetVisualFamilyTrace,
+                    graph: targetGraph
+                )]
+            }
+            report = try writeReport()
+                if let capped = try outputCapReached(after: "target visual resource graph") { return capped }
+            } catch {
+                unresolvedDiagnostics.append("Opted-in appearance archive scan failed: \(error)")
+                warnings.append("Resource scan failed after the target trace; the final audit report records the unresolved graph.")
+                return try writeReport()
+            }
+        }
+
+        guard request.debugDumpTweakDB else {
+            warnings.append("Broad TweakDB candidate discovery remains disabled. Pass --debug-dump-tweakdb to write packed-string and structure artifacts.")
+            return try writeReport()
+        }
+
+        do {
+            let packedStringAnalyzer = TweakDBPackedStringAnalyzer()
+            let baseStrings = try packedStringAnalyzer.analyze(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+                fileURL: baseTweakDBURL,
+                outputDirectoryURL: workRootURL.appendingPathComponent("tweakdb-base-strings", isDirectory: true),
+                queries: [itemID],
+                referenceScanMode: .none,
+                referenceLimit: 0
+            ))
+            warnings.append(contentsOf: baseStrings.warnings)
+            report = try writeReport()
+            if let capped = try outputCapReached(after: "base packed-string debug dump") { return capped }
+            let ep1Strings = try packedStringAnalyzer.analyze(request: AddonProbeTweakDBPackedStringAnalysisRequest(
+                fileURL: ep1TweakDBURL,
+                outputDirectoryURL: workRootURL.appendingPathComponent("tweakdb-ep1-strings", isDirectory: true),
+                queries: [itemID],
+                referenceScanMode: .none,
+                referenceLimit: 0
+            ))
+            warnings.append(contentsOf: ep1Strings.warnings)
+            report = try writeReport()
+            if let capped = try outputCapReached(after: "EP1 packed-string debug dump") { return capped }
+            discoveredItemIDs = Self.orderedUnique(
+                (baseStrings.packedStrings + ep1Strings.packedStrings)
+                    .map(\.string)
+                    .filter { $0.hasPrefix("Items.") }
+            )
+            let itemIDs = Self.orderedUnique([itemID] + discoveredItemIDs)
+            let baseStructure = try structureInspector.inspect(request: AddonProbeTweakDBStructureInspectRequest(
+                fileURL: baseTweakDBURL,
+                outputDirectoryURL: workRootURL.appendingPathComponent("tweakdb-base-structure", isDirectory: true),
+                records: itemIDs
+            ))
+            let ep1Structure = try structureInspector.inspect(request: AddonProbeTweakDBStructureInspectRequest(
+                fileURL: ep1TweakDBURL,
+                outputDirectoryURL: workRootURL.appendingPathComponent("tweakdb-ep1-structure", isDirectory: true),
+                records: itemIDs
+            ))
+            warnings.append(contentsOf: baseStructure.warnings + ep1Structure.warnings)
+            report = try writeReport()
+            if let capped = try outputCapReached(after: "TweakDB debug structure dump") { return capped }
+            baseTraces.merge(Dictionary(uniqueKeysWithValues: baseStructure.resolvedRecords.map { ($0.recordName, $0) })) { _, latest in latest }
+            ep1Traces.merge(Dictionary(uniqueKeysWithValues: ep1Structure.resolvedRecords.map { ($0.recordName, $0) })) { _, latest in latest }
+            records = []
+            for candidateID in itemIDs {
+                guard let fields = Self.preferredVisualVariantFields(
+                    baseTrace: baseTraces[candidateID],
+                    ep1Trace: ep1Traces[candidateID],
+                    baseFilePath: baseTweakDBURL.path,
+                    ep1FilePath: ep1TweakDBURL.path
+                ), fields.recordResolved else { continue }
+                guard candidateID == itemID || Self.isVisualClothingRecord(fields) else { continue }
+                let candidateResolution = visualFamilyResourceResolution(
+                    fields: fields,
+                    appearanceAssets: appearanceAssets,
+                    archiveIndexURL: archiveIndexURL,
+                    warnings: &graphWarnings
+                )
+                let candidateGraph = visualResourceGraph(
+                    seedPaths: Self.visualSeedResourcePaths(fields: fields, familyResolution: candidateResolution),
+                    appearanceAssets: appearanceAssets,
+                    cp77toolsURL: cp77toolsURL,
+                    decodedRootURL: decodedResourceURL.appendingPathComponent(Self.safeFilename(candidateID), isDirectory: true),
+                    attemptSerialization: candidateID == itemID,
+                    appearanceName: fields.appearanceName,
+                    warnings: &graphWarnings
+                )
+                let candidateTrace = Self.visualFamilyTrace(
+                    fields: fields,
+                    resolution: candidateResolution,
+                    graph: candidateGraph,
+                    appearanceAssets: appearanceAssets
+                )
+                records.append(VisualVariantRecord(
+                    itemID: candidateID,
+                    fields: fields,
+                    visualFamilyTrace: candidateTrace,
+                    graph: candidateGraph
+                ))
+                if candidateID == itemID {
+                    targetGraph = candidateGraph
+                    targetVisualFamilyTrace = candidateTrace
+                }
+            }
+            candidateDiscoveryComplete = true
+            report = try writeReport()
+            if let capped = try outputCapReached(after: "TweakDB candidate graph scan") { return capped }
+        } catch {
+            unresolvedDiagnostics.append("Opted-in TweakDB debug candidate discovery failed: \(error)")
+            warnings.append("TweakDB debug discovery failed; bounded audit kept the latest report.")
+            return try writeReport()
+        }
+        return report
+    }
+
+    public func stageTargetedVariantReplacer(
+        request: AddonProbeTargetedVariantReplacerRequest
+    ) throws -> AddonProbeTargetedVariantReplacerReport {
+        try home.bootstrap()
+        let targetItemID = try Self.validatedVisualVariantItemID(request.targetItemID)
+        let sourceArchiveURL = request.sourceArchiveURL.standardizedFileURL
+        let appearanceArchiveURL = request.appearanceArchiveURL.standardizedFileURL
+        let cp77toolsURL = request.cp77toolsURL.standardizedFileURL
+        try validateRegularFile(sourceArchiveURL, description: "Targeted variant source archive")
+        try validateRegularFile(appearanceArchiveURL, description: "Targeted variant appearance archive")
+        try validateExecutableFile(cp77toolsURL, description: "cp77tools path")
+
+        let outputRootURL = request.outputDirectoryURL.standardizedFileURL
+        try validateOutputDirectory(outputRootURL, description: "Targeted variant replacer output directory")
+        let workRootURL = outputRootURL.appendingPathComponent(
+            "targeted-variant-replacer-\(Self.safeFilename(targetItemID))-\(stageID())",
+            isDirectory: true
+        )
+        guard !FileManager.default.fileExists(atPath: workRootURL.path) else {
+            throw CyberMacError.invalidInput("Targeted variant replacer output already exists: \(workRootURL.path)")
+        }
+        try FileManager.default.createDirectory(at: workRootURL, withIntermediateDirectories: true)
+
+        let audit = try auditVisualVariantSharing(request: AddonProbeVisualVariantSharingAuditRequest(
+            baseTweakDBURL: request.baseTweakDBURL,
+            ep1TweakDBURL: request.ep1TweakDBURL,
+            appearanceArchiveURL: appearanceArchiveURL,
+            itemID: targetItemID,
+            outputDirectoryURL: workRootURL.appendingPathComponent("audit", isDirectory: true),
+            cp77toolsURL: cp77toolsURL,
+            debugDumpTweakDB: true,
+            allowFullArchiveScan: true,
+            maxResourceFiles: 100
+        ))
+        let reportURL = workRootURL.appendingPathComponent("targeted-variant-replacer.json")
+        let summaryURL = workRootURL.appendingPathComponent("targeted-variant-replacer.txt")
+
+        guard audit.canReplaceSharedMeshSafely else {
+            let conclusion: AddonProbeTargetedVariantReplacerConclusion = audit.requiresSplitResourceChain
+                ? .refusedSharedVanillaResource
+                : .refusedUnresolvedSafety
+            let refusal = Self.targetedVariantRefusal(
+                audit: audit,
+                changedSharedResourcePaths: audit.targetGraph.meshPaths,
+                reason: audit.requiresSplitResourceChain
+                    ? "Refusing to overwrite a shared vanilla visual resource path."
+                    : "Refusing to stage because one-variant isolation was not proven offline."
+            )
+            return try writeTargetedVariantReplacerReport(
+                outputDirectoryPath: workRootURL.path,
+                targetItemID: targetItemID,
+                sourceArchivePath: sourceArchiveURL.path,
+                appearanceArchivePath: appearanceArchiveURL.path,
+                probeResourceOnlySwap: request.probeResourceOnlySwap,
+                audit: audit,
+                resourceChanges: [],
+                affectedItems: Self.orderedUnique([targetItemID] + audit.exactSiblingItems).sorted(),
+                stagedArchive: nil,
+                stagedSHA256: nil,
+                refusal: refusal,
+                conclusion: conclusion,
+                reportURL: reportURL,
+                summaryURL: summaryURL,
+                warnings: [
+                    "Targeted variant replacer is refusal-first for split chains in this pass.",
+                    "No staged appearance archive was produced."
+                ]
+            )
+        }
+
+        let donorExtractionURL = workRootURL.appendingPathComponent("donor-extracted", isDirectory: true)
+        try tooling.extractArchive(
+            cp77toolsURL: cp77toolsURL,
+            sourceArchiveURL: sourceArchiveURL,
+            outputDirectoryURL: donorExtractionURL
+        )
+        let donorAssets = try collectExtractedAssets(under: donorExtractionURL, description: "Targeted variant donor extraction")
+        let targetExtractionURL = URL(fileURLWithPath: audit.extractedAppearancePath, isDirectory: true)
+        let targetAssets = try collectExtractedAssets(under: targetExtractionURL, description: "Targeted variant target extraction")
+        let resourceOwnersByPath = Dictionary(uniqueKeysWithValues: audit.resourceOwners.map { ($0.resourcePath, $0.itemIDs) })
+        let targetGraphPaths = Set(audit.targetGraph.nodes.map(\.path))
+        let exactGraphMatches = donorAssets.keys
+            .filter { targetGraphPaths.contains($0) && targetAssets[$0] != nil }
+            .sorted()
+        let safeMatches = exactGraphMatches.filter { resourceOwnersByPath[$0] == [targetItemID] }
+        let sharedMatches = exactGraphMatches.filter { resourceOwnersByPath[$0] != [targetItemID] }
+
+        if !sharedMatches.isEmpty {
+            let refusal = Self.targetedVariantRefusal(
+                audit: audit,
+                changedSharedResourcePaths: sharedMatches,
+                reason: "Refusing donor resources whose target graph path is not owned exclusively by \(targetItemID)."
+            )
+            return try writeTargetedVariantReplacerReport(
+                outputDirectoryPath: workRootURL.path,
+                targetItemID: targetItemID,
+                sourceArchivePath: sourceArchiveURL.path,
+                appearanceArchivePath: appearanceArchiveURL.path,
+                probeResourceOnlySwap: request.probeResourceOnlySwap,
+                audit: audit,
+                resourceChanges: [],
+                affectedItems: Self.orderedUnique([targetItemID] + audit.exactSiblingItems).sorted(),
+                stagedArchive: nil,
+                stagedSHA256: nil,
+                refusal: refusal,
+                conclusion: .refusedSharedVanillaResource,
+                reportURL: reportURL,
+                summaryURL: summaryURL,
+                warnings: ["No target graph donor path can be overwritten unless its resource owner set is exactly the target item."]
+            )
+        }
+        guard !safeMatches.isEmpty else {
+            let refusal = Self.targetedVariantRefusal(
+                audit: audit,
+                changedSharedResourcePaths: [],
+                reason: "Source archive did not contain an exact target-only visual graph resource path."
+            )
+            return try writeTargetedVariantReplacerReport(
+                outputDirectoryPath: workRootURL.path,
+                targetItemID: targetItemID,
+                sourceArchivePath: sourceArchiveURL.path,
+                appearanceArchivePath: appearanceArchiveURL.path,
+                probeResourceOnlySwap: request.probeResourceOnlySwap,
+                audit: audit,
+                resourceChanges: [],
+                affectedItems: [targetItemID],
+                stagedArchive: nil,
+                stagedSHA256: nil,
+                refusal: refusal,
+                conclusion: .refusedNoUnambiguousDonorResource,
+                reportURL: reportURL,
+                summaryURL: summaryURL,
+                warnings: ["The planner stages exact donor-path matches only; split-path reference retargeting is not implemented."]
+            )
+        }
+
+        var changes: [AddonProbeTargetedVariantResourceChange] = []
+        for resourcePath in safeMatches {
+            guard let donorAsset = donorAssets[resourcePath], let targetAsset = targetAssets[resourcePath] else { continue }
+            changes.append(AddonProbeTargetedVariantResourceChange(
+                resourcePath: resourcePath,
+                targetSHA256: targetAsset.sha256,
+                donorSHA256: donorAsset.sha256
+            ))
+            let destinationURL = try assetURL(
+                assetPath: resourcePath,
+                rootURL: targetExtractionURL,
+                label: "Targeted variant replacement resource"
+            )
+            try FileManager.default.removeItem(at: destinationURL)
+            try FileManager.default.copyItem(at: donorAsset.url, to: destinationURL)
+        }
+
+        let packedURL = workRootURL.appendingPathComponent("packed", isDirectory: true)
+        let stagedURL = workRootURL.appendingPathComponent("staged", isDirectory: true)
+        try FileManager.default.createDirectory(at: packedURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: stagedURL, withIntermediateDirectories: true)
+        let requestedPackedArchiveURL = packedURL.appendingPathComponent(appearanceArchiveURL.lastPathComponent)
+        try tooling.packArchive(
+            cp77toolsURL: cp77toolsURL,
+            extractedDirectoryURL: targetExtractionURL,
+            outputArchiveURL: requestedPackedArchiveURL
+        )
+        let generatedArchiveURL = try singleGeneratedArchive(in: packedURL)
+        let stagedArchiveURL = stagedURL.appendingPathComponent(appearanceArchiveURL.lastPathComponent)
+        try FileManager.default.copyItem(at: generatedArchiveURL, to: stagedArchiveURL)
+        let stagedSHA256 = try PathSafety.sha256(url: stagedArchiveURL)
+        return try writeTargetedVariantReplacerReport(
+            outputDirectoryPath: workRootURL.path,
+            targetItemID: targetItemID,
+            sourceArchivePath: sourceArchiveURL.path,
+            appearanceArchivePath: appearanceArchiveURL.path,
+            probeResourceOnlySwap: request.probeResourceOnlySwap,
+            audit: audit,
+            resourceChanges: changes.sorted { $0.resourcePath < $1.resourcePath },
+            affectedItems: [targetItemID],
+            stagedArchive: stagedArchiveURL.path,
+            stagedSHA256: stagedSHA256,
+            refusal: nil,
+            conclusion: .stagedArchiveProduced,
+            reportURL: reportURL,
+            summaryURL: summaryURL,
+            warnings: [
+                "Staged only. CyberMac did not mutate the game app or run sudo.",
+                request.probeResourceOnlySwap
+                    ? "Resource-only swap probe keeps the target TweakDB equip identity stable and does not generate add-on registration artifacts."
+                    : "Targeted variant stage changes only exact target-owned visual graph paths in the explicit appearance archive."
+            ]
+        )
+    }
+
+    private static func flatTraceByProperty(_ trace: AddonProbeTweakDBRecordTrace?) -> [String: AddonProbeTweakDBFlatTrace] {
+        guard let trace else { return [:] }
+        var byProperty: [String: AddonProbeTweakDBFlatTrace] = [:]
+        for flat in trace.knownFlats {
+            byProperty[flat.property] = flat
+        }
+        return byProperty
+    }
+
+    private static let visualResourceExtensions: Set<String> = [
+        "app", "ent", "mesh", "mlsetup", "mi", "xbm", "inkatlas"
+    ]
+
+    private static func validatedVisualVariantItemID(_ rawValue: String) throws -> String {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.hasPrefix("Items."),
+              value.range(of: #"^Items\.[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil
+        else {
+            throw CyberMacError.invalidInput("Visual variant item must be an Items.* record ID: \(rawValue)")
+        }
+        return value
+    }
+
+    private static func missingVisualVariantTrace(_ itemID: String) -> AddonProbeTweakDBRecordTrace {
+        AddonProbeTweakDBRecordTrace(
+            recordName: itemID,
+            recordID: 0,
+            recordIDHex: "0x0000000000000000",
+            recordTableEntry: nil,
+            parentBaseRecord: nil,
+            parentBaseRecordStatus: "Not resolved.",
+            knownFlatCount: 0,
+            knownFlatCountConfidence: .unknown,
+            knownFlats: [],
+            nearbyRecords: [],
+            traceStatus: ["recordTableEntryNotFound"]
+        )
+    }
+
+    private static func visualVariantFields(
+        trace: AddonProbeTweakDBRecordTrace,
+        filePath: String
+    ) -> AddonProbeVisualVariantTweakDBFields {
+        let flats = Dictionary(uniqueKeysWithValues: trace.knownFlats.map { ($0.property, $0) })
+        func value(_ property: String) -> String? {
+            guard let summary = flats[property]?.valueSummary else { return nil }
+            return normalizedVisualFlatValue(summary)
+        }
+        return AddonProbeVisualVariantTweakDBFields(
+            filePath: filePath,
+            recordID: trace.recordName,
+            recordIDHex: trace.recordIDHex,
+            recordResolved: trace.recordTableEntry != nil,
+            recordTypeName: trace.recordTableEntry?.recordTypeName,
+            entityName: value("entityName"),
+            appearanceName: value("appearanceName"),
+            appearanceResourceName: value("appearanceResourceName"),
+            appearanceSuffixes: value("appearanceSuffixes"),
+            placementSlots: value("placementSlots"),
+            equipArea: value("equipArea"),
+            itemType: value("itemType"),
+            itemCategory: value("itemCategory"),
+            tags: value("tags"),
+            icon: value("icon"),
+            iconPath: value("iconPath")
+        )
+    }
+
+    private static func preferredVisualVariantFields(
+        baseTrace: AddonProbeTweakDBRecordTrace?,
+        ep1Trace: AddonProbeTweakDBRecordTrace?,
+        baseFilePath: String,
+        ep1FilePath: String
+    ) -> AddonProbeVisualVariantTweakDBFields? {
+        if let baseTrace, baseTrace.recordTableEntry != nil {
+            return visualVariantFields(trace: baseTrace, filePath: baseFilePath)
+        }
+        if let ep1Trace, ep1Trace.recordTableEntry != nil {
+            return visualVariantFields(trace: ep1Trace, filePath: ep1FilePath)
+        }
+        return nil
+    }
+
+    private static func normalizedVisualFlatValue(_ summary: String) -> String? {
+        var value = summary
+        if summary.hasPrefix("\""), summary.hasSuffix("\""), summary.count >= 2 {
+            value = String(summary.dropFirst().dropLast())
+        }
+        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        let sentinel = value.lowercased()
+        guard sentinel != "none", sentinel != "nil", sentinel != "null" else { return nil }
+        return value
+    }
+
+    private static func visualSeedResourcePaths(fields: AddonProbeVisualVariantTweakDBFields) -> [String] {
+        let fieldValues = [
+            fields.entityName,
+            fields.appearanceResourceName,
+            fields.iconPath
+        ].compactMap { $0 }
+        return orderedUnique(fieldValues.flatMap(parseResourceReferences))
+            .filter { visualResourceExtension($0) != nil }
+            .sorted()
+    }
+
+    private static func visualSeedResourcePaths(
+        fields: AddonProbeVisualVariantTweakDBFields,
+        familyResolution: VisualFamilyResourceResolution
+    ) -> [String] {
+        orderedUnique(
+            visualSeedResourcePaths(fields: fields) +
+                [
+                    familyResolution.gameplayEntityResource,
+                    familyResolution.appearanceAppResource,
+                    familyResolution.visualEntityResource
+                ].compactMap { $0 }
+        )
+        .filter { visualResourceExtension($0) != nil }
+        .sorted()
+    }
+
+    public static func deriveVisualFamily(appearanceName: String?) -> String? {
+        guard var family = appearanceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !family.isEmpty
+        else { return nil }
+        family = family.replacingOccurrences(
+            of: #"_+$"#,
+            with: "",
+            options: .regularExpression
+        )
+        family = family.replacingOccurrences(
+            of: #"_(?:old|basic|rich)_\d+$"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        return family.isEmpty ? nil : family
+    }
+
+    private static func isVisualClothingRecord(_ fields: AddonProbeVisualVariantTweakDBFields) -> Bool {
+        let clothingSignals = [
+            fields.recordTypeName,
+            fields.itemType,
+            fields.itemCategory
+        ].compactMap { $0?.lowercased() }
+        if clothingSignals.contains(where: { $0.contains("clothing") }) {
+            return true
+        }
+        guard fields.recordTypeName == nil else { return false }
+        return [fields.tags, fields.equipArea]
+            .compactMap { $0?.lowercased() }
+            .contains { $0.contains("clothing") || $0.contains("chest") || $0.contains("head") || $0.contains("feet") || $0.contains("legs") }
+    }
+
+    private func visualFamilyResourceResolution(
+        fields: AddonProbeVisualVariantTweakDBFields,
+        appearanceAssets: [String: ExtractedAsset],
+        archiveIndexURL: URL?,
+        warnings: inout [String]
+    ) -> VisualFamilyResourceResolution {
+        let visualFamily = Self.deriveVisualFamily(appearanceName: fields.appearanceName)
+        let directSeeds = Self.visualSeedResourcePaths(fields: fields)
+        let directApp = directSeeds.first { Self.visualResourceExtension($0) == "app" }
+        let directEntity = directSeeds.first { Self.visualResourceExtension($0) == "ent" }
+        let expectedGameplay = Self.expectedGameplayEntityPath(entityName: fields.entityName)
+        let expectedEP1Gameplay = expectedGameplay.map(Self.expectedEP1GameplayEntityPath)
+
+        let gameplayEntityResource = visualGameplayEntityResource(
+            fields: fields,
+            directEntity: directEntity,
+            appearanceAssets: appearanceAssets,
+            archiveIndexURL: archiveIndexURL,
+            warnings: &warnings
+        )
+        guard let visualFamily else {
+            return VisualFamilyResourceResolution(
+                visualFamily: nil,
+                gameplayEntityResource: gameplayEntityResource,
+                appearanceAppResource: directApp,
+                visualEntityResource: directEntity,
+                expectedAppPath: nil,
+                expectedVisualEntPath: nil,
+                expectedGameplayEntPath: expectedGameplay,
+                expectedEP1GameplayEntPath: expectedEP1Gameplay
+            )
+        }
+
+        let appCandidate = "base/characters/appearances/player/items/torso/\(visualFamily).app"
+        let entCandidate = "base/characters/entities/player/items/torso/\(visualFamily).ent"
+        let appResource = directApp ?? visualFamilyResourcePath(
+            visualFamily: visualFamily,
+            preferredAssetPaths: [appCandidate],
+            extensionName: "app",
+            preferredPathNeedle: "/characters/appearances/player/items/torso/",
+            appearanceAssets: appearanceAssets,
+            archiveIndexURL: archiveIndexURL,
+            warnings: &warnings
+        )
+        let visualEntity = visualFamilyResourcePath(
+            visualFamily: visualFamily,
+            preferredAssetPaths: [entCandidate],
+            extensionName: "ent",
+            preferredPathNeedle: "/characters/entities/player/items/torso/",
+            appearanceAssets: appearanceAssets,
+            archiveIndexURL: archiveIndexURL,
+            warnings: &warnings
+        ) ?? directEntity
+
+        return VisualFamilyResourceResolution(
+            visualFamily: visualFamily,
+            gameplayEntityResource: gameplayEntityResource,
+            appearanceAppResource: appResource,
+            visualEntityResource: visualEntity,
+            expectedAppPath: appCandidate,
+            expectedVisualEntPath: entCandidate,
+            expectedGameplayEntPath: expectedGameplay,
+            expectedEP1GameplayEntPath: expectedEP1Gameplay
+        )
+    }
+
+    private static func expectedGameplayEntityPath(entityName: String?) -> String? {
+        guard let entityName,
+              entityName.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil
+        else { return nil }
+        return "base/gameplay/items/equipment/torso/\(entityName).ent"
+    }
+
+    private static func expectedEP1GameplayEntityPath(basePath: String) -> String {
+        guard basePath.hasPrefix("base/"), basePath.hasSuffix(".ent") else { return basePath }
+        return "ep1/\(basePath.dropFirst("base/".count).dropLast(".ent".count))_ep1.ent"
+    }
+
+    private func visualGameplayEntityResource(
+        fields: AddonProbeVisualVariantTweakDBFields,
+        directEntity: String?,
+        appearanceAssets: [String: ExtractedAsset],
+        archiveIndexURL: URL?,
+        warnings: inout [String]
+    ) -> String? {
+        guard let entityName = fields.entityName else { return directEntity }
+        if let resourcePath = Self.parseResourceReferences(entityName)
+            .first(where: { Self.visualResourceExtension($0) == "ent" }) {
+            return resourcePath
+        }
+        guard entityName.range(of: #"^[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil else {
+            return directEntity
+        }
+        return visualFamilyResourcePath(
+            visualFamily: entityName,
+            preferredAssetPaths: ["base/gameplay/items/equipment/torso/\(entityName).ent"],
+            extensionName: "ent",
+            preferredPathNeedle: "/gameplay/items/equipment/",
+            appearanceAssets: appearanceAssets,
+            archiveIndexURL: archiveIndexURL,
+            warnings: &warnings
+        ) ?? directEntity
+    }
+
+    private func visualFamilyResourcePath(
+        visualFamily: String,
+        preferredAssetPaths: [String],
+        extensionName: String,
+        preferredPathNeedle: String,
+        appearanceAssets: [String: ExtractedAsset],
+        archiveIndexURL: URL?,
+        warnings: inout [String]
+    ) -> String? {
+        for path in preferredAssetPaths where appearanceAssets[path] != nil {
+            return path
+        }
+        if let archiveIndexURL {
+            do {
+                let exactMatches = try ArchiveCatalogIndexStore().findExactAssetPathMatches(
+                    databaseURL: archiveIndexURL,
+                    assetPaths: preferredAssetPaths
+                )
+                if let exact = preferredAssetPaths.first(where: { exactMatches[$0] != nil }) {
+                    return exact
+                }
+            } catch {
+                warnings.append("Visual family exact archive-index lookup failed for \(visualFamily): \(error)")
+            }
+        }
+
+        let extractedMatches = appearanceAssets.keys
+            .filter {
+                Self.visualResourceExtension($0) == extensionName &&
+                    $0.localizedCaseInsensitiveContains(visualFamily)
+            }
+            .sorted { lhs, rhs in
+                let lhsPreferred = lhs.lowercased().contains(preferredPathNeedle.lowercased())
+                let rhsPreferred = rhs.lowercased().contains(preferredPathNeedle.lowercased())
+                if lhsPreferred != rhsPreferred { return lhsPreferred }
+                return lhs < rhs
+            }
+        if let extracted = extractedMatches.first {
+            return extracted
+        }
+
+        guard let archiveIndexURL else { return nil }
+        do {
+            let report = try ArchiveCatalogIndexStore().search(options: ArchiveCatalogIndexSearchOptions(
+                query: visualFamily,
+                databaseURL: archiveIndexURL,
+                extensionFilter: extensionName,
+                limit: 100
+            ))
+            return report.matches
+                .map(\.assetPath)
+                .filter { $0.localizedCaseInsensitiveContains(visualFamily) }
+                .sorted { lhs, rhs in
+                    let lhsPreferred = lhs.lowercased().contains(preferredPathNeedle.lowercased())
+                    let rhsPreferred = rhs.lowercased().contains(preferredPathNeedle.lowercased())
+                    if lhsPreferred != rhsPreferred { return lhsPreferred }
+                    return lhs < rhs
+                }
+                .first
+        } catch {
+            warnings.append("Visual family fallback archive-index lookup failed for \(visualFamily).\(extensionName): \(error)")
+            return nil
+        }
+    }
+
+    private static func emptyVisualFamilyTrace(fields: AddonProbeVisualVariantTweakDBFields) -> AddonProbeVisualFamilyTrace {
+        AddonProbeVisualFamilyTrace(
+            record: fields.recordID,
+            entityName: fields.entityName,
+            appearanceName: fields.appearanceName,
+            visualFamily: deriveVisualFamily(appearanceName: fields.appearanceName),
+            gameplayEntityResource: nil,
+            appearanceAppResource: nil,
+            visualEntityResource: nil,
+            expectedAppPath: nil,
+            expectedVisualEntPath: nil,
+            expectedGameplayEntPath: expectedGameplayEntityPath(entityName: fields.entityName),
+            expectedEP1GameplayEntPath: expectedGameplayEntityPath(entityName: fields.entityName).map(expectedEP1GameplayEntityPath),
+            visualFamilyResolved: deriveVisualFamily(appearanceName: fields.appearanceName) != nil,
+            appearanceResourceResolved: false,
+            meshGraphResolved: false,
+            appearanceEntryFound: nil,
+            meshRefs: [],
+            materialRefs: []
+        )
+    }
+
+    private static func visualFamilyTrace(
+        fields: AddonProbeVisualVariantTweakDBFields,
+        resolution: VisualFamilyResourceResolution,
+        graph: AddonProbeVisualResourceGraph,
+        appearanceAssets: [String: ExtractedAsset]
+    ) -> AddonProbeVisualFamilyTrace {
+        let appearanceEntryFound = visualAppearanceEntryFound(
+            appearanceName: fields.appearanceName,
+            appearanceAppResource: resolution.appearanceAppResource,
+            appearanceAssets: appearanceAssets
+        )
+        return AddonProbeVisualFamilyTrace(
+            record: fields.recordID,
+            entityName: fields.entityName,
+            appearanceName: fields.appearanceName,
+            visualFamily: resolution.visualFamily,
+            gameplayEntityResource: resolution.gameplayEntityResource,
+            appearanceAppResource: resolution.appearanceAppResource,
+            visualEntityResource: resolution.visualEntityResource,
+            expectedAppPath: resolution.expectedAppPath,
+            expectedVisualEntPath: resolution.expectedVisualEntPath,
+            expectedGameplayEntPath: resolution.expectedGameplayEntPath,
+            expectedEP1GameplayEntPath: resolution.expectedEP1GameplayEntPath,
+            visualFamilyResolved: resolution.visualFamily != nil,
+            appearanceResourceResolved: resolution.appearanceAppResource != nil,
+            meshGraphResolved: !graph.meshPaths.isEmpty,
+            appearanceEntryFound: appearanceEntryFound,
+            meshRefs: graph.meshPaths,
+            materialRefs: graph.materialPaths
+        )
+    }
+
+    private static func visualAppearanceEntryFound(
+        appearanceName: String?,
+        appearanceAppResource: String?,
+        appearanceAssets: [String: ExtractedAsset]
+    ) -> Bool? {
+        guard let appearanceName, let appearanceAppResource,
+              let asset = appearanceAssets[appearanceAppResource]
+        else { return nil }
+        guard let data = try? Data(contentsOf: asset.url) else { return nil }
+        return String(decoding: data, as: UTF8.self).contains(appearanceName)
+    }
+
+    private static func visualResourceExtension(_ path: String) -> String? {
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        return visualResourceExtensions.contains(ext) ? ext : nil
+    }
+
+    private static func emptyVisualResourceGraph(seedPaths: [String]) -> AddonProbeVisualResourceGraph {
+        AddonProbeVisualResourceGraph(
+            seedPaths: orderedUnique(seedPaths).sorted(),
+            nodes: [],
+            edges: [],
+            meshPaths: [],
+            materialPaths: [],
+            unresolvedPaths: []
+        )
+    }
+
+    private func visualResourceGraph(
+        seedPaths: [String],
+        appearanceAssets: [String: ExtractedAsset],
+        cp77toolsURL: URL,
+        decodedRootURL: URL,
+        attemptSerialization: Bool,
+        appearanceName: String?,
+        warnings: inout [String]
+    ) -> AddonProbeVisualResourceGraph {
+        let seeds = Self.orderedUnique(seedPaths)
+            .filter { Self.visualResourceExtension($0) != nil }
+            .sorted()
+        var queue = seeds
+        var visited = Set<String>()
+        var nodes: [AddonProbeVisualResourceNode] = []
+        var edges = Set<AddonProbeVisualResourceEdge>()
+
+        while !queue.isEmpty {
+            let resourcePath = queue.removeFirst()
+            guard visited.insert(resourcePath).inserted else { continue }
+            let kind = Self.visualResourceExtension(resourcePath) ?? "unknown"
+            guard let asset = appearanceAssets[resourcePath] else {
+                nodes.append(AddonProbeVisualResourceNode(
+                    path: resourcePath,
+                    kind: kind,
+                    extractedPath: nil,
+                    existsInAppearanceArchive: false,
+                    referencePaths: [],
+                    resolvers: [],
+                    unresolvedReason: "Path was referenced but not extracted from the explicit appearance archive."
+                ))
+                continue
+            }
+
+            var references = Set<String>()
+            var resolvers: [String] = []
+            if attemptSerialization {
+                let serializedReferences = visualSerializedResourceReferences(
+                    resourcePath: resourcePath,
+                    resourceURL: asset.url,
+                    cp77toolsURL: cp77toolsURL,
+                    decodedRootURL: decodedRootURL,
+                    appearanceName: appearanceName,
+                    warnings: &warnings
+                )
+                if !serializedReferences.isEmpty {
+                    references.formUnion(serializedReferences)
+                    resolvers.append("cp77toolsSerializedJSON")
+                }
+            }
+            do {
+                let rawText = String(decoding: try Data(contentsOf: asset.url), as: UTF8.self)
+                let rawReferences = Self.visualResourceReferences(
+                    in: rawText,
+                    resourcePath: resourcePath,
+                    appearanceName: appearanceName
+                )
+                    .filter { Self.visualResourceExtension($0) != nil }
+                if !rawReferences.isEmpty {
+                    references.formUnion(rawReferences)
+                    resolvers.append("rawResourcePathScan")
+                }
+            } catch {
+                warnings.append("Raw visual resource scan failed for \(resourcePath): \(error.localizedDescription)")
+            }
+
+            let sortedReferences = references
+                .filter { $0 != resourcePath }
+                .sorted()
+            nodes.append(AddonProbeVisualResourceNode(
+                path: resourcePath,
+                kind: kind,
+                extractedPath: asset.url.path,
+                existsInAppearanceArchive: true,
+                referencePaths: sortedReferences,
+                resolvers: Self.orderedUnique(resolvers),
+                unresolvedReason: nil
+            ))
+            for targetPath in sortedReferences {
+                edges.insert(AddonProbeVisualResourceEdge(
+                    fromPath: resourcePath,
+                    toPath: targetPath,
+                    resolver: resolvers.isEmpty ? "unknown" : resolvers.joined(separator: "+")
+                ))
+                if !visited.contains(targetPath) {
+                    queue.append(targetPath)
+                }
+            }
+        }
+
+        let sortedNodes = nodes.sorted { $0.path < $1.path }
+        return AddonProbeVisualResourceGraph(
+            seedPaths: seeds,
+            nodes: sortedNodes,
+            edges: edges.sorted {
+                if $0.fromPath != $1.fromPath { return $0.fromPath < $1.fromPath }
+                if $0.toPath != $1.toPath { return $0.toPath < $1.toPath }
+                return $0.resolver < $1.resolver
+            },
+            meshPaths: sortedNodes.filter { $0.kind == "mesh" }.map(\.path).sorted(),
+            materialPaths: sortedNodes.filter { $0.kind == "mlsetup" || $0.kind == "mi" }.map(\.path).sorted(),
+            unresolvedPaths: sortedNodes.filter { !$0.existsInAppearanceArchive }.map(\.path).sorted()
+        )
+    }
+
+    private func visualSerializedResourceReferences(
+        resourcePath: String,
+        resourceURL: URL,
+        cp77toolsURL: URL,
+        decodedRootURL: URL,
+        appearanceName: String?,
+        warnings: inout [String]
+    ) -> [String] {
+        do {
+            try FileManager.default.createDirectory(at: decodedRootURL, withIntermediateDirectories: true)
+        } catch {
+            warnings.append("Could not create visual resource decode directory for \(resourcePath): \(error.localizedDescription)")
+            return []
+        }
+        var attempts: [AddonProbeFactoryRoundtripCommandAttempt] = []
+        let result = runRoundtripCP77ToolsCommand(
+            cp77toolsURL: cp77toolsURL,
+            arguments: ["convert", "serialize", resourceURL.path, "--outpath", decodedRootURL.path],
+            timeout: 120,
+            attempts: &attempts
+        )
+        guard result?.exitCode == 0 else {
+            warnings.append("cp77tools serialize did not decode visual resource \(resourcePath); raw path scan was used.")
+            return []
+        }
+        do {
+            let jsonFiles = try regularFiles(under: decodedRootURL, description: "Visual resource decoded JSON")
+                .filter { $0.url.pathExtension.lowercased() == "json" }
+            guard !jsonFiles.isEmpty else { return [] }
+            return Self.orderedUnique(try jsonFiles.flatMap { file -> [String] in
+                let text = try String(contentsOf: file.url, encoding: .utf8)
+                return Self.visualResourceReferences(
+                    in: text,
+                    resourcePath: resourcePath,
+                    appearanceName: appearanceName
+                ).filter { Self.visualResourceExtension($0) != nil }
+            }).sorted()
+        } catch {
+            warnings.append("Decoded visual resource JSON could not be scanned for \(resourcePath): \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    private static func visualResourceReferences(
+        in text: String,
+        resourcePath: String,
+        appearanceName: String?
+    ) -> [String] {
+        guard visualResourceExtension(resourcePath) == "app",
+              let appearanceName,
+              !appearanceName.isEmpty
+        else {
+            return parseResourceReferences(text)
+        }
+        let windows = appearanceEntryWindows(in: text, appearanceName: appearanceName)
+        guard !windows.isEmpty else {
+            return parseResourceReferences(text)
+        }
+        return orderedUnique(windows.flatMap(parseResourceReferences)).sorted()
+    }
+
+    private static func appearanceEntryWindows(in text: String, appearanceName: String) -> [String] {
+        var windows: [String] = []
+        var cursor = text.startIndex
+        while let range = text.range(of: appearanceName, range: cursor..<text.endIndex) {
+            let lower = text.index(range.lowerBound, offsetBy: -4096, limitedBy: text.startIndex) ?? text.startIndex
+            let upper = text.index(range.upperBound, offsetBy: 4096, limitedBy: text.endIndex) ?? text.endIndex
+            windows.append(String(text[lower..<upper]))
+            cursor = range.upperBound
+        }
+        return windows
+    }
+
+    private static func visualVariantMatchReasons(
+        targetTrace: AddonProbeVisualFamilyTrace,
+        targetGraph: AddonProbeVisualResourceGraph,
+        candidateTrace: AddonProbeVisualFamilyTrace,
+        candidateGraph: AddonProbeVisualResourceGraph
+    ) -> [String] {
+        var reasons: [String] = []
+        if let key = sharedVisualField(targetTrace.visualFamily, candidateTrace.visualFamily) {
+            reasons.append("same derived visual family \(key)")
+        }
+        let sharedMeshes = Set(targetGraph.meshPaths).intersection(candidateGraph.meshPaths).sorted()
+        if !sharedMeshes.isEmpty {
+            reasons.append("same mesh path \(sharedMeshes.joined(separator: ", "))")
+        }
+        let sharedMaterials = Set(targetGraph.materialPaths)
+            .intersection(candidateGraph.materialPaths)
+            .sorted()
+        if !sharedMaterials.isEmpty {
+            reasons.append("same material/mlsetup path \(sharedMaterials.joined(separator: ", "))")
+        }
+        return orderedUnique(reasons)
+    }
+
+    private static func sharedVisualField(_ lhs: String?, _ rhs: String?) -> String? {
+        guard let lhs, let rhs, !lhs.isEmpty, lhs == rhs else { return nil }
+        return lhs
+    }
+
+    private static func visualResourceOwnerGroups(records: [VisualVariantRecord]) -> [AddonProbeVisualVariantResourceOwners] {
+        var owners: [String: Set<String>] = [:]
+        for record in records {
+            for node in record.graph.nodes {
+                owners[node.path, default: []].insert(record.itemID)
+            }
+        }
+        return owners
+            .map { AddonProbeVisualVariantResourceOwners(resourcePath: $0.key, itemIDs: $0.value.sorted()) }
+            .sorted { $0.resourcePath < $1.resourcePath }
+    }
+
+    private static func visualVariantGroups(
+        records: [VisualVariantRecord],
+        key: KeyPath<VisualVariantRecord, String?>
+    ) -> [AddonProbeVisualVariantGroup] {
+        var groups: [String: Set<String>] = [:]
+        for record in records {
+            guard let value = record[keyPath: key], !value.isEmpty else { continue }
+            groups[value, default: []].insert(record.itemID)
+        }
+        return groups
+            .map { AddonProbeVisualVariantGroup(key: $0.key, itemIDs: $0.value.sorted()) }
+            .sorted { $0.key < $1.key }
+    }
+
+    private static func visualVariantGraphGroups(
+        records: [VisualVariantRecord],
+        key: KeyPath<AddonProbeVisualResourceGraph, [String]>
+    ) -> [AddonProbeVisualVariantGroup] {
+        var groups: [String: Set<String>] = [:]
+        for record in records {
+            for value in record.graph[keyPath: key] {
+                groups[value, default: []].insert(record.itemID)
+            }
+        }
+        return groups
+            .map { AddonProbeVisualVariantGroup(key: $0.key, itemIDs: $0.value.sorted()) }
+            .sorted { $0.key < $1.key }
+    }
+
+    private static func targetedVariantRefusal(
+        audit: AddonProbeVisualVariantSharingAuditReport,
+        changedSharedResourcePaths: [String],
+        reason: String
+    ) -> AddonProbeTargetedVariantRefusal {
+        let graphPaths = audit.targetGraph.nodes.map(\.path)
+        let appPaths = graphPaths.filter { visualResourceExtension($0) == "app" }
+        let entityPaths = graphPaths.filter { visualResourceExtension($0) == "ent" }
+        let meshPaths = graphPaths.filter { visualResourceExtension($0) == "mesh" }
+        let materialPaths = graphPaths.filter {
+            let ext = visualResourceExtension($0)
+            return ext == "mlsetup" || ext == "mi"
+        }
+        var edits: [String] = []
+        if !appPaths.isEmpty {
+            edits.append("Duplicate the target appearance entry in \(appPaths.joined(separator: ", ")) under a CyberMac-owned route.")
+        } else {
+            edits.append("Resolve and duplicate the target .app appearance route before isolating the variant.")
+        }
+        if !entityPaths.isEmpty {
+            edits.append("Rewrite only the target appearance/entity reference to the split .ent path from \(entityPaths.joined(separator: ", ")).")
+        } else {
+            edits.append("Resolve the target .ent reference that must point at the split visual entity.")
+        }
+        if !meshPaths.isEmpty {
+            edits.append("Rewrite the split .ent mesh reference away from shared vanilla mesh path(s): \(meshPaths.joined(separator: ", ")).")
+        } else {
+            edits.append("Resolve the target .mesh reference before a split resource chain can be staged.")
+        }
+        if !materialPaths.isEmpty {
+            edits.append("Rewrite split .mesh material/mlsetup reference(s) when isolation requires new material paths: \(materialPaths.joined(separator: ", ")).")
+        }
+        return AddonProbeTargetedVariantRefusal(
+            reason: reason,
+            sharedResourcePaths: orderedUnique(changedSharedResourcePaths).sorted(),
+            exactSiblingItems: audit.exactSiblingItems,
+            requiredReferenceEdits: edits,
+            unsupportedEditBoundary: "This refusal-first pass does not edit binary .app/.ent/.mesh CR2W resource references."
+        )
+    }
+
+    private func writeTargetedVariantReplacerReport(
+        outputDirectoryPath: String,
+        targetItemID: String,
+        sourceArchivePath: String,
+        appearanceArchivePath: String,
+        probeResourceOnlySwap: Bool,
+        audit: AddonProbeVisualVariantSharingAuditReport,
+        resourceChanges: [AddonProbeTargetedVariantResourceChange],
+        affectedItems: [String],
+        stagedArchive: String?,
+        stagedSHA256: String?,
+        refusal: AddonProbeTargetedVariantRefusal?,
+        conclusion: AddonProbeTargetedVariantReplacerConclusion,
+        reportURL: URL,
+        summaryURL: URL,
+        warnings: [String]
+    ) throws -> AddonProbeTargetedVariantReplacerReport {
+        let report = AddonProbeTargetedVariantReplacerReport(
+            outputDirectoryPath: outputDirectoryPath,
+            targetItemID: targetItemID,
+            sourceArchivePath: sourceArchivePath,
+            appearanceArchivePath: appearanceArchivePath,
+            probeResourceOnlySwap: probeResourceOnlySwap,
+            auditReport: audit,
+            resourceChanges: resourceChanges,
+            affectedItems: Self.orderedUnique(affectedItems).sorted(),
+            affectedVariantCount: audit.affectedVariantCount,
+            stagedAppearanceArchivePath: stagedArchive,
+            stagedAppearanceArchiveSHA256: stagedSHA256,
+            refusal: refusal,
+            conclusion: conclusion,
+            reportPath: reportURL.path,
+            summaryPath: summaryURL.path,
+            warnings: Self.orderedUnique(warnings)
+        )
+        try JSONEncoder.cybermac.encode(report).write(to: reportURL, options: [.atomic])
+        try Self.writeTargetedVariantReplacerSummary(report, to: summaryURL)
         return report
     }
 
@@ -5369,7 +7131,7 @@ public struct AddonProbeManager: Sendable {
     }
 
     public static func parseResourceReferences(_ text: String) -> [String] {
-        let pattern = #"[A-Za-z0-9_.$:/\\-]+[./\\][A-Za-z0-9_.$:/\\-]+\.(?:ent|app|mesh|mlsetup|mlmask|xbm|inkatlas)"#
+        let pattern = #"[A-Za-z0-9_.$:/\\-]+[./\\][A-Za-z0-9_.$:/\\-]+\.(?:ent|app|mesh|mlsetup|mlmask|mi|xbm|inkatlas)"#
         let normalized = sortedMatches(pattern: pattern, text: text).map {
             $0.replacingOccurrences(of: "\\", with: "/")
         }
@@ -6323,6 +8085,41 @@ public struct AddonProbeManager: Sendable {
         return files.sorted { $0.relativePath < $1.relativePath }
     }
 
+    private func visualAuditOutputBytes(under rootURL: URL, stopAfter byteLimit: Int) throws -> Int {
+        guard FileManager.default.fileExists(atPath: rootURL.path) else { return 0 }
+        guard let enumerator = FileManager.default.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        var bytes = 0
+        for item in enumerator {
+            guard let url = item as? URL else { continue }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey])
+            guard values.isSymbolicLink != true, values.isRegularFile == true else { continue }
+            bytes += values.fileSize ?? 0
+            if bytes > byteLimit { return bytes }
+        }
+        return bytes
+    }
+
+    private func discardVisualAuditBulkDirectories(in workRootURL: URL) throws {
+        let names = [
+            "appearance-extracted",
+            "resource-decode",
+            "tweakdb-base-strings",
+            "tweakdb-ep1-strings",
+            "tweakdb-base-structure",
+            "tweakdb-ep1-structure"
+        ]
+        for name in names {
+            let url = workRootURL.appendingPathComponent(name, isDirectory: true)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
     private func oneItemYAMLAnalysis(
         explicitRelativePath: String?,
         itemID: String,
@@ -6602,6 +8399,247 @@ public struct AddonProbeManager: Sendable {
         lines.append("Manual install commands:")
         for command in report.manualInstallCommands {
             lines.append(command)
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in report.warnings {
+                lines.append("- \(warning)")
+            }
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func writeVanillaBackedVisualControlSummary(
+        _ report: AddonProbeVanillaBackedVisualControlReport,
+        to url: URL
+    ) throws {
+        var lines: [String] = [
+            "CyberMac vanilla-backed visual control",
+            "Status: \(report.verificationSucceeded ? "verified offline" : "verification failed")",
+            "Base TweakDB: \(report.baseTweakDBPath)",
+            "EP1 TweakDB: \(report.ep1TweakDBPath)",
+            "Source record: \(report.sourceRecord)",
+            "New record: \(report.newRecord)",
+            "Output directory: \(report.outputDirectoryPath)",
+            "",
+            "TweakDB:",
+            "- Base staged: \(report.tweakDBReport.stagedBaseFilePath)",
+            "- EP1 staged: \(report.tweakDBReport.stagedEP1FilePath)",
+            "- Base new record sorted index: \(report.tweakDBReport.baseNewRecordSortedIndex)",
+            "- EP1 new record sorted index: \(report.tweakDBReport.ep1NewRecordSortedIndex)",
+            "- Base verification: \(report.tweakDBReport.baseVerificationStatus)",
+            "- EP1 verification: \(report.tweakDBReport.ep1VerificationStatus)",
+            "",
+            "Preserved visual flats:"
+        ]
+        for flat in report.preservedFlats {
+            let presence = "base(src=\(flat.baseSourceFlatPresent),clone=\(flat.baseClonedFlatPresent)) ep1(src=\(flat.ep1SourceFlatPresent),clone=\(flat.ep1ClonedFlatPresent))"
+            lines.append("- \(flat.property): preserved=\(flat.preserved) \(presence)")
+            if let baseSource = flat.baseSourceValueSummary, let baseCloned = flat.baseClonedValueSummary, baseSource != baseCloned {
+                lines.append("    base value drift: source=\(baseSource) cloned=\(baseCloned)")
+            }
+            if let ep1Source = flat.ep1SourceValueSummary, let ep1Cloned = flat.ep1ClonedValueSummary, ep1Source != ep1Cloned {
+                lines.append("    ep1 value drift: source=\(ep1Source) cloned=\(ep1Cloned)")
+            }
+        }
+        if let displayNameLocKey = report.displayNameLocKey {
+            lines.append("")
+            lines.append("displayName locKey override: \(displayNameLocKey)")
+        }
+        if let localizedNameLocKey = report.localizedNameLocKey {
+            lines.append("localizedName locKey override: \(localizedNameLocKey)")
+        }
+        lines.append("")
+        lines.append("Grant helper:")
+        lines.append("- Output zip: \(report.grantHelper.outputZipPath)")
+        lines.append("- Summary: \(report.grantHelper.summaryPath)")
+        lines.append("")
+        lines.append("Manual install commands:")
+        for command in report.manualInstallCommands {
+            lines.append(command)
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in report.warnings {
+                lines.append("- \(warning)")
+            }
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func writeVisualVariantSharingAuditSummary(
+        _ report: AddonProbeVisualVariantSharingAuditReport,
+        to url: URL
+    ) throws {
+        var lines: [String] = [
+            "CyberMac visual variant sharing audit",
+            "Item: \(report.itemID)",
+            "Base TweakDB: \(report.baseTweakDBPath)",
+            "EP1 TweakDB: \(report.ep1TweakDBPath)",
+            "Appearance archive: \(report.appearanceArchivePath)",
+            "Analyzed items: \(report.analyzedItemCount)",
+            "Candidate discovery complete: \(report.candidateDiscoveryComplete)",
+            "Can replace shared mesh safely: \(report.canReplaceSharedMeshSafely)",
+            "Affected variant count: \(visualVariantCountDescription(report.affectedVariantCount))",
+            "Requires split resource chain: \(report.requiresSplitResourceChain)",
+            "",
+            "Base fields:"
+        ]
+        appendVisualVariantFields(report.baseFields, to: &lines)
+        lines.append("")
+        lines.append("EP1 fields:")
+        appendVisualVariantFields(report.ep1Fields, to: &lines)
+        lines.append("")
+        lines.append("Target visual family trace:")
+        appendVisualFamilyTrace(report.targetVisualFamilyTrace, to: &lines)
+        lines.append("")
+        lines.append("Target visual graph:")
+        lines.append("- Seed paths: \(report.targetGraph.seedPaths.isEmpty ? "(none)" : report.targetGraph.seedPaths.joined(separator: ", "))")
+        lines.append("- Mesh paths: \(report.targetGraph.meshPaths.isEmpty ? "(none)" : report.targetGraph.meshPaths.joined(separator: ", "))")
+        lines.append("- Material/mlsetup paths: \(report.targetGraph.materialPaths.isEmpty ? "(none)" : report.targetGraph.materialPaths.joined(separator: ", "))")
+        for node in report.targetGraph.nodes {
+            lines.append("- \(node.path) [\(node.kind)] refs=\(node.referencePaths.count) resolvers=\(node.resolvers.joined(separator: ","))")
+        }
+        if !report.exactSiblingItems.isEmpty {
+            lines.append("")
+            lines.append("Exact sibling items also affected by a shared mesh overwrite:")
+            for item in report.exactSiblingItems {
+                lines.append("- \(item)")
+            }
+        }
+        if !report.siblingVariants.isEmpty {
+            lines.append("")
+            lines.append("Sibling candidates:")
+            for sibling in report.siblingVariants {
+                lines.append("- \(sibling.itemID): \(sibling.matchReasons.joined(separator: "; "))")
+            }
+        }
+        if !report.unresolvedDiagnostics.isEmpty {
+            lines.append("")
+            lines.append("Unresolved diagnostics:")
+            for diagnostic in report.unresolvedDiagnostics {
+                lines.append("- \(diagnostic)")
+            }
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in report.warnings {
+                lines.append("- \(warning)")
+            }
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func appendVisualVariantFields(
+        _ fields: AddonProbeVisualVariantTweakDBFields,
+        to lines: inout [String]
+    ) {
+        lines.append("- record id: \(fields.recordID) \(fields.recordIDHex) resolved=\(fields.recordResolved)")
+        let values: [(String, String?)] = [
+            ("recordType", fields.recordTypeName),
+            ("entityName", fields.entityName),
+            ("appearanceName", fields.appearanceName),
+            ("appearanceResourceName", fields.appearanceResourceName),
+            ("appearanceSuffixes", fields.appearanceSuffixes),
+            ("placementSlots", fields.placementSlots),
+            ("equipArea", fields.equipArea),
+            ("itemType", fields.itemType),
+            ("itemCategory", fields.itemCategory),
+            ("tags", fields.tags),
+            ("icon", fields.icon),
+            ("iconPath", fields.iconPath)
+        ]
+        for (label, value) in values {
+            lines.append("- \(label): \(value ?? "(missing)")")
+        }
+    }
+
+    private static func appendVisualFamilyTrace(
+        _ trace: AddonProbeVisualFamilyTrace,
+        to lines: inout [String]
+    ) {
+        let values: [(String, String)] = [
+            ("record", trace.record),
+            ("entityName", trace.entityName ?? "(missing)"),
+            ("appearanceName", trace.appearanceName ?? "(missing)"),
+            ("visualFamily", trace.visualFamily ?? "(missing)"),
+            ("gameplay entity resource", trace.gameplayEntityResource ?? "(missing)"),
+            ("appearance .app resource", trace.appearanceAppResource ?? "(missing)"),
+            ("visual .ent resource", trace.visualEntityResource ?? "(missing)"),
+            ("expectedAppPath", trace.expectedAppPath ?? "(missing)"),
+            ("expectedVisualEntPath", trace.expectedVisualEntPath ?? "(missing)"),
+            ("expectedGameplayEntPath", trace.expectedGameplayEntPath ?? "(missing)"),
+            ("expectedEP1GameplayEntPath", trace.expectedEP1GameplayEntPath ?? "(missing)"),
+            ("visualFamilyResolved", "\(trace.visualFamilyResolved)"),
+            ("appearanceResourceResolved", "\(trace.appearanceResourceResolved)"),
+            ("meshGraphResolved", "\(trace.meshGraphResolved)"),
+            ("appearance entry found", visualAppearanceEntryDescription(trace.appearanceEntryFound)),
+            ("mesh refs", trace.meshRefs.isEmpty ? "(none)" : trace.meshRefs.joined(separator: ", ")),
+            ("material refs", trace.materialRefs.isEmpty ? "(none)" : trace.materialRefs.joined(separator: ", "))
+        ]
+        for (label, value) in values {
+            lines.append("- \(label): \(value)")
+        }
+    }
+
+    private static func visualVariantCountDescription(_ count: Int?) -> String {
+        count.map(String.init) ?? "unknown"
+    }
+
+    private static func visualAppearanceEntryDescription(_ found: Bool?) -> String {
+        found.map(String.init) ?? "unknown"
+    }
+
+    private static func writeTargetedVariantReplacerSummary(
+        _ report: AddonProbeTargetedVariantReplacerReport,
+        to url: URL
+    ) throws {
+        var lines: [String] = [
+            "CyberMac targeted variant replacer",
+            "Conclusion: \(report.conclusion.rawValue)",
+            "Target item: \(report.targetItemID)",
+            "Resource-only swap probe: \(report.probeResourceOnlySwap)",
+            "Source archive: \(report.sourceArchivePath)",
+            "Appearance archive: \(report.appearanceArchivePath)",
+            "Audit report: \(report.auditReport.reportPath)",
+            "Affected variant count: \(visualVariantCountDescription(report.affectedVariantCount))",
+            "Affected items: \(report.affectedItems.isEmpty ? "(none)" : report.affectedItems.joined(separator: ", "))"
+        ]
+        if let stagedArchive = report.stagedAppearanceArchivePath {
+            lines.append("Staged appearance archive: \(stagedArchive)")
+            lines.append("Staged SHA256: \(report.stagedAppearanceArchiveSHA256 ?? "(missing)")")
+        } else {
+            lines.append("Staged appearance archive: (not produced)")
+        }
+        lines.append("")
+        lines.append("Resource changes:")
+        if report.resourceChanges.isEmpty {
+            lines.append("- (none)")
+        } else {
+            for change in report.resourceChanges {
+                lines.append("- \(change.resourcePath)")
+                lines.append("  target sha256: \(change.targetSHA256)")
+                lines.append("  donor sha256: \(change.donorSHA256)")
+            }
+        }
+        if let refusal = report.refusal {
+            lines.append("")
+            lines.append("Refusal:")
+            lines.append("- \(refusal.reason)")
+            lines.append("- Unsupported boundary: \(refusal.unsupportedEditBoundary)")
+            if !refusal.sharedResourcePaths.isEmpty {
+                lines.append("- Shared resource paths: \(refusal.sharedResourcePaths.joined(separator: ", "))")
+            }
+            if !refusal.exactSiblingItems.isEmpty {
+                lines.append("- Sibling items: \(refusal.exactSiblingItems.joined(separator: ", "))")
+            }
+            lines.append("Required reference edits:")
+            for edit in refusal.requiredReferenceEdits {
+                lines.append("- \(edit)")
+            }
         }
         if !report.warnings.isEmpty {
             lines.append("")
@@ -8782,6 +10820,186 @@ public enum AddonProbeOneItemClothingPipelineFormatter {
 
     public static func formatJSON(_ report: AddonProbeOneItemClothingPipelineReport) throws -> String {
         String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+}
+
+public enum AddonProbeVanillaBackedVisualControlFormatter {
+    public static func format(_ report: AddonProbeVanillaBackedVisualControlReport) -> String {
+        var lines: [String] = [
+            "CyberMac vanilla-backed visual control",
+            "Status: \(report.verificationSucceeded ? "verified offline; no game files were modified." : "verification failed; staged outputs should not be installed.")",
+            "Base TweakDB: \(PathSafety.redactUserPath(report.baseTweakDBPath))",
+            "EP1 TweakDB: \(PathSafety.redactUserPath(report.ep1TweakDBPath))",
+            "Source record: \(report.sourceRecord)",
+            "New record: \(report.newRecord)",
+            "Base staged TweakDB: \(PathSafety.redactUserPath(report.tweakDBReport.stagedBaseFilePath))",
+            "EP1 staged TweakDB: \(PathSafety.redactUserPath(report.tweakDBReport.stagedEP1FilePath))",
+            "Base new record sorted index: \(report.tweakDBReport.baseNewRecordSortedIndex)",
+            "EP1 new record sorted index: \(report.tweakDBReport.ep1NewRecordSortedIndex)",
+            "Preserved visual flats verified: \(report.preservedFlatsVerified)",
+            "Grant helper: \(PathSafety.redactUserPath(report.grantHelper.outputZipPath))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))"
+        ]
+        lines.append("")
+        lines.append("Preserved visual flats:")
+        for flat in report.preservedFlats {
+            lines.append("- \(flat.property): preserved=\(flat.preserved) base=\(flat.basePreserved) ep1=\(flat.ep1Preserved)")
+        }
+        if let displayNameLocKey = report.displayNameLocKey {
+            lines.append("")
+            lines.append("displayName locKey override: \(displayNameLocKey)")
+        }
+        if let localizedNameLocKey = report.localizedNameLocKey {
+            lines.append("localizedName locKey override: \(localizedNameLocKey)")
+        }
+        lines.append("")
+        lines.append("Manual install commands:")
+        for command in report.manualInstallCommands {
+            lines.append(command)
+        }
+        if !report.warnings.isEmpty {
+            lines.append("")
+            lines.append("Warnings:")
+            for warning in report.warnings {
+                lines.append("- \(warning)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeVanillaBackedVisualControlReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+}
+
+public enum AddonProbeVisualVariantSharingAuditFormatter {
+    public static func format(_ report: AddonProbeVisualVariantSharingAuditReport) -> String {
+        var lines: [String] = [
+            "CyberMac visual variant sharing audit",
+            "Status: read-only; no game files were modified.",
+            "Item: \(report.itemID)",
+            "Analyzed items: \(report.analyzedItemCount)",
+            "Can replace shared mesh safely: \(report.canReplaceSharedMeshSafely)",
+            "Affected variant count: \(report.affectedVariantCount.map(String.init) ?? "unknown")",
+            "Requires split resource chain: \(report.requiresSplitResourceChain)",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))"
+        ]
+        lines.append("")
+        lines.append("Target visual family trace:")
+        lines.append("- appearanceName: \(report.targetVisualFamilyTrace.appearanceName ?? "(missing)")")
+        lines.append("- visualFamily: \(report.targetVisualFamilyTrace.visualFamily ?? "(missing)")")
+        lines.append("- gameplay entity resource: \(report.targetVisualFamilyTrace.gameplayEntityResource ?? "(missing)")")
+        lines.append("- appearance .app resource: \(report.targetVisualFamilyTrace.appearanceAppResource ?? "(missing)")")
+        lines.append("- visual .ent resource: \(report.targetVisualFamilyTrace.visualEntityResource ?? "(missing)")")
+        lines.append("- expectedAppPath: \(report.targetVisualFamilyTrace.expectedAppPath ?? "(missing)")")
+        lines.append("- expectedVisualEntPath: \(report.targetVisualFamilyTrace.expectedVisualEntPath ?? "(missing)")")
+        lines.append("- expectedGameplayEntPath: \(report.targetVisualFamilyTrace.expectedGameplayEntPath ?? "(missing)")")
+        lines.append("- expectedEP1GameplayEntPath: \(report.targetVisualFamilyTrace.expectedEP1GameplayEntPath ?? "(missing)")")
+        lines.append("- appearance entry found: \(report.targetVisualFamilyTrace.appearanceEntryFound.map(String.init) ?? "unknown")")
+        lines.append("- mesh graph resolved: \(report.targetVisualFamilyTrace.meshGraphResolved)")
+        if !report.targetGraph.meshPaths.isEmpty {
+            lines.append("")
+            lines.append("Target mesh paths:")
+            for path in report.targetGraph.meshPaths {
+                lines.append("- \(path)")
+            }
+        }
+        if !report.exactSiblingItems.isEmpty {
+            lines.append("")
+            lines.append("Sibling items affected by shared mesh overwrite:")
+            for item in report.exactSiblingItems {
+                lines.append("- \(item)")
+            }
+        }
+        if !report.siblingVariants.isEmpty {
+            lines.append("")
+            lines.append("Sibling candidates:")
+            for sibling in report.siblingVariants.prefix(100) {
+                lines.append("- \(sibling.itemID): \(sibling.matchReasons.joined(separator: "; "))")
+            }
+        }
+        appendList("Unresolved diagnostics", report.unresolvedDiagnostics, to: &lines)
+        appendList("Warnings", report.warnings, to: &lines)
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeVisualVariantSharingAuditReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+
+    private static func appendList(_ title: String, _ values: [String], to lines: inout [String]) {
+        guard !values.isEmpty else { return }
+        lines.append("")
+        lines.append("\(title):")
+        for value in values {
+            lines.append("- \(value)")
+        }
+    }
+}
+
+public enum AddonProbeTargetedVariantReplacerFormatter {
+    public static func format(_ report: AddonProbeTargetedVariantReplacerReport) -> String {
+        var lines: [String] = [
+            "CyberMac targeted variant replacer",
+            "Conclusion: \(report.conclusion.rawValue)",
+            "Target item: \(report.targetItemID)",
+            "Resource-only swap probe: \(report.probeResourceOnlySwap)",
+            "Affected variant count: \(report.affectedVariantCount.map(String.init) ?? "unknown")",
+            "Affected items: \(report.affectedItems.isEmpty ? "(none)" : report.affectedItems.joined(separator: ", "))",
+            "Audit: \(PathSafety.redactUserPath(report.auditReport.reportPath))",
+            "Report: \(PathSafety.redactUserPath(report.reportPath))",
+            "Summary: \(PathSafety.redactUserPath(report.summaryPath))"
+        ]
+        if let stagedArchive = report.stagedAppearanceArchivePath {
+            lines.append("Staged appearance archive: \(PathSafety.redactUserPath(stagedArchive))")
+        } else {
+            lines.append("Staged appearance archive: (not produced)")
+        }
+        if !report.resourceChanges.isEmpty {
+            lines.append("")
+            lines.append("Resource changes:")
+            for change in report.resourceChanges {
+                lines.append("- \(change.resourcePath)")
+            }
+        }
+        if let refusal = report.refusal {
+            lines.append("")
+            lines.append("Refusal: \(refusal.reason)")
+            if !refusal.sharedResourcePaths.isEmpty {
+                lines.append("Shared resource paths:")
+                for path in refusal.sharedResourcePaths {
+                    lines.append("- \(path)")
+                }
+            }
+            if !refusal.exactSiblingItems.isEmpty {
+                lines.append("Sibling items:")
+                for item in refusal.exactSiblingItems {
+                    lines.append("- \(item)")
+                }
+            }
+            lines.append("Required reference edits:")
+            for edit in refusal.requiredReferenceEdits {
+                lines.append("- \(edit)")
+            }
+            lines.append("Unsupported edit boundary: \(refusal.unsupportedEditBoundary)")
+        }
+        appendList("Warnings", report.warnings, to: &lines)
+        return lines.joined(separator: "\n")
+    }
+
+    public static func formatJSON(_ report: AddonProbeTargetedVariantReplacerReport) throws -> String {
+        String(data: try JSONEncoder.cybermac.encode(report), encoding: .utf8) ?? "{}"
+    }
+
+    private static func appendList(_ title: String, _ values: [String], to lines: inout [String]) {
+        guard !values.isEmpty else { return }
+        lines.append("")
+        lines.append("\(title):")
+        for value in values {
+            lines.append("- \(value)")
+        }
     }
 }
 
