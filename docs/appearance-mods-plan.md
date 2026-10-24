@@ -12,11 +12,13 @@ were restored and verified afterward. Next experiments should distinguish
 standalone item records, icons, and body/refit support from this proven replacer.
 Diagnostics now includes a bounded recorder for available macOS/CyberMac logs;
 internal game events are not automatically visible.
-The next prepared test is a read-only equip probe: it checks selected item records
-on save restoration and observes up to 32 equip callbacks, reporting item ID,
-quantity, immediate equipped state and appearance name. It compiles against the
-actual Mac 2.5 cache; native log delivery and on-screen notification delivery
-still require a gameplay test. See [the test workflow](appearance-native-workflow.md#read-only-equip-probe).
+The first read-only probe produced no visible notification or captured script
+messages. The next prepared package combines direct menu/HUD execution markers,
+record checks, ordinary equipment and saved wardrobe observations, an installed
+cache fingerprint, and verified startup file tracing. One Terminal command
+installs, records, launches and restores after exit. It compiles against the actual
+Mac 2.5 cache; runtime behavior still requires the combined gameplay test. See
+[the test workflow](appearance-native-workflow.md#combined-execution-and-equip-test-v2).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and

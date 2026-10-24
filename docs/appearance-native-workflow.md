@@ -348,3 +348,60 @@ was verified afterward. No installed-cache hash was recorded during the session,
 so this result cannot distinguish cache loading, hook execution, notification
 rendering and log delivery. The next experiment needs independent execution
 evidence and a recorded installed-cache fingerprint before launch.
+
+## Combined execution and equip test v2
+
+Work is now packaged as a complete test pass. Preparation produces **Run Equip
+Probe.command**, alongside separate install/restore commands for recovery. The
+combined command performs the manual verified installation, starts recording,
+verifies a startup filesystem trace, launches through normal LaunchServices,
+waits for exit, and restores the original scripts. Do not start a second app
+recording for this test; the command owns the same bounded session recorder.
+
+The script changes cover separate evidence paths:
+
+- A direct **CYBERMAC SCRIPT EXECUTED / MENU** marker replaces the main-menu
+  version text. Hover callbacks repaint it after preserving the original calls.
+- A direct **CYBERMAC SCRIPT EXECUTED / HUD** marker writes to an existing HUD
+  text widget on initialization, without using the notification blackboard.
+- Diagnostic notification text is rendered with `inkText.SetTextDirect` after
+  the original update. The old widget code passes arbitrary text through
+  `GetLocalizedText`; the new route removes that ambiguity without asserting
+  it caused the first failed observation.
+- Ordinary `EquipItem` and saved-wardrobe `EquipVisuals` are both observed.
+  Wardrobe visuals bypass the original probe's equipment hook. Visual-slot
+  hashes and physical equipped state are reported separately. The shared limit
+  remains 32 observations per equipment restoration; no items or money are given.
+
+The CLI records exact installed-cache and executable hashes immediately before
+launch and records the cache again after exit in `probe-run.json`, next to the
+usual session log. A read-only, administrator-authorized `fs_usage` source runs
+for at most 180 seconds. It starts before launch, with unrelated filesystem rows
+discarded in memory. Only game script-file rows are retained (at most 256 rows,
+4 KiB each), plus bounded diagnostics and counts. A unique control-file access
+must appear before launching; permission failures or a missing control stop the
+test before the game opens. Named `fs_usage` filters may resolve only processes
+already running, so the capture must not depend on that filter finding a future
+game process. Attribution uses the trailing process name, not a path containing
+the game name. Its numeric suffix is a thread identifier, not a PID.
+
+Incomplete lines, output exhaustion, source diagnostics, or buffer-loss messages
+mark trace evidence incomplete. File opens establish access, not VM validation
+or execution; absence of captured messages remains ambiguous. The direct menu
+marker is the independent execution observation. If the game remains open or
+the cache changes unexpectedly, automatic restoration refuses to overwrite it
+and the separate restore command remains available.
+
+An independent [2.3.1 Mac investigation](https://github.com/FOX-cOSMIC/cp2077-mac-mods/blob/main/docs/FACTS.md)
+reports native script loading and execution in F-050–F-052, correcting its own
+earlier negative result. It motivates this approach; its offsets and gameplay
+results are not evidence for our App Store 2.5 build.
+
+Offline verification compiled v2 against the real cache and checked all eight
+wrapper/proxy chains. Seven preserved bodies match their source decompilation;
+the menu initializer's opcode sequence also matches after function-local slot
+renaming, including the exact original static superclass-call target. The source
+decompiler displays that call as `this` after proxy renaming, so opcode inspection
+was needed before treating it as preserved. The private validation evidence stays
+in the ignored experiment directory. Actual menu/HUD rendering and privileged
+startup tracing still require the combined runtime test.

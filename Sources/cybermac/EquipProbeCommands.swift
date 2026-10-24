@@ -3,6 +3,13 @@ import CyberMacCore
 
 enum EquipProbeCommands {
     static func run(_ arguments: [String]) throws {
+        if arguments.first == "run" {
+            guard arguments.count == 3, arguments[1] == "--directory" else {
+                throw CyberMacError.invalidInput("Use redscript equip-probe run --directory <prepared-directory>.")
+            }
+            _ = try EquipProbeRunner().run(directory: PathSafety.expandedURL(from: arguments[2]))
+            return
+        }
         guard arguments.first == "prepare" else {
             throw CyberMacError.invalidInput("Use redscript equip-probe prepare --compiler <redscript-cli> --original-cache <existing-restore-copy> --out-dir <new-directory> --item <Items.ID> [--item <Items.ID>] [--game-app <app>].")
         }
@@ -26,12 +33,13 @@ enum EquipProbeCommands {
         let game = try GameInstallDetector().detect(preferredAppPath: values["--game-app"])
         let directory = try EquipProbePreparer().prepare(game: game,
             compiler: PathSafety.expandedURL(from: compiler), originalCache: PathSafety.expandedURL(from: original),
-            outputDirectory: PathSafety.expandedURL(from: output), itemIDs: items)
+            outputDirectory: PathSafety.expandedURL(from: output), itemIDs: items,
+            commandLineTool: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL)
         print("Read-only equip probe compiled. No game files changed and no new backup made.")
         print("Prepared files: \(directory.path)")
-        print("With the game fully closed, run Install Equip Probe.command from this directory.")
-        print("Start CyberMac recording before launching the game. Load a manual save, equip a garment, then close inventory.")
-        print("Look for a CyberMac notification; logging and on-screen delivery remain unverified until this test.")
-        print("After quitting the game, run Restore Equip Probe.command from the same directory.")
+        print("With the game fully closed, run Run Equip Probe.command from this directory.")
+        print("That command installs, verifies the startup trace, starts recording, launches normally, and restores after exit.")
+        print("Look for CYBERMAC SCRIPT EXECUTED / MENU at the main menu, then try clothing and a saved wardrobe outfit.")
+        print("Runtime remains unverified until this test. Keep your reference save slot untouched.")
     }
 }

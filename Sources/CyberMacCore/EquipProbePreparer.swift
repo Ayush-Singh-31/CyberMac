@@ -10,7 +10,7 @@ public struct EquipProbePreparer: Sendable {
     public init() {}
 
     public func prepare(game: GameInstall, compiler: URL, originalCache: URL,
-                        outputDirectory: URL, itemIDs: [String]) throws -> URL {
+                        outputDirectory: URL, itemIDs: [String], commandLineTool: URL? = nil) throws -> URL {
         let source = try RedscriptEquipProbeGenerator().source(itemIDs: itemIDs)
         let gameRoot = game.appURL.resolvingSymlinksInPath().standardizedFileURL.path
         for url in [outputDirectory, originalCache] {
@@ -58,13 +58,25 @@ public struct EquipProbePreparer: Sendable {
             try Data(script.utf8).write(to: url, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         }
+        if let commandLineTool {
+            guard FileManager.default.isExecutableFile(atPath: commandLineTool.path) else {
+                throw CyberMacError.notFound("CyberMac command-line tool is not executable.")
+            }
+            let script = Self.combinedScript(executable: game.executableURL, target: target,
+                compiled: compiledURL, original: originalCache, compiledSHA: compiledSHA,
+                commandLineTool: commandLineTool, directory: outputDirectory)
+            let url = outputDirectory.appendingPathComponent("Run Equip Probe.command")
+            try Data(script.utf8).write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        }
         let report: [String: String] = [
             "gameApp": game.appURL.path, "executableSHA256": Self.executableSHA,
             "compilerSHA256": Self.compilerSHA, "originalCache": originalCache.path,
             "originalSHA256": Self.originalSHA, "compiledSHA256": compiledSHA,
             "gameplay": "unverified", "logSink": "unverified", "screenNotification": "unverified",
             "backup": "existing verified restore copy reused; no new backup",
-            "scope": "read-only record and equip observation; 32 equip callbacks per restore"
+            "scope": "direct MENU/HUD execution markers; record checks; 32 combined equipment/wardrobe observations per restore",
+            "probeVersion": "2"
         ]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             .write(to: outputDirectory.appendingPathComponent("probe.json"), options: .atomic)
@@ -95,7 +107,7 @@ public struct EquipProbePreparer: Sendable {
     }
 
     static func manualScript(executable: URL, target: URL, compiled: URL, original: URL,
-                             compiledSHA: String, restore: Bool) -> String {
+                             compiledSHA: String, restore: Bool, pause: Bool = true) -> String {
         let replacement = VerifiedFileReplacement.command(
             source: (restore ? original : compiled).path, target: target.path,
             sha256: restore ? originalSHA : compiledSHA)
@@ -104,7 +116,7 @@ public struct EquipProbePreparer: Sendable {
             : "[[ \"$current\" == '\(originalSHA)' ]]"
         let message = restore
             ? "Original scripts verified. Equip probe removed."
-            : "Equip probe installed. Start CyberMac recording, launch the game normally, load a manual save, equip a garment and close inventory. Then fully quit and run Restore Equip Probe.command."
+            : "Equip probe installed. Manual test: start recording, launch normally, check the main-menu marker, load a manual save and try clothing plus a wardrobe outfit. Quit and restore afterward."
         return """
         #!/bin/zsh
         set -euo pipefail
@@ -133,7 +145,30 @@ public struct EquipProbePreparer: Sendable {
         sudo -v
         \(replacement)
         print \(PathSafety.shellQuoted(message))
+        \(pause ? "read '?Press Return to close this window.'" : "")
+
+        """
+    }
+
+    static func combinedScript(executable: URL, target: URL, compiled: URL, original: URL,
+                               compiledSHA: String, commandLineTool: URL, directory: URL) -> String {
+        let install = manualScript(executable: executable, target: target, compiled: compiled,
+            original: original, compiledSHA: compiledSHA, restore: false, pause: false)
+        let restore = manualScript(executable: executable, target: target, compiled: compiled,
+            original: original, compiledSHA: compiledSHA, restore: true, pause: false)
+        return """
+        \(install)
+        print 'Starting automatic recording and a three-minute startup file-access trace. Only game script-file rows and trace diagnostics are saved.'
+        set +e
+        \(PathSafety.shellQuoted(commandLineTool.path)) redscript equip-probe run --directory \(PathSafety.shellQuoted(directory.path))
+        test_status=$?
+        set -e
+        if [[ "$test_status" != 0 ]]; then
+          print 'The test did not finish successfully. Partial evidence was retained. Restoration will proceed only if the game is closed and hashes match.' >&2
+        fi
+        \(restore)
         read '?Press Return to close this window.'
+        exit "$test_status"
 
         """
     }

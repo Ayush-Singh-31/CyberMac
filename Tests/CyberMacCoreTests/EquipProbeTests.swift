@@ -78,6 +78,23 @@ final class EquipProbeTests: XCTestCase {
                 arguments: ["-n", url.path], timeoutSeconds: 5)
             XCTAssertEqual(result.exitCode, 0)
         }
+        let combined = EquipProbePreparer.combinedScript(executable: game.executableURL,
+            target: root.appendingPathComponent("target"), compiled: root.appendingPathComponent("compiled"),
+            original: root.appendingPathComponent("restore"), compiledSHA: String(repeating: "a", count: 64),
+            commandLineTool: root.appendingPathComponent("cli ' $()"), directory: root)
+        let url = root.appendingPathComponent("combined.command")
+        try Data(combined.utf8).write(to: url)
+        _ = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/zsh"), arguments: ["-n", url.path], timeoutSeconds: 5)
+    }
+
+    func testRunnerRejectsOldOrOversizedManifestBeforeStartingCapture() throws {
+        let file = root.appendingPathComponent("probe.json")
+        try JSONSerialization.data(withJSONObject: ["probeVersion": "1", "gameApp": "/Applications/Cyberpunk2077.app"])
+            .write(to: file)
+        XCTAssertThrowsError(try EquipProbeRunner().run(directory: root))
+        try Data(repeating: 32, count: 65 * 1024).write(to: file)
+        XCTAssertThrowsError(try EquipProbeRunner().run(directory: root))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["probe.json"])
     }
 
     private var game: GameInstall {

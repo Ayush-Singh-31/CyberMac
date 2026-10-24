@@ -167,6 +167,7 @@ struct CyberMacCLI {
           cybermac visual-replace stage --plan <plan-json-path> --source-archive <path> --work-dir <path> --out-archive <path> --cp77tools <path>
           cybermac redscript item-grant create --item <Items.Some_Item_ID> [--item <Items.Other_Item_ID> ...] --out <zip-path> [--mod-name <name>]
           cybermac redscript equip-probe prepare --compiler <redscript-cli> --original-cache <restore-copy> --out-dir <new-directory> --item <Items.ID> [--item <Items.ID>] [--game-app <app>]
+          cybermac redscript equip-probe run --directory <prepared-directory>
           cybermac outfit profile create --id <profile-id> --name <display-name> --target-archive <relative-official-archive> --backup-id <official-backup-id>
           cybermac outfit profile list
           cybermac outfit profile show --profile <profile-id>
