@@ -626,3 +626,21 @@ false and array-valued inherited properties, and checks quoted paths and recover
 without generated payloads. Both actual prepared commands also pass syntax
 checks. Database and script audits remain local ignored artifacts. The current
 prepared command is `.research/standalone-clothing/Run New Clothing.command`.
+
+### First player report from the four-item run — 25 October
+
+The user reported opening the game and finding several clothes already equipped.
+This is consistent with the helper's automatic delivery and equipment step
+running. The report does not identify the individual records, CyberMac labels,
+or the helper's inventory/equipment counts, so those details and save persistence
+remain unconfirmed. This is useful player-observed progress beyond the earlier
+menu marker, rather than independent proof of every item acceptance condition.
+
+After this run, both installed TweakDB files matched their original hashes, the
+auxiliary `cybermac-standalone.redscripts` was absent, and `final.redscripts`
+matched its original hash. Cleanup is therefore verified. This launcher does not
+start the diagnostic recorder; no new recording exists for this clothing run.
+
+The next clothing milestone is distinct custom appearances for these new records
+while preserving the donor garments. This package still uses the donors' vanilla
+visuals and icons; the old Lucy replacement is not that milestone.
