@@ -4,9 +4,11 @@ CyberMac now inspects and stages archive-only appearance mods using native Swift
 The first target is clothing on the original feminine V body. Body shapes and
 matching clothing refits follow a successful visible clothing test.
 
-**Current next step:** run the prepared Lucy jacket test with its temporary
-item-delivery helper, then restore the original files. Both outputs have been
-prepared and verified; actual delivery and visible clothing remain unverified.
+**Current next step:** recover the original archive after the first manual
+installation failed, then verify the game before another test. The old direct
+`cp -c` command removed the destination before macOS denied cloning into the app.
+The original backup remains verified. Terminal needs App Management permission;
+gameplay testing is paused until recovery verification succeeds.
 The official 2.5 Mods/mod.io menu is available on this Mac, but no suitable
 clothing package has been confirmed there yet.
 The [official content guide](https://mod.io/g/cyberpunk-2077/r/mod-content-available-in-cross-platform-mod-support)
@@ -68,8 +70,9 @@ build `5814786.13589799`. The inspection read 57 official archives.
 Experiment: `a3313ac2-5766-4b38-8c45-3e6dd0484a76`.
 Isolated home: `.research/appearance/native-workspace`.
 Original backup: `official-archive-20261024-105716-5a6e692e13e4`.
-The original game archive still matches its original hash. No appearance patch
-has been installed. A ready local test guide, with this experiment's exact copy
+At preparation completion, the original game archive matched its sealed hash.
+The subsequent manual copy failed as described above; recovery is required.
+A local test guide, with this experiment's exact placement
 and verification commands, is in `.research/appearance/lucy-jacket-test.md`.
 
 Evidence: `native-jacket-plan-v2.json`, `native-jacket-stage.json`, and
@@ -142,12 +145,12 @@ reverse-engineering pass was needed for this implementation.
 
 ## Validation
 
-544 tests pass: 526 core and 18 app tests, including 21 new archive/appearance
-tests. Coverage includes malformed archives, full donor metadata/dependencies,
+The full suite before the placement fix passed 544 tests: 526 core and 18 app
+tests, including 21 archive/appearance tests. Coverage includes malformed archives, full donor metadata/dependencies,
 duplicate owners, new assets, ZIP variants, framework rejection, stale inputs,
 tampered files, workspace boundaries, and fixture install/restore checks.
 The CLI also completed actual Lucy jacket inspection, backup, staging, and
-original-file verification against the installed game.
+original-file verification against the installed game before the failed copy.
 An independent Python binary reader confirmed all five donor payloads and
 dependency lists, unchanged metadata for the other 83,417 original resources,
 sorted hashes, and byte-for-byte preservation of the original payload region.
@@ -180,7 +183,8 @@ Original scripts SHA-256:
 `7a5a798fe88c5e4afd64b91e265deccd091c2c5c94241003a11abbd70fb6785c`.
 Prepared helper SHA-256:
 `4fe88dcb06d3a7d015d7cd4e121ae5f486af3f258a725469fd240b588d3c2ce7`.
-Original scripts are still unchanged. No saves were edited or game files copied.
+The failed installation did not reach the script-copy step; original scripts
+still match their sealed hash. No saves were edited during preparation.
 
 Runtime source: [redscript 0.5.32](https://github.com/jac3km4/redscript/releases/tag/v0.5.32).
 The downloaded Mac ZIP matched its published GitHub asset SHA-256
@@ -194,14 +198,22 @@ experiment and reuse one verified original per affected archive. Backup and
 staging now explicitly use APFS copy-on-write clones; a non-cloning volume must
 not silently fall back to a physical copy larger than 500 MB. Prepared archive
 permissions match the original so clone-based installation remains readable.
-The generated install and restore commands use macOS `cp -c` on the same APFS
-volume, preserving shared unchanged blocks instead of rewriting a full archive.
+The generated install and restore commands clone into a fresh temporary folder
+beside the source, verify its full hash, and then use a same-volume rename into
+the game. They never clone directly over a destination: macOS `cp -c` can remove
+that destination before a clone fails. Clone/hash/permission failures before
+the rename therefore leave the destination intact. Temporary clones are cleaned
+up. Existing experiments regenerate commands when loaded; CLI users can obtain
+updated commands with `appearance commands <experiment-id> --home <workspace>`.
+Terminal needs permission under **System Settings → Privacy & Security →
+App Management** to modify the game app, in addition to administrator access.
+[Apple describes this permission here](https://support.apple.com/en-au/guide/mac-help/mchl211c911f/mac).
 Clones protect original bytes independently when another clone is edited.
 Reported per-file sizes and `du` can count shared blocks multiple times.
 
 The existing Lucy original backup and output were converted/confirmed as clones
 of the original plus the append-only patch. Their hashes and paths are unchanged;
-the game was not modified. Cleaned obsolete Xcode/Intel/index builds, duplicate
+the game was not modified during that preparation. Cleaned obsolete Xcode/Intel/index builds, duplicate
 test workspaces and script dumps, npm/download caches and inactive inspections.
 Full REA evidence and symbol inventories were losslessly compressed. Net free
 space recovered was about 2.05 GB after rebuilding only the current native CLI
@@ -214,4 +226,7 @@ User-run `Install Lucy Test.command` and `Restore Lucy Test.command` in
 `.research/appearance/` provide the same verified two-file test without creating
 additional backups. The install script checks the build, originals and outputs;
 the restore script checks the build and original hashes. Both refuse a running
-game. They were syntax-checked but have not been executed against the game.
+game. The first installation failed; recovery and a successful manual placement
+still need confirmation. Five new command-execution regressions exercise clone
+failure, hash failure, rename semantics, a missing destination, and symlinks;
+the focused appearance and placement run passes all 26 tests.

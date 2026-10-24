@@ -41,8 +41,8 @@ public struct AppearanceStagedArchive: Codable, Sendable {
     public let backupPath: String
     public let originalSHA256: String
     public let resourceCount: Int
-    public let installCommand: String
-    public let restoreCommand: String
+    public internal(set) var installCommand: String
+    public internal(set) var restoreCommand: String
 }
 
 public struct AppearancePatchStage: Codable, Sendable {
@@ -50,7 +50,7 @@ public struct AppearancePatchStage: Codable, Sendable {
     public let createdAt: Date
     public let gameFingerprint: String
     public let gameAppPath: String
-    public let files: [AppearanceStagedArchive]
+    public internal(set) var files: [AppearanceStagedArchive]
     public let gameplayVerified: Bool
 }
 
@@ -191,8 +191,8 @@ public struct AppearancePatchManager: Sendable {
             runtimeArchiveSHA256: runtimeHash, workspacePath: workspace.homeURL.path, helperZipPath: zip.path,
             compiledPath: activation.tempOutputPath, compiledSHA256: activation.generatedSHA256,
             backupID: activation.backup.id, backupPath: backup.path, originalSHA256: originalSHA,
-            installCommand: "sudo cp -c \(PathSafety.shellQuoted(activation.tempOutputPath)) \(PathSafety.shellQuoted(target.path))",
-            restoreCommand: "sudo cp -c \(PathSafety.shellQuoted(backup.path)) \(PathSafety.shellQuoted(target.path))", gameplayVerified: false)
+            installCommand: VerifiedFileReplacement.command(source: activation.tempOutputPath, target: target.path, sha256: activation.generatedSHA256),
+            restoreCommand: VerifiedFileReplacement.command(source: backup.path, target: target.path, sha256: originalSHA), gameplayVerified: false)
         try save(result, to: deliveryRoot.appendingPathComponent("delivery.json"))
         complete = true
         return result
@@ -200,8 +200,11 @@ public struct AppearancePatchManager: Sendable {
 
     public func loadItemDelivery(_ id: String) throws -> AppearanceItemDelivery {
         let url = try directory(id).appendingPathComponent("item-delivery/delivery.json")
-        let result = try JSONDecoder.cybermac.decode(AppearanceItemDelivery.self, from: Data(contentsOf: url))
+        var result = try JSONDecoder.cybermac.decode(AppearanceItemDelivery.self, from: Data(contentsOf: url))
         guard result.planID == id else { throw CyberMacError.invalidInput("Item delivery plan ID mismatch.") }
+        let target = URL(fileURLWithPath: result.gameAppPath).appendingPathComponent("Contents/Data/r6/cache/final.redscripts").path
+        result.installCommand = VerifiedFileReplacement.command(source: result.compiledPath, target: target, sha256: result.compiledSHA256)
+        result.restoreCommand = VerifiedFileReplacement.command(source: result.backupPath, target: target, sha256: result.originalSHA256)
         return result
     }
 
@@ -316,8 +319,8 @@ public struct AppearancePatchManager: Sendable {
                 relativePath: target.relativePath, stagedPath: output.path, stagedSHA256: digest,
                 backupID: backup.backupID, backupPath: baselineURL.path, originalSHA256: backup.originalSHA256,
                 resourceCount: hashes.count + insertions.count,
-                installCommand: "sudo cp -c \(PathSafety.shellQuoted(output.path)) \(PathSafety.shellQuoted(original.path))",
-                restoreCommand: "sudo cp -c \(PathSafety.shellQuoted(baselineURL.path)) \(PathSafety.shellQuoted(original.path))"
+                installCommand: VerifiedFileReplacement.command(source: output.path, target: original.path, sha256: digest),
+                restoreCommand: VerifiedFileReplacement.command(source: baselineURL.path, target: original.path, sha256: backup.originalSHA256)
             ))
         }
         guard try PathSafety.sha256(url: folder.appendingPathComponent("source.archive")) == plan.sourceSHA256 else {
@@ -336,8 +339,15 @@ public struct AppearancePatchManager: Sendable {
     }
 
     public func loadStage(_ id: String) throws -> AppearancePatchStage {
-        let stage = try JSONDecoder.cybermac.decode(AppearancePatchStage.self, from: Data(contentsOf: try directory(id).appendingPathComponent("stage.json")))
+        var stage = try JSONDecoder.cybermac.decode(AppearancePatchStage.self, from: Data(contentsOf: try directory(id).appendingPathComponent("stage.json")))
         guard stage.planID == id else { throw CyberMacError.invalidInput("Appearance stage ID mismatch.") }
+        stage.files = stage.files.map { file in
+            var updated = file
+            let target = URL(fileURLWithPath: stage.gameAppPath).appendingPathComponent("Contents/\(file.relativePath)").path
+            updated.installCommand = VerifiedFileReplacement.command(source: file.stagedPath, target: target, sha256: file.stagedSHA256)
+            updated.restoreCommand = VerifiedFileReplacement.command(source: file.backupPath, target: target, sha256: file.originalSHA256)
+            return updated
+        }
         return stage
     }
 

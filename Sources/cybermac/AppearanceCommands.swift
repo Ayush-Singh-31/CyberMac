@@ -3,8 +3,8 @@ import CyberMacCore
 
 enum AppearanceCommands {
     static func run(_ arguments: [String]) throws {
-        guard let action = arguments.first, ["inspect", "stage", "verify", "prepare-delivery", "verify-delivery"].contains(action) else {
-            throw CyberMacError.invalidInput("Use appearance inspect, stage, verify, prepare-delivery or verify-delivery.")
+        guard let action = arguments.first, ["inspect", "stage", "commands", "verify", "prepare-delivery", "verify-delivery"].contains(action) else {
+            throw CyberMacError.invalidInput("Use appearance inspect, stage, commands, verify, prepare-delivery or verify-delivery.")
         }
         var values: [String: String] = [:]
         var flags = Set<String>()
@@ -64,6 +64,19 @@ enum AppearanceCommands {
             }
             print("\nUse appearance verify with the same --home after manual installation or restoration.")
             print("A matching file hash is not proof of a visible in-game result.")
+        case "commands":
+            let stage = try manager.loadStage(positional[0])
+            let delivery: AppearanceItemDelivery?
+            do { delivery = try manager.loadItemDelivery(positional[0]) }
+            catch let error as CocoaError where error.code == .fileReadNoSuchFile { delivery = nil }
+            if flags.contains("--json") { try json(ManualCommands(stage: stage, delivery: delivery)); return }
+            for file in stage.files {
+                print("\n\(file.relativePath)\nManual install:\n\(file.installCommand)\nManual restore:\n\(file.restoreCommand)")
+            }
+            if let delivery {
+                print("\nInventory helper\nManual install:\n\(delivery.installCommand)\nManual restore:\n\(delivery.restoreCommand)")
+            }
+            print("\nCommands refreshed. No game files changed. Keep the game closed during manual placement.")
         case "prepare-delivery":
             guard let runtime = values["--redscript-zip"] else {
                 throw CyberMacError.invalidInput("Specify --redscript-zip /path/to/redscript-v0.5.32-macos.zip (or newer).")
@@ -88,6 +101,10 @@ enum AppearanceCommands {
             }
             guard result.matched else { throw CyberMacError.fileSystem("Expected archive hashes do not match the game.") }
         }
+    }
+    private struct ManualCommands: Encodable {
+        let stage: AppearancePatchStage
+        let delivery: AppearanceItemDelivery?
     }
     private static func json<T: Encodable>(_ value: T) throws {
         print(String(decoding: try JSONEncoder.cybermac.encode(value), as: UTF8.self))

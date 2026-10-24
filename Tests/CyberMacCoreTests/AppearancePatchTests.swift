@@ -129,11 +129,21 @@ final class AppearancePatchTests: XCTestCase {
         let stage = try manager.stage(id: plan.id, game: game)
         XCTAssertEqual(stage.files.count, 2)
         XCTAssertFalse(stage.gameplayVerified)
+        // Refresh unsafe commands persisted by older versions without restaging archives.
+        var legacy = stage
+        legacy.files[0].installCommand = "sudo cp -c old-source old-target"
+        legacy.files[0].restoreCommand = "sudo cp -c old-backup old-target"
+        let stageURL = manager.home.homeURL.appendingPathComponent("generated/appearance/\(plan.id)/stage.json")
+        try JSONEncoder.cybermac.encode(legacy).write(to: stageURL)
+        let refreshed = try manager.loadStage(plan.id)
+        XCTAssertFalse(refreshed.files[0].installCommand.contains("sudo cp"))
+        XCTAssertFalse(refreshed.files[0].restoreCommand.contains("sudo cp"))
         XCTAssertEqual(try PathSafety.sha256(url: game.appURL.appendingPathComponent("Contents/\(plan.targets[0].relativePath)")), original)
         XCTAssertFalse(try manager.verify(id: plan.id, game: game).matched)
         for file in stage.files {
             let target = game.appURL.appendingPathComponent("Contents/\(file.relativePath)")
-            XCTAssertTrue(file.installCommand.contains("sudo cp"))
+            XCTAssertTrue(file.installCommand.contains("sudo /bin/mv"))
+            XCTAssertFalse(file.installCommand.contains("sudo cp"))
             try FileManager.default.removeItem(at: target)
             try FileManager.default.copyItem(atPath: file.stagedPath, toPath: target.path)
         }
@@ -254,6 +264,14 @@ final class AppearancePatchTests: XCTestCase {
         let delivery = try manager.prepareItemDelivery(id: plan.id, game: game, runtimeZipURL: runtime("0.5.32"))
         XCTAssertEqual(delivery.itemIDs, ["Items.Vest_08_basic_01"])
         XCTAssertFalse(delivery.gameplayVerified)
+        var legacy = delivery
+        legacy.installCommand = "sudo cp -c old-source old-target"
+        legacy.restoreCommand = "sudo cp -c old-backup old-target"
+        let deliveryURL = manager.home.generatedURL.appendingPathComponent("appearance/\(plan.id)/item-delivery/delivery.json")
+        try JSONEncoder.cybermac.encode(legacy).write(to: deliveryURL)
+        let refreshed = try manager.loadItemDelivery(plan.id)
+        XCTAssertFalse(refreshed.installCommand.contains("sudo cp"))
+        XCTAssertFalse(refreshed.restoreCommand.contains("sudo cp"))
         XCTAssertEqual(try Data(contentsOf: original), before)
         XCTAssertTrue(delivery.workspacePath.contains("\(plan.id)/item-delivery/workspace"))
         XCTAssertFalse(try manager.verifyItemDelivery(id: plan.id, game: game).matched)

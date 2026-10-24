@@ -138,6 +138,7 @@ struct CyberMacCLI {
           cybermac scan /path/to/mod.zip
           cybermac appearance inspect <mod.zip|mod.archive> [--archive-entry <path>] [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance stage <experiment-id> [--game-app <app>] [--home <directory>] [--json]
+          cybermac appearance commands <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance verify <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance prepare-delivery <experiment-id> --redscript-zip <macos-runtime.zip> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance verify-delivery <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]

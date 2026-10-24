@@ -17,7 +17,7 @@ public struct AppearanceItemDelivery: Codable, Sendable {
     public let backupID: String
     public let backupPath: String
     public let originalSHA256: String
-    public let installCommand: String
-    public let restoreCommand: String
+    public internal(set) var installCommand: String
+    public internal(set) var restoreCommand: String
     public let gameplayVerified: Bool
 }
