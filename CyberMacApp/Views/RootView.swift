@@ -2,6 +2,7 @@ import SwiftUI
 
 enum AppScreen: String, CaseIterable, Identifiable {
     case home = "Home"
+    case appearance = "Appearance Mods"
     case mods = "Mods"
     case outfits = "Outfits"
     case activation = "Activation"
@@ -17,6 +18,8 @@ enum AppScreen: String, CaseIterable, Identifiable {
         switch self {
         case .home:
             return "house"
+        case .appearance:
+            return "person.crop.rectangle"
         case .mods:
             return "shippingbox"
         case .outfits:
@@ -101,6 +104,8 @@ struct RootView: View {
         switch selection {
         case .home:
             HomeView(appState: appState)
+        case .appearance:
+            AppearanceModsView()
         case .mods:
             ModsView(appState: appState)
         case .outfits:

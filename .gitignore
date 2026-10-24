@@ -27,7 +27,7 @@ tmp/
 *.tmp
 
 # local CyberMac app-support/runtime/generated artifacts
-redscript*
+/redscript*
 input-loader*
 final.redscripts
 *.redscripts

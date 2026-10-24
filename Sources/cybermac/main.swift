@@ -52,6 +52,8 @@ struct CyberMacCLI {
             try launchGame()
         case "scan":
             try scan()
+        case "appearance":
+            try AppearanceCommands.run(Array(arguments.dropFirst()))
         case "archive-probe":
             try archiveProbe()
         case "archive-research":
@@ -134,6 +136,11 @@ struct CyberMacCLI {
           cybermac launch-test [--run]
           cybermac launch-game [--vanilla-ok|--require-active] [--show-command] [--game-app /path/to/Cyberpunk.app]
           cybermac scan /path/to/mod.zip
+          cybermac appearance inspect <mod.zip|mod.archive> [--archive-entry <path>] [--game-app <app>] [--home <directory>] [--json]
+          cybermac appearance stage <experiment-id> [--game-app <app>] [--home <directory>] [--json]
+          cybermac appearance verify <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]
+          cybermac appearance prepare-delivery <experiment-id> --redscript-zip <macos-runtime.zip> [--game-app <app>] [--home <directory>] [--json]
+          cybermac appearance verify-delivery <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]
           cybermac archive-probe prepare /path/to/mod.zip [--candidate mac-mod|mac-content|pc-mod|pc-content] [--game-app /path/to/Cyberpunk.app]
           cybermac archive-probe verify-copy <probe-id>
           cybermac archive-probe verify-removal <probe-id>
@@ -2639,8 +2646,8 @@ struct CyberMacCLI {
         print("Redscript size: \(result.redscriptSizeBytes) bytes")
         print("")
         print("Helper kind: TEMPORARY one-shot grant")
-        print("This helper grants the listed items once per game session. Leaving it enabled across")
-        print("multiple launches will pile up duplicate items in your inventory.")
+        print("This helper attempts delivery when V loads and skips items already owned.")
+        print("Restore the original scripts after the test so the helper is no longer active.")
         print("")
         print("Recommended one-shot workflow:")
         print("  1. Install + activate the grant helper.")

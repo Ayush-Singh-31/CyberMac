@@ -1,9 +1,31 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 public enum PathSafety {
     public static let maxArchiveBytes: UInt64 = 500 * 1024 * 1024
     public static let maxArchiveEntries = 50_000
+
+    /// APFS copy-on-write avoids allocating a second full game archive.
+    /// Never silently fall back to a large physical copy on other volumes.
+    static func copySpaceEfficiently(from source: URL, to destination: URL) throws {
+        let result = try source.withUnsafeFileSystemRepresentation { sourcePath in
+            guard let sourcePath else { throw CyberMacError.unsafePath("Invalid copy source.") }
+            return try destination.withUnsafeFileSystemRepresentation { destinationPath in
+                guard let destinationPath else { throw CyberMacError.unsafePath("Invalid copy destination.") }
+                return clonefile(sourcePath, destinationPath, 0)
+            }
+        }
+        guard result != 0 else { return }
+        let failure = errno
+        guard [EXDEV, ENOTSUP, EINVAL, ENOSYS].contains(failure) else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure))
+        }
+        guard try fileSize(url: source) <= maxArchiveBytes else {
+            throw CyberMacError.fileSystem("This volume cannot create a space-saving clone. A full archive copy would exceed 500 MB; choose an APFS workspace on the game's volume.")
+        }
+        try FileManager.default.copyItem(at: source, to: destination)
+    }
 
     public static func expandedURL(from path: String) -> URL {
         let expanded = (path as NSString).expandingTildeInPath
@@ -89,8 +111,15 @@ public enum PathSafety {
     }
 
     public static func sha256(url: URL) throws -> String {
-        let data = try Data(contentsOf: url)
-        return sha256(data: data)
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while try autoreleasepool(invoking: { () -> Bool in
+            guard let chunk = try handle.read(upToCount: 4 * 1024 * 1024), !chunk.isEmpty else { return false }
+            hasher.update(data: chunk)
+            return true
+        }) {}
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public static func sha256(data: Data) -> String {

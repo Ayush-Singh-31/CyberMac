@@ -4,13 +4,18 @@ CyberMac is experimental developer-preview software for Cyberpunk 2077: Ultimate
 
 ## What it is
 
-CyberMac is an experimental macOS mod manager focused on redscript-based Cyberpunk 2077 mods. It installs supported mods into a CyberMac-owned sidecar, compiles script caches with redscript, prepares manual copy commands, and verifies activation.
+CyberMac is an experimental macOS mod manager for Cyberpunk 2077. It inspects appearance archives, prepares backed-up clothing patches, and manages a separate redscript workflow. Installation commands are reviewed and run manually.
 
 This is a source-only developer preview. CyberMac does not bundle redscript, input-loader, mods, Cyberpunk game files, or downloaded runtime files.
 
 The current development priority is [appearance mods for feminine V](docs/appearance-mods-plan.md):
-clothing first, followed by body shapes and matching clothing refits. Those
-capabilities are still under investigation on the Mac App Store 2.5 build.
+clothing first, followed by body shapes and matching clothing refits.
+The new Appearance Mods screen and `appearance` CLI inspect real Mac archives,
+prepare native patched copies with verified backups, and check manual installation
+and restoration. Visible gameplay compatibility on Mac App Store 2.5 remains
+unverified. See the [implementation and first clothing test](docs/appearance-native-workflow.md).
+The [framework and REA investigation](docs/frameworks-and-rea.md) distinguishes
+existing-item delivery, new item registration, and the remaining native work.
 
 ## Current support
 
@@ -21,6 +26,13 @@ Supported:
 - Mac App Store Cyberpunk 2077: Ultimate layout
 - manual final.redscripts activation
 - manual input XML patching with backup and verification
+- experimental archive-only clothing inspection and native patch staging, without external archive tools
+
+Use redscript 0.5.32 or newer for 2.5. The old 0.5.31 compiler cannot load its
+script cache. The clothing delivery helper now compiles against the actual
+App Store 2.5 files and can be prepared from Appearance Mods. Visible delivery
+and clothing appearance still need an in-game test; other script mods remain
+individually dependent on their APIs and compatibility.
 
 Unsupported:
 
@@ -32,7 +44,8 @@ Unsupported:
 - Equipment-EX
 - DLL / ASI
 - REDmod-only mods
-- most clothing, body, archive, vehicle, texture, and framework mods
+- automatic installation of clothing/body mods and framework-dependent appearance add-ons
+- simultaneous appearance mod stacks or automatic body/refit compatibility
 
 ## Safety model
 
@@ -48,7 +61,7 @@ Unsupported:
 - macOS on Apple Silicon
 - Xcode / Swift toolchain
 - Cyberpunk 2077: Ultimate Mac App Store version
-- redscript macOS zip, imported by user
+- redscript macOS zip (0.5.32+ for 2.5), imported by user for the script workflow
 - input-loader macOS zip, imported by user, only needed for input mapping mods
 
 Runtimes are not bundled.
@@ -69,6 +82,26 @@ For CLI help:
 ```bash
 swift run cybermac help
 ```
+
+For archive-only appearance experiments:
+
+```bash
+swift run cybermac appearance inspect "/path/to/clothing.zip"
+swift run cybermac appearance stage <experiment-id>
+swift run cybermac appearance prepare-delivery <experiment-id> --redscript-zip "/path/to/redscript-v0.5.32-macos.zip"
+# Close the game and review the printed install and restore commands.
+# After manually copying the prepared file:
+swift run cybermac appearance verify <experiment-id>
+swift run cybermac appearance verify-delivery <experiment-id>
+# After manually restoring the original:
+swift run cybermac appearance verify <experiment-id> --restore
+swift run cybermac appearance verify-delivery <experiment-id> --restore
+```
+
+Packages with several archive alternatives require `--archive-entry "entry/path.archive"`
+on inspection. Use the same `--home "/path/to/workspace"` on every command when
+testing in an isolated workspace. File verification is separate from observing
+the clothing in-game.
 
 If you want to test the UI, use SwiftPM. If you want to test compatibility, prefer CLI first.
 

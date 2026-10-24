@@ -1,5 +1,10 @@
 # Reinstall check and next milestones — 24 October 2026
 
+**Later update:** the 0.5.31 compiler failure recorded below was resolved for
+the clothing helper by importing official redscript 0.5.32 and removing a
+debug-only `LogChannel` dependency. Actual 2.5 helper compilation now succeeds;
+see [the current appearance workflow](appearance-native-workflow.md).
+
 The user has since confirmed the main priority: feminine V, custom clothes
 first, then body shape and matching clothing refits. The
 [appearance mod plan](appearance-mods-plan.md) is the current roadmap; the

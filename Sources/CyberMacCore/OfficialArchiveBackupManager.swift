@@ -329,7 +329,7 @@ public struct OfficialArchiveBackupManager: Sendable {
 
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: sourceURL, to: backupFileURL)
+            try PathSafety.copySpaceEfficiently(from: sourceURL, to: backupFileURL)
 
             let metadata = OfficialArchiveBackupMetadata(
                 backupID: backupID,

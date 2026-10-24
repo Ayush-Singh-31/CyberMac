@@ -2,7 +2,7 @@ import SwiftUI
 
 enum ArchiveLabBadgeKind: String, Equatable, Sendable {
     case experimental = "Experimental"
-    case proven = "Proven"
+    case proven = "Prior proof"
     case blocked = "Blocked"
     case cliOnly = "CLI only"
 
@@ -78,14 +78,14 @@ struct ArchiveLabClassificationItem: Identifiable, Equatable, Sendable {
         ArchiveLabClassificationItem(
             id: "exact-path-replacer",
             title: "Exact-path replacer",
-            detail: "Best candidate",
-            badge: .proven
+            detail: "Candidate for a version-specific test",
+            badge: .experimental
         ),
         ArchiveLabClassificationItem(
             id: "ui-hud-replacer",
             title: "UI/HUD replacer",
-            detail: "High priority",
-            badge: .proven
+            detail: "Prior-build results; recheck on 2.5",
+            badge: .experimental
         ),
         ArchiveLabClassificationItem(
             id: "texture-material-replacer",
@@ -96,7 +96,7 @@ struct ArchiveLabClassificationItem: Identifiable, Equatable, Sendable {
         ArchiveLabClassificationItem(
             id: "clothing-replacer",
             title: "Clothing replacer",
-            detail: "Possible but slower",
+            detail: "Current priority — use Appearance Mods",
             badge: .experimental
         ),
         ArchiveLabClassificationItem(
@@ -117,18 +117,18 @@ struct ArchiveLabClassificationItem: Identifiable, Equatable, Sendable {
 enum ArchiveLabContent {
     static let scopeLines = [
         "Archive support is experimental",
-        "Loose pc/mod archive installation is blocked on Mac",
-        "Current supported research path: official archive patching",
+        "Loose legacy archive loading is unverified on this App Store 2.5 build",
+        "Appearance Mods prepares native archive patches and verified backups",
         "Best-supported conversion type: exact-path replacer archives",
-        "Framework add-ons are blocked for now: ArchiveXL, TweakXL, Codeware, RED4ext, Equipment-EX, CET"
+        "Frameworks need build-specific validation: ArchiveXL, TweakXL, Codeware, RED4ext, Equipment-EX, CET"
     ]
 
     static let nextCandidates = [
-        "Crosshair/HUD mods",
-        "UI color/theme mods",
-        "Main menu/audio replacers",
+        "Feminine V clothing replacements — Lucy jacket first",
+        "Complete clothing sets after the first visible test",
+        "One body shape with matching clothing refits",
         "Makeup/eye/hair replacers",
-        "Clothing replacers that replace vanilla items"
+        "Crosshair/HUD and UI replacements"
     ]
 }
 
@@ -196,7 +196,9 @@ struct ArchiveLabView: View {
 
     private var provenWorkflows: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Proven workflows", systemImage: "checkmark.seal")
+            SectionTitle(title: "Historical archive experiments", systemImage: "checkmark.seal")
+            Text("These results predate the current 2.5 installation and need a fresh in-game test.")
+                .font(.callout).foregroundStyle(.secondary)
             LazyVGrid(columns: proofColumns, spacing: 14) {
                 ForEach(ArchiveLabProofItem.all) { proof in
                     CyberPanel(accent: .green) {
