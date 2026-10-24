@@ -4,11 +4,12 @@ CyberMac now inspects and stages archive-only appearance mods using native Swift
 The first target is clothing on the original feminine V body. Body shapes and
 matching clothing refits follow a successful visible clothing test.
 
-**Current next step:** recover the original archive after the first manual
-installation failed, then verify the game before another test. The old direct
-`cp -c` command removed the destination before macOS denied cloning into the app.
-The original backup remains verified. Terminal needs App Management permission;
-gameplay testing is paused until recovery verification succeeds.
+**Current next step:** retry the Lucy jacket test using the corrected installer.
+The first direct `cp -c` command removed the destination before macOS denied
+cloning into the app. After granting Terminal App Management permission, the
+original archive was restored. Both original game files now match their sealed
+hashes. A false helper-integrity error in the recovery check was traced to
+comparing relative and absolute file URLs; the helper and backup bytes matched.
 The official 2.5 Mods/mod.io menu is available on this Mac, but no suitable
 clothing package has been confirmed there yet.
 The [official content guide](https://mod.io/g/cyberpunk-2077/r/mod-content-available-in-cross-platform-mod-support)
@@ -71,7 +72,7 @@ Experiment: `a3313ac2-5766-4b38-8c45-3e6dd0484a76`.
 Isolated home: `.research/appearance/native-workspace`.
 Original backup: `official-archive-20261024-105716-5a6e692e13e4`.
 At preparation completion, the original game archive matched its sealed hash.
-The subsequent manual copy failed as described above; recovery is required.
+The subsequent manual copy failed as described above; recovery is now verified.
 A local test guide, with this experiment's exact placement
 and verification commands, is in `.research/appearance/lucy-jacket-test.md`.
 
@@ -226,7 +227,10 @@ User-run `Install Lucy Test.command` and `Restore Lucy Test.command` in
 `.research/appearance/` provide the same verified two-file test without creating
 additional backups. The install script checks the build, originals and outputs;
 the restore script checks the build and original hashes. Both refuse a running
-game. The first installation failed; recovery and a successful manual placement
-still need confirmation. Five new command-execution regressions exercise clone
+game. The first installation failed; original recovery is verified, while a
+successful test installation remains unconfirmed. Five command-execution regressions exercise clone
 failure, hash failure, rename semantics, a missing destination, and symlinks;
-the focused appearance and placement run passes all 26 tests.
+the focused appearance and placement run passes all 27 tests. The additional
+regression covers equivalent relative and absolute workspace URLs during helper
+verification. Both original game files were also verified with a relative CLI
+workspace path after this fix.

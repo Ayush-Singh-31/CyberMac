@@ -228,7 +228,8 @@ public struct AppearancePatchManager: Sendable {
         let workspace = CyberMacHomeManager(homeURL: root)
         let backups = BundleBackupManager(home: workspace)
         let metadata = try backups.load(id: delivery.backupID)
-        guard backup == backups.backupDirectory(id: delivery.backupID).appendingPathComponent("final.redscripts"),
+        guard backup.standardizedFileURL.path == backups.backupDirectory(id: delivery.backupID)
+                .appendingPathComponent("final.redscripts").standardizedFileURL.path,
               metadata.gameFingerprintID == fingerprint, metadata.gameAppPath == game.appURL.path,
               metadata.bundleTarget == target.path, metadata.sha256 == originalSHA,
               delivery.originalSHA256 == originalSHA,

@@ -296,6 +296,18 @@ final class AppearancePatchTests: XCTestCase {
         XCTAssertThrowsError(try manager.prepareItemDelivery(id: noCodes.id, game: game, runtimeZipURL: runtime("0.5.32")))
     }
 
+    func testItemDeliveryVerificationAcceptsEquivalentRelativeWorkspaceURL() throws {
+        let (game, manager) = try game()
+        let plan = try clothingDeliveryPlan(game: game, manager: manager)
+        _ = try manager.prepareItemDelivery(id: plan.id, game: game, runtimeZipURL: runtime("0.5.32"))
+        let absoluteHome = manager.home.homeURL
+        let relativeHome = URL(fileURLWithPath: absoluteHome.lastPathComponent, isDirectory: true,
+                               relativeTo: absoluteHome.deletingLastPathComponent())
+        XCTAssertEqual(relativeHome.path, absoluteHome.path)
+        let relativeManager = AppearancePatchManager(home: CyberMacHomeManager(homeURL: relativeHome))
+        XCTAssertTrue(try relativeManager.verifyItemDelivery(id: plan.id, game: game, restore: true).matched)
+    }
+
     func testItemDeliveryRefusesToUseAnAlteredScriptCacheAsOriginal() throws {
         let (game, manager) = try game()
         let plan = try clothingDeliveryPlan(game: game, manager: manager)
