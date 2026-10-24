@@ -1,0 +1,151 @@
+import Foundation
+
+/// A real inventory grant and equipment request, using the created instance ID.
+/// The separate record deliberately keeps the donor's vanilla visual resources.
+enum StandaloneClothingSource {
+    struct Piece: Codable, Sendable {
+        let source: String
+        let record: String
+        let label: String
+    }
+
+    static let pieces: [Piece] = [
+        .init(source: "Items.Vest_08_basic_01", record: "Items.CyberMac_Standalone_Jacket", label: "CyberMac Jacket"),
+        .init(source: "Items.Shirt_01_basic_01", record: "Items.CyberMac_Standalone_Top", label: "CyberMac Top"),
+        .init(source: "Items.Pants_09_basic_01", record: "Items.CyberMac_Standalone_Pants", label: "CyberMac Pants"),
+        .init(source: "Items.Boots_01_basic_01", record: "Items.CyberMac_Standalone_Boots", label: "CyberMac Boots")
+    ]
+
+    static func render() -> String {
+        let ids = pieces.map { "t\"\($0.record)\"" }.joined(separator: ", ")
+        let names = pieces.map { "    if id == t\"\($0.record)\" { return \"\($0.label)\"; }" }.joined(separator: "\n")
+        return #"""
+module CyberMacStandaloneClothing
+
+@addField(PlayerPuppet)
+private let cyberMacStandaloneScheduled: Bool;
+
+@wrapMethod(PlayerPuppet)
+protected cb func OnGameAttached() -> Bool {
+  let result: Bool = wrappedMethod();
+  if !this.cyberMacStandaloneScheduled && this.IsControlledByLocalPeer() {
+    this.cyberMacStandaloneScheduled = true;
+    let callback: ref<CyberMacClothingCallback> = new CyberMacClothingCallback();
+    callback.player = this;
+    GameInstance.GetDelaySystem(this.GetGame()).DelayCallback(callback, 3.0);
+  }
+  return result;
+}
+
+public class CyberMacClothingCallback extends DelayCallback {
+  public let player: wref<PlayerPuppet>;
+  public let verifyOnly: Bool;
+
+  public func Call() -> Void {
+    if !IsDefined(this.player) { return; }
+    let ts: ref<TransactionSystem> = GameInstance.GetTransactionSystem(this.player.GetGame());
+    let eq: ref<EquipmentSystem> = GameInstance.GetScriptableSystemsContainer(this.player.GetGame()).Get(n"EquipmentSystem") as EquipmentSystem;
+    if !IsDefined(ts) || !IsDefined(eq) {
+      CyberMacClothingMessages.Show(this.player, "CyberMac: inventory or equipment system unavailable.");
+      return;
+    }
+    let items: [TweakDBID] = [\#(ids)];
+    let found: Int32 = 0;
+    let equipped: Int32 = 0;
+    let missing: String = "";
+    let i: Int32 = 0;
+    while i < ArraySize(items) {
+      let id: TweakDBID = items[i];
+      let record: ref<Item_Record> = TweakDBInterface.GetItemRecord(id);
+      if IsDefined(record) {
+        let data: wref<gameItemData> = ts.GetItemDataByTDBID(this.player, id);
+        if !this.verifyOnly && !IsDefined(data) {
+          ts.GiveItemByTDBID(this.player, id, 1);
+          data = ts.GetItemDataByTDBID(this.player, id);
+        }
+        if IsDefined(data) {
+          found += 1;
+          if this.verifyOnly {
+            if eq.IsEquipped(this.player, data.GetID()) { equipped += 1; }
+          } else {
+            if eq.IsEquippable(this.player, data) {
+              let request: ref<EquipRequest> = new EquipRequest();
+              request.owner = this.player;
+              // Equip the actual created instance, including its seed.
+              request.itemID = data.GetID();
+              request.slotIndex = 0;
+              request.addToInventory = false;
+              eq.QueueRequest(request);
+            }
+          }
+        } else { missing += " Inventory rejected " + CyberMacClothingMessages.Name(id) + "."; }
+      } else { missing += " Missing record: " + CyberMacClothingMessages.Name(id) + "."; }
+      i += 1;
+    }
+    if !this.verifyOnly {
+      let check: ref<CyberMacClothingCallback> = new CyberMacClothingCallback();
+      check.player = this.player;
+      check.verifyOnly = true;
+      GameInstance.GetDelaySystem(this.player.GetGame()).DelayCallback(check, 2.0);
+    } else {
+      CyberMacClothingMessages.Show(this.player, "CyberMac: " + IntToString(found) + "/4 NEW clothes in inventory; " + IntToString(equipped) + "/4 equipped. Check clothing inventory. Wardrobe outfits can hide them." + missing);
+    }
+  }
+}
+
+@wrapMethod(InventoryDataManagerV2)
+private final func GetInventoryItemDataInternal(owner: wref<GameObject>, itemData: wref<gameItemData>, opt itemRecord: wref<Item_Record>) -> InventoryItemData {
+  let result: InventoryItemData = wrappedMethod(owner, itemData, itemRecord);
+  if IsDefined(itemData) && StrBeginsWith(CyberMacClothingMessages.Name(ItemID.GetTDBID(itemData.GetID())), "CyberMac") {
+    InventoryItemData.SetName(result, CyberMacClothingMessages.Name(ItemID.GetTDBID(itemData.GetID())));
+  }
+  return result;
+}
+
+@wrapMethod(InventoryDataManagerV2)
+private final func GetInventoryItemDataFromItemRecordInternal(itemRecord: ref<Item_Record>) -> InventoryItemData {
+  let result: InventoryItemData = wrappedMethod(itemRecord);
+  if IsDefined(itemRecord) && StrBeginsWith(CyberMacClothingMessages.Name(itemRecord.GetID()), "CyberMac") {
+    InventoryItemData.SetName(result, CyberMacClothingMessages.Name(itemRecord.GetID()));
+  }
+  return result;
+}
+
+@wrapMethod(OnscreenMessageGameController)
+protected cb func OnScreenMessageUpdate(value: Variant) -> Bool {
+  let result: Bool = wrappedMethod(value);
+  let message: SimpleScreenMessage = FromVariant<SimpleScreenMessage>(value);
+  if message.isShown && StrBeginsWith(message.message, "CyberMac:") {
+    let text: wref<inkText> = inkWidgetRef.Get(this.m_mainTextWidget) as inkText;
+    if IsDefined(text) {
+      text.SetTextDirect(message.message);
+      text.SetVisible(true);
+      text.SetOpacity(1.0);
+      this.GetRootWidget().SetVisible(true);
+      this.GetRootWidget().SetOpacity(1.0);
+    }
+  }
+  return result;
+}
+
+public class CyberMacClothingMessages extends IScriptable {
+  public static func Name(id: TweakDBID) -> String {
+\#(names)
+    return "";
+  }
+
+  public static func Show(player: ref<PlayerPuppet>, text: String) -> Void {
+    let message: SimpleScreenMessage;
+    message.isShown = true;
+    message.duration = 25.0;
+    message.message = text;
+    message.isInstant = true;
+    let board: ref<IBlackboard> = GameInstance.GetBlackboardSystem(player.GetGame()).Get(GetAllBlackboardDefs().UI_Notifications);
+    if IsDefined(board) {
+      board.SetVariant(GetAllBlackboardDefs().UI_Notifications.OnscreenMessage, ToVariant(message), true);
+    }
+  }
+}
+"""#
+    }
+}

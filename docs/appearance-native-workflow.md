@@ -527,3 +527,102 @@ The next implementation should make gameplay record/delivery results observable
 through the now-proven script route rather than relying on unified-log output.
 The complete local analysis is retained under the ignored research directory;
 raw session evidence was not changed.
+
+
+## Standalone clothing records and delivery — 25 October
+
+The user clarified that Lucy replacement success predates this work by about
+five months. Earlier duplicates existed but were not equippable and displayed
+incorrectly in inventory/storage. That history changes the acceptance target:
+a new item must be a usable inventory/equipment object, not merely a database
+row or another successful replacement. Deleted old experiment artifacts prevent
+attributing that earlier failure to one proven cause.
+
+A concrete clone defect was found in the current source. `Item_Record` inherits
+seven properties from `BaseObject_Record` which the clone schema did not include:
+`statModifierGroups`, `effectors`, `statPools`, `statModifiers`, `weakspots`,
+`objectActions`, and `savable`. Their existence is corroborated by the actual
+2.5 cached RTTI getters; the real donor items contain these flats. The expanded
+schema also checks `questFactPreventDualWield` and lower-case `craftingData`.
+Copying now includes 90 materialized flats per actual donor, including its 11
+stat modifiers, one modifier group and two object actions. False/empty values
+are preserved. The schema contains 91 candidate property names; it is not a
+claim that every possible future item schema is covered.
+
+The new `clothing prepare` command prepares all four independent pieces:
+
+| Piece | Donor record | New record |
+| --- | --- | --- |
+| Jacket | `Items.Vest_08_basic_01` | `Items.CyberMac_Standalone_Jacket` |
+| Top | `Items.Shirt_01_basic_01` | `Items.CyberMac_Standalone_Top` |
+| Pants | `Items.Pants_09_basic_01` | `Items.CyberMac_Standalone_Pants` |
+| Boots | `Items.Boots_01_basic_01` | `Items.CyberMac_Standalone_Boots` |
+
+These keep the donor visuals and icon references. The originals retain their
+own IDs and data. Custom appearance isolation remains separate from this record
+and equipment repair. The script requests CyberMac Jacket/Top/Pants/Boots labels
+only for the four new records, through the normal live and record-based inventory
+data builders; actual display still requires the game test.
+
+On player attachment the helper schedules delivery after three seconds. It
+checks runtime record existence, grants only missing items, obtains each actual
+inventory instance through `GetItemDataByTDBID`, checks equippability and queues
+`EquipRequest` with that instance's `GetID()`, including its seed. It does not
+try to equip a bare TweakDB record ID. A second callback checks actual equipment
+two seconds later and requests a direct-text game message reporting inventory
+and equipped counts. It never reports successful equipment solely because a
+request was queued. An active wardrobe outfit can mask equipped physical clothes;
+the helper preserves the selected wardrobe rather than silently removing it.
+No currency, quest facts, stats, appearance archives or original garment records
+are changed by the helper.
+
+Preparation pins the exact supported executable, original script cache and
+compiler, and verifies both databases against the app's resource seals. It
+reuses their typed value pools, adds the four records and their flat keys, and
+keeps original query/group-tag bytes. Each original database gets one small APFS
+restore clone; intermediate generated databases are removed. The whole local
+workspace is approximately 208 MB logically, with clone sharing for originals.
+No additional multi-gigabyte archive backup is created.
+
+The generated **Run New Clothing.command** checks the game is closed, verifies
+all inputs before placement, installs both database files through verified
+same-volume placement, exclusively creates `cybermac-standalone.redscripts`, and
+launches with its single explicit script-file option. Its exit handler invokes
+**Restore New Clothing.command**, which prechecks both originals/current hashes
+and the auxiliary hash before restoring. Unknown files or an open game stop
+recovery for review. Recovery does not depend on generated database payloads.
+Interruptions have the same standalone recovery command. Process-check errors
+are distinguished from a closed game. The main `final.redscripts` stays intact.
+
+Keep the reference manual save untouched. Saving custom items and then launching
+without their records is not a supported cleanup path; use the clothing command
+on future modded launches. The command restores game files, not inventory changes
+already written into a save.
+
+Offline checks against the real files independently found:
+
+- Base: all 196,423 original records and 3,005,358 flat keys preserved.
+- EP1: all 213,586 original records and 3,434,633 flat keys preserved.
+- Each final file adds exactly four records and 360 flat keys. Every cloned
+  value index matches its donor; all typed value-pool bytes are unchanged.
+- Original query/group-tag bytes are unchanged. Both input files still match
+  their original resource seals after preparation; no game files were installed.
+- The official compiler accepted the helper. Streamed bytecode inspection
+  verified all four wrapper/proxy chains preserve the full original operation
+  sequences and static/native call targets, allowing function-local slot IDs and
+  unordered declaration headers to differ.
+- Compiled helper SHA-256:
+  `69eebf2fd39c5052d9f464f931cf9a7fabad0dafdcaaad36e55d53924193cc98`.
+
+The offline writer still preserves the original records-checksum header rather
+than claiming a verified recomputation. Runtime acceptance, UI label rendering,
+new-item visibility and successful equipment require this combined test. The
+missing inherited flats are fixed; the old in-game symptom is not yet marked
+resolved. No additional menu-only test is needed.
+
+Final validation: all 580 tests passed (562 core, 18 app). New coverage executes
+the generated shell preflight with closed/open/error process results, preserves
+false and array-valued inherited properties, and checks quoted paths and recovery
+without generated payloads. Both actual prepared commands also pass syntax
+checks. Database and script audits remain local ignored artifacts. The current
+prepared command is `.research/standalone-clothing/Run New Clothing.command`.

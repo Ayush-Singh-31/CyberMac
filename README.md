@@ -12,12 +12,20 @@ The current development priority is [appearance mods for feminine V](docs/appear
 clothing first, followed by body shapes and matching clothing refits.
 The new Appearance Mods screen and `appearance` CLI inspect real Mac archives,
 prepare native patched copies with verified backups, and check manual installation
-and restoration. The Lucy jacket now has a user-confirmed successful save load
+and restoration. The Lucy jacket has a user-confirmed successful save load
 and worn appearance on Mac App Store 2.5, followed by verified original-file
 restoration. Its inventory thumbnail still shows the replaced garment. Other
 packages remain unverified. See the [implementation and first clothing test](docs/appearance-native-workflow.md).
 The [framework and REA investigation](docs/frameworks-and-rea.md) distinguishes
 existing-item delivery, new item registration, and the remaining native work.
+
+The user reports that Lucy replacements already worked months earlier; the
+current target is usable **standalone items**. `clothing prepare` now prepares
+four independent clothing records, their inventory labels, automatic delivery
+and equipment requests using actual inventory instance IDs. It also fixes
+inherited item properties omitted by the earlier clone writer. The prepared
+pieces keep vanilla looks and icons. Runtime visibility and equipment remain
+unverified; see the [combined clothing workflow](docs/appearance-native-workflow.md#standalone-clothing-records-and-delivery--25-october).
 
 ## Current support
 

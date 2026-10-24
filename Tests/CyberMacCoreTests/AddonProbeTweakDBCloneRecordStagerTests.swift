@@ -371,7 +371,7 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
         XCTAssertTrue(report.baseTouchedFlatKeyTablesSorted)
         XCTAssertTrue(report.ep1TouchedFlatKeyTablesSorted)
         XCTAssertEqual(report.expectedKnownClothingFlatCount, TweakDBStructureInspector.itemRecordProperties.count)
-        XCTAssertEqual(report.expectedKnownClothingFlatCount, 82)
+        XCTAssertEqual(report.expectedKnownClothingFlatCount, 91)
         XCTAssertEqual(report.baseKnownClothingFlatCount, report.expectedKnownClothingFlatCount)
         XCTAssertEqual(report.ep1KnownClothingFlatCount, report.expectedKnownClothingFlatCount)
         XCTAssertTrue(report.baseKnownClothingFlatsResolved)

@@ -262,7 +262,12 @@ public struct TweakDBStructureInspector: Sendable {
         "qualityRestrictedByParent", "replicateWhenNotActive", "requiredSlots", "sellPrice",
         "sideUpgradeItem", "slotPartList", "slotPartListPreset", "stateMachineName", "tags",
         "upgradeCostMult", "useHeadgearGarmentAggregator", "useNewSpawnMethod", "usesVariants",
-        "variants", "visualTags"
+        "variants", "visualTags",
+        // BaseObject_Record properties are inherited by Item_Record. Omitting
+        // them creates a record-table entry without the source's item behavior.
+        // Names corroborated against the shipping 2.5 script RTTI getters.
+        "statModifierGroups", "effectors", "statPools", "statModifiers", "weakspots",
+        "objectActions", "savable", "questFactPreventDualWield", "craftingData"
     ]
 
     public init() {}

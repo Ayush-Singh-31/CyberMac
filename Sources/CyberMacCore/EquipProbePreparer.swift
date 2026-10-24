@@ -103,7 +103,7 @@ public struct EquipProbePreparer: Sendable {
 
     // Foundation does not resolve a directory symlink when its final child does
     // not exist yet. Resolve the existing ancestor before checking containment.
-    private static func resolvedPath(_ url: URL) -> String {
+    static func resolvedPath(_ url: URL) -> String {
         var ancestor = url.standardizedFileURL
         var suffix: [String] = []
         while !FileManager.default.fileExists(atPath: ancestor.path), ancestor.path != "/" {

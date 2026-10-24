@@ -54,6 +54,8 @@ struct CyberMacCLI {
             try scan()
         case "appearance":
             try AppearanceCommands.run(Array(arguments.dropFirst()))
+        case "clothing":
+            try StandaloneClothingCommands.run(Array(arguments.dropFirst()))
         case "archive-probe":
             try archiveProbe()
         case "archive-research":
@@ -137,6 +139,7 @@ struct CyberMacCLI {
           cybermac launch-game [--vanilla-ok|--require-active] [--show-command] [--game-app /path/to/Cyberpunk.app]
           cybermac scan /path/to/mod.zip
           cybermac appearance inspect <mod.zip|mod.archive> [--archive-entry <path>] [--game-app <app>] [--home <directory>] [--json]
+          cybermac clothing prepare --compiler <redscript-cli> --original-scripts <verified-original> --out-dir <new-folder> [--game-app <app>]
           cybermac appearance stage <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance commands <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance verify <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]

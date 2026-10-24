@@ -6,22 +6,27 @@ Target feminine V. Get custom clothing working first, then support changes to
 body shape with clothing fitted to the selected body. Custom skin textures,
 hair, faces and complete character appearances are part of the broader goal.
 
-**Current result:** Lucy's jacket loaded and rendered correctly when worn on the
-user's save. The inventory image remained the original garment. Both originals
-were restored and verified afterward. Next experiments should distinguish
-standalone item records, icons, and body/refit support from this proven replacer.
-Diagnostics now includes a bounded recorder for available macOS/CyberMac logs;
-internal game events are not automatically visible.
-**Script execution confirmed — 25 October:** the user saw the v3
-**CYBERMAC SCRIPT EXECUTED / MENU** marker, including on return from gameplay.
-The explicit auxiliary-cache route therefore executes custom menu scripts on
-this exact App Store 2.5 build. The original scripts remain intact and the test
-cache was removed. The session still exposes no custom probe/equipment messages
-in macOS unified logs, so gameplay hooks, record checks and delivery remain
-unverified. Stop repeating menu execution tests. Next make gameplay record and
-item-delivery results observable through the proven script route; then resume
-the clothing-set and standalone-item milestones. See
-[the confirmed result](appearance-native-workflow.md#confirmed-menu-execution--25-october-1002-session).
+**Priority corrected — 25 October:** the user confirms Lucy replacements worked
+about five months ago. Earlier duplicate registry items also existed, but could
+not be equipped and displayed incorrectly in inventory/storage. Repeating Lucy
+or menu-marker tests does not satisfy the intended progress. The target is
+separate item records with working inventory and equipment behavior.
+
+**Implementation now prepared:** four independent jacket/top/pants/boots records,
+with automatic grants, equipment requests using actual inventory instance IDs,
+and inventory labels scoped to the new IDs. The clone schema now includes the
+seven inherited `BaseObject_Record` properties omitted by the old writer, plus
+`questFactPreventDualWield` and the alternate `craftingData` spelling. The actual
+four vanilla donors each supply 90 resolved property flats with this schema.
+The older failure's precise cause is not proven; missing inherited data is a
+concrete implementation defect, not a substitute for the combined runtime result.
+
+The new pieces initially retain their donors' vanilla looks and icons. They
+establish usable independent records before assigning isolated custom resources.
+The prepared command installs both updated databases and the proven explicit
+script-cache route, grants and requests equipment for all four pieces, then
+restores originals after exit. No appearance archive changes are required.
+See [standalone clothing](appearance-native-workflow.md#standalone-clothing-records-and-delivery--25-october).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and
