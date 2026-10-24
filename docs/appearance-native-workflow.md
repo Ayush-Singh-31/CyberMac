@@ -489,3 +489,41 @@ chains, including the menu superclass-call opcodes. Its SHA-256 is
 Original game scripts still match the original hash; no auxiliary cache has been
 installed or game launched during this preparation. The obsolete v2 generated
 cache was removed after validation; its source, reports and recovery script remain.
+
+
+## Confirmed menu execution — 25 October 10:02 session
+
+The user explicitly saw **CYBERMAC SCRIPT EXECUTED / MENU**, including after
+returning from gameplay to the main menu. That text is intentionally confined to
+the main-menu version widget; it is not a desktop notification or a gameplay
+pause-menu control. Seeing it again on return is expected. **Custom redscript
+execution in the main menu is now confirmed** on the exact App Store 2.5 build
+using the explicit auxiliary-cache workflow. This does not establish which
+other loading routes would work or why earlier attempts were inconclusive.
+
+Session `7a7c4df5-a1af-436b-bc0f-6ed2a04a3cdd` ran on 25 October 2026,
+10:02:12–10:04:29 Sydney. Recording stopped normally at 55,645,626 bytes,
+with 49,021 structured events. The auxiliary cache hash matched the prepared
+`f968e5c0…` bytes before launch and after exit. The original cache hash matched
+`7a5a798f…` afterward and on review; the auxiliary file is now absent, confirming
+cleanup. No new original-file backup was needed.
+
+No `CyberMacEquipProbe`, `FTLog`, `record_check`, equip or wardrobe diagnostic
+messages were captured. There were zero unified-log events whose sender image
+was the main game executable; five came from its App Store services library,
+and the remainder came from system libraries/frameworks. Nine error events were
+from Apple frameworks and did not identify a script or clothing failure.
+Consequently this recording does not establish gameplay-hook execution, record
+existence, item acquisition or the destination of FTLog output. The user's
+visible menu result is independent evidence that the script executed despite
+those empty log searches.
+
+The file trace observed its control and 2,630 game filesystem events with no
+detected source loss, but no script-path rows. Its bounded 2,048-row context
+sample filled during the first 0.82 seconds; sampling truncation is explicit.
+This trace cannot override the visible execution result or establish that the
+auxiliary file was never loaded. No further menu-only gameplay test is needed.
+The next implementation should make gameplay record/delivery results observable
+through the now-proven script route rather than relying on unified-log output.
+The complete local analysis is retained under the ignored research directory;
+raw session evidence was not changed.

@@ -12,16 +12,16 @@ were restored and verified afterward. Next experiments should distinguish
 standalone item records, icons, and body/refit support from this proven replacer.
 Diagnostics now includes a bounded recorder for available macOS/CyberMac logs;
 internal game events are not automatically visible.
-The first read-only probe produced no visible notification or captured script
-messages. The combined v2 run verified installation and restoration, but the user
-did not notice its direct menu/HUD marker and the capture had no script-path
-rows. Its tracer discarded unnamed file reads, so execution and loading remain
-unresolved. Exact-build native inspection now establishes the parser-to-loader
-route for an explicit script file. The prepared v3 workflow uses a separate small
-cache, preserves the original, passes the explicit path as one launch argument,
-and retains bounded game filesystem context. It needs one combined runtime test;
-this is supporting work toward item acquisition, not proof of a dispenser. See
-[the current workflow](appearance-native-workflow.md#explicit-script-file-test-v3).
+**Script execution confirmed — 25 October:** the user saw the v3
+**CYBERMAC SCRIPT EXECUTED / MENU** marker, including on return from gameplay.
+The explicit auxiliary-cache route therefore executes custom menu scripts on
+this exact App Store 2.5 build. The original scripts remain intact and the test
+cache was removed. The session still exposes no custom probe/equipment messages
+in macOS unified logs, so gameplay hooks, record checks and delivery remain
+unverified. Stop repeating menu execution tests. Next make gameplay record and
+item-delivery results observable through the proven script route; then resume
+the clothing-set and standalone-item milestones. See
+[the confirmed result](appearance-native-workflow.md#confirmed-menu-execution--25-october-1002-session).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and
