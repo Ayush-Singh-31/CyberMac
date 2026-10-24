@@ -13,12 +13,15 @@ standalone item records, icons, and body/refit support from this proven replacer
 Diagnostics now includes a bounded recorder for available macOS/CyberMac logs;
 internal game events are not automatically visible.
 The first read-only probe produced no visible notification or captured script
-messages. The next prepared package combines direct menu/HUD execution markers,
-record checks, ordinary equipment and saved wardrobe observations, an installed
-cache fingerprint, and verified startup file tracing. One Terminal command
-installs, records, launches and restores after exit. It compiles against the actual
-Mac 2.5 cache; runtime behavior still requires the combined gameplay test. See
-[the test workflow](appearance-native-workflow.md#combined-execution-and-equip-test-v2).
+messages. The combined v2 run verified installation and restoration, but the user
+did not notice its direct menu/HUD marker and the capture had no script-path
+rows. Its tracer discarded unnamed file reads, so execution and loading remain
+unresolved. Exact-build native inspection now establishes the parser-to-loader
+route for an explicit script file. The prepared v3 workflow uses a separate small
+cache, preserves the original, passes the explicit path as one launch argument,
+and retains bounded game filesystem context. It needs one combined runtime test;
+this is supporting work toward item acquisition, not proof of a dispenser. See
+[the current workflow](appearance-native-workflow.md#explicit-script-file-test-v3).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and

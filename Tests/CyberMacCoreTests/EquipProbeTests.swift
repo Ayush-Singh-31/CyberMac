@@ -70,7 +70,6 @@ final class EquipProbeTests: XCTestCase {
             let script = EquipProbePreparer.manualScript(executable: game.executableURL,
                 target: root.appendingPathComponent("target ' $().redscripts"),
                 compiled: root.appendingPathComponent("compiled ' $().redscripts"),
-                original: root.appendingPathComponent("original ' $().redscripts"),
                 compiledSHA: String(repeating: "a", count: 64), restore: restore)
             let url = root.appendingPathComponent("\(restore).command")
             try Data(script.utf8).write(to: url)
@@ -80,7 +79,7 @@ final class EquipProbeTests: XCTestCase {
         }
         let combined = EquipProbePreparer.combinedScript(executable: game.executableURL,
             target: root.appendingPathComponent("target"), compiled: root.appendingPathComponent("compiled"),
-            original: root.appendingPathComponent("restore"), compiledSHA: String(repeating: "a", count: 64),
+            compiledSHA: String(repeating: "a", count: 64),
             commandLineTool: root.appendingPathComponent("cli ' $()"), directory: root)
         let url = root.appendingPathComponent("combined.command")
         try Data(combined.utf8).write(to: url)
@@ -95,6 +94,23 @@ final class EquipProbeTests: XCTestCase {
         try Data(repeating: 32, count: 65 * 1024).write(to: file)
         XCTAssertThrowsError(try EquipProbeRunner().run(directory: root))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["probe.json"])
+    }
+
+    func testExplicitLaunchUsesOneArgumentAndRequiresTheFixedAuxiliaryPath() throws {
+        let auxiliary = game.appURL.appendingPathComponent("Contents/Data/r6/cache/cybermac-equip-probe.redscripts")
+        var manifest = ["probeVersion": "3", "launchMode": "explicit-script-file", "scriptPath": auxiliary.path]
+        XCTAssertEqual(try EquipProbeRunner.scriptURL(game: game, manifest: manifest), auxiliary)
+        let arguments = EquipProbeRunner.launchArguments(app: game.appURL, script: auxiliary, explicit: true)
+        XCTAssertEqual(arguments, ["-W", game.appURL.path, "--args", "-scriptsBlobPath=\(auxiliary.path)"])
+        // Spaces and shell metacharacters in a path remain part of one argv value.
+        XCTAssertTrue(arguments.last!.contains("' $()"))
+        manifest["scriptPath"] = root.appendingPathComponent("untrusted.redscripts").path
+        XCTAssertThrowsError(try EquipProbeRunner.scriptURL(game: game, manifest: manifest))
+        manifest["scriptPath"] = auxiliary.path
+        manifest["launchMode"] = "unknown"
+        XCTAssertThrowsError(try EquipProbeRunner.scriptURL(game: game, manifest: manifest))
+        XCTAssertEqual(try EquipProbeRunner.scriptURL(game: game, manifest: ["probeVersion": "2"]).lastPathComponent,
+                       "final.redscripts")
     }
 
     private var game: GameInstall {

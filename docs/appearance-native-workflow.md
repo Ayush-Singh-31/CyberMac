@@ -377,8 +377,11 @@ The CLI records exact installed-cache and executable hashes immediately before
 launch and records the cache again after exit in `probe-run.json`, next to the
 usual session log. A read-only, administrator-authorized `fs_usage` source runs
 for at most 180 seconds. It starts before launch, with unrelated filesystem rows
-discarded in memory. Only game script-file rows are retained (at most 256 rows,
-4 KiB each), plus bounded diagnostics and counts. A unique control-file access
+discarded in memory. Path-named game script-file rows are retained (at most 256
+rows, 4 KiB each), plus bounded diagnostics and counts. The updated recorder also
+keeps up to 2,048 game filesystem rows (4 KiB each), including unnamed file reads
+and mmap calls. Context sampling exhaustion is reported separately from actual
+trace loss; script-path retention continues after that sample fills. A unique control-file access
 must appear before launching; permission failures or a missing control stop the
 test before the game opens. Named `fs_usage` filters may resolve only processes
 already running, so the capture must not depend on that filter finding a future
@@ -404,4 +407,85 @@ renaming, including the exact original static superclass-call target. The source
 decompiler displays that call as `this` after proxy renaming, so opcode inspection
 was needed before treating it as preserved. The private validation evidence stays
 in the ignored experiment directory. Actual menu/HUD rendering and privileged
-startup tracing still require the combined runtime test.
+startup tracing required the combined runtime test described below.
+
+
+## 24 October 22:11 session result
+
+Session `a3a85e93-54af-4f8a-83f7-8d1422010ef7` recorded a normal 84-second
+launch/play/exit cycle, 31,659,276 log bytes and 28,019 structured events. The
+compiled v2 cache matched SHA-256
+`62187866234d009e5197265ae7142467a4899d92c1112731b7bf6b6dd36dd4f8`
+both before launch and after exit. The original cache was restored and its
+original hash verified afterward.
+
+The startup trace saw its prelaunch control and 2,437 game filesystem events,
+with no retained script-path rows and no detected source loss. The log contained
+no probe messages. The user **did not notice** the menu/HUD marker: visual
+execution is unknown, not a confirmed negative. Eleven Apple-framework errors
+did not identify a script or clothing failure.
+
+The old trace discarded game rows that lacked `redscripts` in their text.
+Apple's [fs_usage implementation](https://raw.githubusercontent.com/apple-oss-distributions/system_cmds/main/fs_usage/fs_usage.c)
+can omit a pathname when no VFS lookup accompanies a file-descriptor event.
+Those discarded rows cannot be reconstructed. This result establishes no
+retained path-named script access, not that the game never read the cache.
+The updated bounded game-context sample preserves such events for inspection;
+it still cannot identify a file from an unnamed descriptor alone.
+
+## Explicit script-file test v3
+
+Read-only ARM64 inspection of **this exact App Store 2.5 executable**, SHA-256
+`8f4a88ad201f360772b3747f51701944f39b98b4ecbf7edc6271c1cc24932844`,
+identified an explicit file route that bypasses default filename resolution.
+These are unslid addresses in that executable, not offsets to use on another
+build and not instructions to patch it.
+
+| Location | Observed behavior |
+| --- | --- |
+| `0x1014b0bf4`, `0x1014b0dc0` | Native argument parser accepts a single `-key=value` argument. Both `-` and `/` are option prefixes; a separate absolute path can be parsed as another option. |
+| `0x103ab1c58`–`0x103ab1cf8` | Looks up `scriptsBlobPath`, constructs a path, writes settings `+0x18`. Relative paths resolve against the working directory. |
+| `0x103ab153c`, `0x103ac4f04`, `0x101d8b36c` | Transports the same application settings into engine initialization. The derived engine method calls base initialization with the same settings pointer. |
+| `0x103ac5614`–`0x103ac5630` | Copies settings `+0x18` into engine `+0x170`, then calls the boot script dispatcher. |
+| `0x103ac0b38` | Nonempty engine `+0x170` is queried and passed directly to blob loader `0x103ac0fdc`, without appending a filename. Empty selects the default resolver. |
+| `0x103ac0cfc` | Default resolver constructs variant filenames. Global `0x107fdac88` is a fallback **directory** operand, separate from the explicit file field. |
+
+The exact option is one argv value:
+`-scriptsBlobPath=/absolute/path/to/cybermac-equip-probe.redscripts`.
+This proves the static parser/loader route exists. LaunchServices delivery,
+sandbox access, VM acceptance and visible execution still need runtime evidence.
+It does not establish why v2 produced no captured output.
+
+New preparation emits a v3 manifest and manual commands. The test places an APFS
+clone of the compiled cache at
+`Contents/Data/r6/cache/cybermac-equip-probe.redscripts` inside the game, so it
+uses a location already containing game data. It does **not** replace
+`final.redscripts`. Placement uses an exclusive hard link from a separately
+verified temporary clone; an existing destination cannot be overwritten.
+
+**Run Equip Probe.command** performs placement, starts the verified trace and
+recorder, launches through `open -W <app> --args <single-option-value>`, waits for
+exit, then removes only the expected auxiliary file after verifying its hash.
+The original script cache is verified before launch and after exit. Open games,
+unknown contents or changed originals stop cleanup for review. The separate
+**Restore Equip Probe.command** is the recovery cleanup if the combined command
+is interrupted; it never restores over an unknown file. Older v2 manifests
+remain runnable with their original replacement workflow.
+
+The source and its eight wrapper chains are unchanged from v2. The experiment
+changes the loading route, while improving capture coverage. It grants no items,
+changes no quest facts and creates no large backups. Keep the reference manual
+save untouched. At the main menu, inspect the version text for
+**CYBERMAC SCRIPT EXECUTED / MENU**; then load a save, equip one ordinary garment
+and one saved wardrobe outfit, and quit normally. Visible rendering and record
+checks must be assessed separately from the presence of an auxiliary file.
+
+Offline verification: all 577 repository tests passed (559 core, 18 app), including
+exclusive-placement collisions, fixed-path/argument validation and unnamed trace
+events. All three generated commands passed shell syntax checks. The newly
+compiled cache was independently checked for all eight preserved wrapper/proxy
+chains, including the menu superclass-call opcodes. Its SHA-256 is
+`f968e5c01fe40043d682f83578cc5f3ce51ee2743685bdd3d103907d5a3bf4b2`.
+Original game scripts still match the original hash; no auxiliary cache has been
+installed or game launched during this preparation. The obsolete v2 generated
+cache was removed after validation; its source, reports and recovery script remain.

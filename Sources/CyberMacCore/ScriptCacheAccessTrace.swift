@@ -7,14 +7,18 @@ struct ScriptCacheTraceEvidence: Encodable, Sendable {
     var controlObserved = false
     var gameEventCount = 0
     var scriptRows: [String] = []
+    var gameContextRows: [String] = []
+    var gameContextRowsTruncated = false
+    let coverage = "Path-named script accesses and a bounded sample of game filesystem events. Unnamed file-descriptor accesses cannot establish which file was read; absence of a script path is inconclusive."
     var incomplete = false
     var diagnostics = ""
     var exitCode: Int32?
     let durationSeconds = 180
 }
 
-/// Filter before persistence: unrelated filesystem activity is discarded. A
-/// matching open is access evidence, never proof that bytecode executed.
+/// Filter before persistence: unrelated filesystem activity is discarded. Keep
+/// game rows even without a path: fs_usage can report reads/mmap by descriptor
+/// only. A matching open is access evidence, never proof of bytecode execution.
 struct ScriptCacheTraceFilter {
     let controlName: String
     var evidence = ScriptCacheTraceEvidence()
@@ -44,6 +48,9 @@ struct ScriptCacheTraceFilter {
             sender.dropFirst("Cyberpunk2077.".count).allSatisfy(\.isNumber))
         if isGame {
             evidence.gameEventCount += 1
+            if evidence.gameContextRows.count < 2048 && text.utf8.count <= 4096 {
+                evidence.gameContextRows.append(text)
+            } else { evidence.gameContextRowsTruncated = true }
             if text.lowercased().contains("redscripts") {
                 if evidence.scriptRows.count < 256 && text.utf8.count <= 4096 { evidence.scriptRows.append(text) }
                 else { evidence.incomplete = true }

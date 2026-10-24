@@ -38,7 +38,7 @@ enum EquipProbeCommands {
         print("Read-only equip probe compiled. No game files changed and no new backup made.")
         print("Prepared files: \(directory.path)")
         print("With the game fully closed, run Run Equip Probe.command from this directory.")
-        print("That command installs, verifies the startup trace, starts recording, launches normally, and restores after exit.")
+        print("That command places a separate cache, records startup, launches with its explicit script path, and removes it after exit. Original scripts stay intact.")
         print("Look for CYBERMAC SCRIPT EXECUTED / MENU at the main menu, then try clothing and a saved wardrobe outfit.")
         print("Runtime remains unverified until this test. Keep your reference save slot untouched.")
     }

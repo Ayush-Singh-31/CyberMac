@@ -67,6 +67,23 @@ final class VerifiedFileReplacementTests: XCTestCase {
         try assertNoTemporaryClones()
     }
 
+    func testExclusivePlacementPreservesExistingFileAndCreatesOnlyAbsentTarget() throws {
+        let source = root.appendingPathComponent("source.redscripts")
+        let target = root.appendingPathComponent("probe.redscripts")
+        try Data("compiled".utf8).write(to: source)
+        try Data("existing".utf8).write(to: target)
+        let command = VerifiedFileReplacement.command(source: source.path, target: target.path,
+            sha256: try PathSafety.sha256(url: source), requiresAdministrator: false, requiresAbsentDestination: true)
+        XCTAssertNotEqual(try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", command], timeoutSeconds: 5, allowFailure: true).exitCode, 0)
+        XCTAssertEqual(try Data(contentsOf: target), Data("existing".utf8))
+        try FileManager.default.removeItem(at: target)
+        XCTAssertEqual(try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", command], timeoutSeconds: 5).exitCode, 0)
+        XCTAssertEqual(try Data(contentsOf: target), try Data(contentsOf: source))
+        try assertNoTemporaryClones()
+    }
+
     private func run(_ source: URL, _ target: URL, hash: String) throws -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")

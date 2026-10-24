@@ -1,12 +1,15 @@
 import Foundation
 
 /// Prints a manual command; CyberMac never executes it against the game.
-/// Clone beside the source, verify it, then rename on the same volume. A failed
-/// clone must never remove the destination, as `cp -c source destination` can.
+/// Clone beside the source and verify before placing on the same volume. A
+/// rename replaces an existing target; an exclusive hard link creates a new
+/// target without overwriting a collision. The source inode is never installed.
 enum VerifiedFileReplacement {
-    static func command(source: String, target: String, sha256: String, requiresAdministrator: Bool = true) -> String {
+    static func command(source: String, target: String, sha256: String, requiresAdministrator: Bool = true,
+                        requiresAbsentDestination: Bool = false) -> String {
         let ownership = requiresAdministrator ? "sudo /usr/sbin/chown root:wheel \"$payload\"" : ":"
-        let move = requiresAdministrator ? "sudo /bin/mv" : "/bin/mv"
+        let placement = (requiresAdministrator ? "sudo " : "") +
+            (requiresAbsentDestination ? "/bin/ln \"$payload\" \"$target\"" : "/bin/mv -f \"$payload\" \"$target\"")
         let script = """
         set -eu
         source=\(PathSafety.shellQuoted(source))
@@ -24,7 +27,7 @@ enum VerifiedFileReplacement {
         [ "${actual%% *}" = "$expected" ] || fail 'Replacement hash does not match; destination was left unchanged.'
         /bin/chmod 644 "$payload"
         \(ownership)
-        \(move) -f "$payload" "$target"
+        \(placement)
         actual=$(/usr/bin/shasum -a 256 "$target")
         [ "${actual%% *}" = "$expected" ] || fail 'Installed file failed verification.'
         """

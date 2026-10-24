@@ -20,9 +20,40 @@ final class ScriptCacheAccessTraceTests: XCTestCase {
         XCTAssertTrue(filter.evidence.controlObserved)
         XCTAssertEqual(filter.evidence.gameEventCount, 1)
         XCTAssertEqual(filter.evidence.scriptRows.count, 1)
+        XCTAssertEqual(filter.evidence.gameContextRows, filter.evidence.scriptRows)
         XCTAssertTrue(filter.evidence.scriptRows[0].contains("Cyberpunk2077.789"))
         XCTAssertFalse(filter.evidence.incomplete)
         XCTAssertFalse(filter.evidence.scriptRows.joined().contains("something-personal"))
+        XCTAssertFalse(filter.evidence.gameContextRows.joined().contains("something-personal"))
+    }
+
+    func testUnnamedGameAccessesRemainAvailableWithoutImplyingScriptAccess() {
+        var filter = ScriptCacheTraceFilter(controlName: "control")
+        filter.consume(Data("""
+        12:00:01 open F=12 0.0001 Cyberpunk2077.789
+        12:00:02 RdData F=12 B=0x1000 0.0001 Cyberpunk2077.789
+        12:00:03 mmap F=12 A=0x123000 0.0001 Cyberpunk2077.789
+        12:00:04 mmap F=90 A=0x123000 0.0001 Finder.789
+
+        """.utf8))
+        filter.finish()
+        XCTAssertEqual(filter.evidence.gameContextRows.count, 3)
+        XCTAssertEqual(filter.evidence.gameEventCount, 3)
+        XCTAssertTrue(filter.evidence.scriptRows.isEmpty)
+        XCTAssertFalse(filter.evidence.gameContextRowsTruncated)
+        XCTAssertFalse(filter.evidence.incomplete)
+    }
+
+    func testContextSamplingDoesNotStopSeparateScriptRetention() {
+        var filter = ScriptCacheTraceFilter(controlName: "control")
+        for _ in 0..<2100 { filter.consume(Data("mmap F=12 Cyberpunk2077.123\n".utf8)) }
+        filter.consume(Data("open r6/cache/final.redscripts Cyberpunk2077.123\n".utf8))
+        XCTAssertEqual(filter.evidence.gameEventCount, 2101)
+        XCTAssertEqual(filter.evidence.gameContextRows.count, 2048)
+        XCTAssertTrue(filter.evidence.gameContextRowsTruncated)
+        XCTAssertEqual(filter.evidence.scriptRows.count, 1)
+        // Sampling is explicit and distinct from actual tracer loss.
+        XCTAssertFalse(filter.evidence.incomplete)
     }
 
     func testRetainedRowsAreBoundedAndExhaustionIsExplicit() {
