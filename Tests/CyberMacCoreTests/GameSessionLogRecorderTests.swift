@@ -41,6 +41,19 @@ final class GameSessionLogRecorderTests: XCTestCase {
         XCTAssertThrowsError(try recorder.addMarker("after limit"))
     }
 
+    func testCaptureContinuesBeyondPreviousTenMiBLimitAndReportRemainsReadable() throws {
+        let count = 11_000_000
+        let recorder = GameSessionLogRecorder(home: home,
+            command: (URL(fileURLWithPath: "/usr/bin/head"), ["-c", String(count), "/dev/zero"]),
+            byteLimit: GameSessionLogRecorder.maximumBytes)
+        _ = try recorder.start(game: game)
+        let result = try finished(recorder)
+        XCTAssertEqual(result.status, .completed)
+        XCTAssertEqual(result.capturedBytes, count)
+        XCTAssertEqual(try PathSafety.fileSize(url: URL(fileURLWithPath: result.folderPath).appendingPathComponent("capture.log")), UInt64(count))
+        XCTAssertEqual(try recorder.recent().first?.capturedBytes, count)
+    }
+
     func testFailureRetainsSourceErrorAndDoesNotReportEmptySuccess() throws {
         let recorder = fixture("printf 'permission denied by source' >&2; exit 7")
         _ = try recorder.start(game: game)

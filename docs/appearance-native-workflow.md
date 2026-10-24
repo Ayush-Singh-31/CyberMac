@@ -261,7 +261,7 @@ to a standalone addition.
 
 Diagnostics now has a bounded session recorder for available macOS/CyberMac
 messages, automatic game launch/exit markers, and manual action markers. It keeps
-three sessions capped at 10 MB/one hour each, records failures explicitly, and
+three sessions capped at 10 GB/one hour each (up to 30 GB total), records failures explicitly, and
 does not change the game or system logging configuration. Private game-container
 logs were permission-denied during investigation and are not collected. Internal
 inventory/equip events still need a proven logging bridge; `LogChannel` is not

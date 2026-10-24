@@ -32,7 +32,7 @@ struct SessionLogPanel: View {
                             .disabled(marker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                Text("Local only · Up to 1 hour or 10 MB per session · Keeps the latest 3 sessions")
+                Text("Local only · Up to 1 hour or 10 GB per session · Keeps the latest 3 sessions (up to 30 GB)")
                     .font(.caption).foregroundStyle(.secondary)
                 if let error = model.report?.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
                 if let error = model.errorMessage { Text(error).foregroundStyle(.red).textSelection(.enabled) }

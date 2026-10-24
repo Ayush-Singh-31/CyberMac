@@ -59,8 +59,9 @@ with available messages. Game launch/exit notifications are marked automatically
 while CyberMac is open. Stop recording and use **Show files** to inspect the
 local capture and its status report.
 
-Each session stops after one hour or 10 MB. Only the latest three sessions are
-retained. Recording also stops when CyberMac closes normally. This collects
+Each session stops after one hour or 10 GB (10,000,000,000 bytes). Only the latest
+three sessions are retained, using up to 30 GB in total. Space is consumed as
+messages arrive, not reserved in advance. Recording also stops when CyberMac closes normally. This collects
 accessible macOS and CyberMac messages; it does not instrument every engine call,
 inventory change, or clothing event, and does not read private game-container
 logs. Empty output is not evidence of success. Source and storage failures are

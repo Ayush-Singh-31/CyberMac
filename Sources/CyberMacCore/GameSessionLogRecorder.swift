@@ -19,7 +19,7 @@ public struct GameSessionLogReport: Codable, Sendable {
 /// by `lock`; pipe readers write bounded chunks, never a whole session in memory.
 public final class GameSessionLogRecorder: @unchecked Sendable {
     public static let shared = GameSessionLogRecorder(home: CyberMacHomeManager())
-    public static let maximumBytes = 10 * 1024 * 1024
+    public static let maximumBytes = 10_000_000_000
     public static let retainedSessions = 3
     public static let maximumSeconds = 3600
     public static let predicate = "process == \"Cyberpunk2077\" OR subsystem BEGINSWITH \"com.cybermac.\""
