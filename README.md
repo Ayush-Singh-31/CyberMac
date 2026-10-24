@@ -12,8 +12,10 @@ The current development priority is [appearance mods for feminine V](docs/appear
 clothing first, followed by body shapes and matching clothing refits.
 The new Appearance Mods screen and `appearance` CLI inspect real Mac archives,
 prepare native patched copies with verified backups, and check manual installation
-and restoration. Visible gameplay compatibility on Mac App Store 2.5 remains
-unverified. See the [implementation and first clothing test](docs/appearance-native-workflow.md).
+and restoration. The Lucy jacket now has a user-confirmed successful save load
+and worn appearance on Mac App Store 2.5, followed by verified original-file
+restoration. Its inventory thumbnail still shows the replaced garment. Other
+packages remain unverified. See the [implementation and first clothing test](docs/appearance-native-workflow.md).
 The [framework and REA investigation](docs/frameworks-and-rea.md) distinguishes
 existing-item delivery, new item registration, and the remaining native work.
 
@@ -27,11 +29,13 @@ Supported:
 - manual final.redscripts activation
 - manual input XML patching with backup and verification
 - experimental archive-only clothing inspection and native patch staging, without external archive tools
+- bounded, local session recording of accessible macOS/CyberMac messages from Diagnostics
 
 Use redscript 0.5.32 or newer for 2.5. The old 0.5.31 compiler cannot load its
 script cache. The clothing delivery helper now compiles against the actual
-App Store 2.5 files and can be prepared from Appearance Mods. Visible delivery
-and clothing appearance still need an in-game test; other script mods remain
+App Store 2.5 files and can be prepared from Appearance Mods. The jacket's worn
+appearance is confirmed; a new grant is not independently established if the
+target garment was already owned. Other script mods remain
 individually dependent on their APIs and compatibility.
 
 Unsupported:
@@ -46,6 +50,21 @@ Unsupported:
 - REDmod-only mods
 - automatic installation of clothing/body mods and framework-dependent appearance add-ons
 - simultaneous appearance mod stacks or automatic body/refit compatibility
+
+## Record a test session
+
+Open **Diagnostics → Start recording** before launching the game, and keep
+CyberMac open. Add a marker such as “equipped Lucy jacket” to correlate an action
+with available messages. Game launch/exit notifications are marked automatically
+while CyberMac is open. Stop recording and use **Show files** to inspect the
+local capture and its status report.
+
+Each session stops after one hour or 10 MB. Only the latest three sessions are
+retained. Recording also stops when CyberMac closes normally. This collects
+accessible macOS and CyberMac messages; it does not instrument every engine call,
+inventory change, or clothing event, and does not read private game-container
+logs. Empty output is not evidence of success. Source and storage failures are
+reported explicitly. No game files, saves, or system logging settings are changed.
 
 ## Safety model
 

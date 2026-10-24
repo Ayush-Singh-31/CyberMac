@@ -35,6 +35,7 @@ struct DiagnosticsView: View {
                     .buttonStyle(CyberButtonStyle(.primary, accent: .cyan))
                     .help("Export diagnostic report")
                 }
+                SessionLogPanel(model: appState.sessionLog)
                 if let report = appState.doctor {
                     diagnosticsBox(DoctorReportFormatter.format(report, developerMode: true))
                 } else {

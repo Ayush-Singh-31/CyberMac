@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 enum AppScreen: String, CaseIterable, Identifiable {
@@ -96,6 +97,15 @@ struct RootView: View {
         }
         .task {
             await appState.refresh()
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)) {
+            appState.sessionLog.recordGameLifecycle($0)
+        }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)) {
+            appState.sessionLog.recordGameLifecycle($0)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            appState.sessionLog.stopForTermination()
         }
     }
 

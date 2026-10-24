@@ -6,13 +6,20 @@ Target feminine V. Get custom clothing working first, then support changes to
 body shape with clothing fitted to the selected body. Custom skin textures,
 hair, faces and complete character appearances are part of the broader goal.
 
+**Current result:** Lucy's jacket loaded and rendered correctly when worn on the
+user's save. The inventory image remained the original garment. Both originals
+were restored and verified afterward. Next experiments should distinguish
+standalone item records, icons, and body/refit support from this proven replacer.
+Diagnostics now includes a bounded recorder for available macOS/CyberMac logs;
+internal game events are not automatically visible.
+
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and
 compress research evidence. Do not accumulate full game backups or download a
 large decompiler toolchain without a concrete need. The current jacket needs no
 new downloads before its test.
 
-Follow-up: the user has the game running and confirms the official 2.5 Mods
+Earlier investigation: the user had the game running and confirmed the official 2.5 Mods
 menu is present on their Mac. Prioritize validating that official loading route
 before manually installing the staged official-archive patch. The user should
 not need to recognize a garment from an internal item ID: reliable item
@@ -85,8 +92,8 @@ See [implementation and first clothing test](appearance-native-workflow.md).
 
 The new assets are inserted only when exactly one official archive owns the
 replacement resources. Multiple possible destinations or missing dependencies
-block preparation. This is an experimental loading route, with no visible
-in-game success claimed yet.
+block preparation. The Lucy jacket now has a user-confirmed visible success;
+other packages and standalone records require their own tests.
 
 ### Earlier loose-archive preparation
 

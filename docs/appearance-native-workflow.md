@@ -4,7 +4,13 @@ CyberMac now inspects and stages archive-only appearance mods using native Swift
 The first target is clothing on the original feminine V body. Body shapes and
 matching clothing refits follow a successful visible clothing test.
 
-**Current next step:** retry the Lucy jacket test using the corrected installer.
+**Confirmed result:** the user loaded a save and Lucy's jacket rendered correctly
+when worn. The inventory/storage preview still showed the replaced vanilla
+garment. The user then restored both original game files and both hash checks
+passed. Item delivery is not independently established if the target was already
+owned. Next: an independent item record and accurate inventory presentation.
+
+Earlier installation recovery:
 The first direct `cp -c` command removed the destination before macOS denied
 cloning into the app. After granting Terminal App Management permission, the
 original archive was restored. Both original game files now match their sealed
@@ -66,7 +72,9 @@ build `5814786.13589799`. The inspection read 57 official archives.
 | Original SHA-256 | `5a6e692e13e44e0b037d3150bd1d3e0a580369b1e1cb44d4fbc946ec6cf74ce5` |
 | Staged SHA-256 | `c3bb96f0018124bbfc7f66321e9597308211b8ae2766c1e0ff2e209daa68d27d` |
 | Package's existing garment ID | `Items.Vest_08_basic_01` |
-| In-game result | Unverified |
+| In-game result | User confirmed successful save load and correct worn Lucy jacket |
+| Inventory/storage image | Original garment still shown |
+| Restoration | Both original file hashes matched after the test |
 
 Experiment: `a3313ac2-5766-4b38-8c45-3e6dd0484a76`.
 Isolated home: `.research/appearance/native-workspace`.
@@ -146,8 +154,8 @@ reverse-engineering pass was needed for this implementation.
 
 ## Validation
 
-The full suite before the placement fix passed 544 tests: 526 core and 18 app
-tests, including 21 archive/appearance tests. Coverage includes malformed archives, full donor metadata/dependencies,
+The current full suite passes 560 tests: 542 core and 18 app tests, including
+22 archive/appearance and 10 session-recorder tests. Coverage includes malformed archives, full donor metadata/dependencies,
 duplicate owners, new assets, ZIP variants, framework rejection, stale inputs,
 tampered files, workspace boundaries, and fixture install/restore checks.
 The CLI also completed actual Lucy jacket inspection, backup, staging, and
@@ -157,9 +165,9 @@ dependency lists, unchanged metadata for the other 83,417 original resources,
 sorted hashes, and byte-for-byte preservation of the original payload region.
 Its evidence is `.research/appearance/independent-jacket-validation.json`.
 
-The app target builds. Visual interaction was unavailable because macOS
-Computer Use permissions were not granted. No visible gameplay test has been
-performed. The redscript 2.5 cache-loading failure was resolved by importing
+The app target builds. Automated UI interaction was unavailable because macOS
+Computer Use permissions were not granted. The user has now confirmed a visible
+gameplay test and subsequent original restoration. The redscript 2.5 cache-loading failure was resolved by importing
 the official 0.5.32 Mac release, whose notes explicitly add 2.5 bundle support.
 The item helper also needed its unavailable `LogChannel` calls removed. The
 corrected helper has now compiled against the actual 2.5 cache and been
@@ -228,9 +236,40 @@ User-run `Install Lucy Test.command` and `Restore Lucy Test.command` in
 additional backups. The install script checks the build, originals and outputs;
 the restore script checks the build and original hashes. Both refuse a running
 game. The first installation failed; original recovery is verified, while a
-successful test installation remains unconfirmed. Five command-execution regressions exercise clone
+successful installation, save loading and worn jacket appearance are now confirmed.
+Five command-execution regressions exercise clone
 failure, hash failure, rename semantics, a missing destination, and symlinks;
 the focused appearance and placement run passes all 27 tests. The additional
 regression covers equivalent relative and absolute workspace URLs during helper
 verification. Both original game files were also verified with a relative CLI
 workspace path after this fix.
+
+## Runtime observations and next record experiment
+
+The inventory image and worn model have separate resource/data references.
+The observed old thumbnail is consistent with replacing garment assets without
+changing the inventory icon mapping. See the modding documentation for
+[inventory preview icons](https://github.com/CDPR-Modding-Documentation/Cyberpunk-Modding-Docs/blob/main/modding-guides/custom-icons-and-ui/adding-items-preview-images/README.md).
+
+A separate item needs a registered unique TweakDB ID, appearance/resource links
+that do not overwrite the original, and its own name/icon mapping. Giving two
+copies of the same ID is still two copies of the same item definition. Our
+existing binary clone stager labels its output checksum-unverified and writer-
+incomplete; successful offline parsing is not engine registration. Prefer testing
+one vanilla-record clone through the supported loader before converting Lucy
+to a standalone addition.
+
+Diagnostics now has a bounded session recorder for available macOS/CyberMac
+messages, automatic game launch/exit markers, and manual action markers. It keeps
+three sessions capped at 10 MB/one hour each, records failures explicitly, and
+does not change the game or system logging configuration. Private game-container
+logs were permission-denied during investigation and are not collected. Internal
+inventory/equip events still need a proven logging bridge; `LogChannel` is not
+available in this vanilla cache. Recording accessible messages does not establish
+that every game operation is visible.
+
+Recorder verification includes the actual macOS log source, bounded pipe reads,
+source errors, manual stopping, size limits and forced termination, markers,
+single-capture locking, retention, and invalid persisted reports. The app builds;
+recording during a real gameplay session and visual interaction with the new
+panel have not yet been tested.

@@ -51,6 +51,7 @@ extension Logger {
 @MainActor
 @Observable
 final class CyberMacAppState {
+    let sessionLog = SessionLogCaptureModel()
     var doctor: DoctorReport?
     var cache: BundleCacheClassification?
     var mods: [InstalledModManifest] = []

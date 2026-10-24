@@ -15,7 +15,7 @@ validate them against this exact build.
 
 | Component | Role | Current evidence |
 | --- | --- | --- |
-| redscript | Compile script bytecode, including a helper that grants an existing item | Official 0.5.32 Mac compiler reads this game's 2.5 cache. The corrected Lucy helper compiles and decompiles successfully. Runtime execution remains unverified. |
+| redscript | Compile script bytecode, including a helper that grants an existing item | Official 0.5.32 reads this game's 2.5 cache. The helper compiled and was installed during the successful jacket test. A new grant is not independently established if the garment was already owned. |
 | RED4ext / native bootstrap | Load native extensions and provide engine hooks/bindings | Existing Mac port work is documented for a different build. Its offsets and startup assumptions are not validated for this App Store 2.5 executable. |
 | TweakXL-style loading | Create/clone item database records and change their properties | Official 2.5 docs describe built-in YAML support. The actual Mac binary exports state belonging to `game::data::TweakXLModLoader`. Local package loading and record registration remain untested here. |
 | ArchiveXL-style loading | Connect resources, factories, appearances, localization and garment behavior | Official 2.5 supports a documented subset. Mac extension source also exists; neither establishes that every Windows clothing package works unchanged. |
@@ -107,11 +107,10 @@ capability are separate. This does not prove that new clothing is impossible.
 
 ## Scoped next work
 
-1. **Prove the existing-item path.** Install the prepared Lucy archive and
-   matching compiled item helper with their backups; observe item delivery and
-   visible replacement, then restore both. This test is ready for manual
-   installation but has not been run in-game. Keep the game closed until the
-   install and file-verification steps are complete.
+1. **Existing-item appearance proved.** The user loaded a save and wore Lucy's
+   jacket correctly, then restored both originals with matching hashes. The
+   inventory image still showed the original garment. Automatic new-item
+   delivery is not independently confirmed if the target was already owned.
 2. **Prove the official loader independently.** Establish the documented package
    format and a private/local test route from an actual Mac package. Start with
    a harmless database-flat change, then one cloned garment record and an
@@ -127,6 +126,7 @@ capability are separate. This does not prove that new clothing is impossible.
    a time against the working loading route.
 
 See [the native appearance workflow](appearance-native-workflow.md) for the
-implemented archive and inventory-helper preparation. There are now 544 passing
-tests; offline compilation and file integrity are verified, while visible
-gameplay and a complete native framework port remain unverified.
+implemented archive and inventory-helper preparation and checks. REA contributed
+static loader evidence, while the working jacket came from native archive
+transplantation and the official redscript compiler. Standalone record loading,
+internal engine tracing and a complete native framework port remain unverified.
