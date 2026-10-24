@@ -179,7 +179,7 @@ public struct RedscriptItemGrantGenerator: Sendable {
         // Test helper for clothing replacement workflows: grants the listed items to the
         // player puppet once per game session. Uses vanilla redscript APIs only — no CET,
         // RED4ext, Codeware, ArchiveXL, or TweakXL.
-        // Does not depend on LogChannel, which is absent from the vanilla 2.5 cache.
+        // Does not depend on LogChannel, whose declaration is absent from the vanilla 2.5 cache.
         //
         // Mod label: \(modName)
         // Item count: \(itemIDs.count)

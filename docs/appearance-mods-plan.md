@@ -12,6 +12,11 @@ were restored and verified afterward. Next experiments should distinguish
 standalone item records, icons, and body/refit support from this proven replacer.
 Diagnostics now includes a bounded recorder for available macOS/CyberMac logs;
 internal game events are not automatically visible.
+The next prepared test is a read-only equip probe: it checks selected item records
+on save restoration and observes up to 32 equip callbacks, reporting item ID,
+quantity, immediate equipped state and appearance name. It compiles against the
+actual Mac 2.5 cache; native log delivery and on-screen notification delivery
+still require a gameplay test. See [the test workflow](appearance-native-workflow.md#read-only-equip-probe).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and
@@ -27,7 +32,7 @@ acquisition (a clearly labelled grant or a known vendor) is a prerequisite for
 the first appearance test, together with a recognizable preview/label.
 No item dispenser is installed in the game yet. The offline blocker has now
 been resolved: official redscript 0.5.32 reads the 2.5 cache, and the helper was
-corrected to avoid unavailable `LogChannel` debug calls. Appearance Mods can
+corrected to avoid `LogChannel` calls without a declaration. Appearance Mods can
 prepare a compiled inventory helper for a package's garment IDs, with verified
 original script backups and manual install/restore commands. The real Lucy
 jacket helper compiles and decompiles correctly. In-game delivery remains

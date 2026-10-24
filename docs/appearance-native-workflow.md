@@ -169,7 +169,7 @@ The app target builds. Automated UI interaction was unavailable because macOS
 Computer Use permissions were not granted. The user has now confirmed a visible
 gameplay test and subsequent original restoration. The redscript 2.5 cache-loading failure was resolved by importing
 the official 0.5.32 Mac release, whose notes explicitly add 2.5 bundle support.
-The item helper also needed its unavailable `LogChannel` calls removed. The
+The item helper also needed its undeclared `LogChannel` calls removed. The
 corrected helper has now compiled against the actual 2.5 cache and been
 decompiled to confirm its grant call and already-owned-item guard.
 
@@ -264,8 +264,9 @@ messages, automatic game launch/exit markers, and manual action markers. It keep
 three sessions capped at 10 GB/one hour each (up to 30 GB total), records failures explicitly, and
 does not change the game or system logging configuration. Private game-container
 logs were permission-denied during investigation and are not collected. Internal
-inventory/equip events still need a proven logging bridge; `LogChannel` is not
-available in this vanilla cache. Recording accessible messages does not establish
+inventory/equip events still need a proven logging bridge; the `LogChannel`
+declaration is missing from this vanilla cache. That compile error does not
+establish absence of a native implementation. Recording accessible messages does not establish
 that every game operation is visible.
 
 Recorder verification includes the actual macOS log source, bounded pipe reads,
@@ -277,3 +278,63 @@ messages and five lifecycle/user markers. It stopped normally below the raised
 TweakDB, ArchiveXL, redscript or garment-equip messages were found. Eight Apple-
 framework error entries did not identify a clothing failure. This validates the
 recorder during play, while item/record tracing still needs targeted instrumentation.
+
+## Read-only equip probe
+
+`redscript equip-probe prepare` now creates one isolated, temporary script-cache
+test for the verified Mac App Store 2.5 build. It requires the official redscript
+0.5.32 CLI (SHA-256 pinned), an existing verified original script restore copy,
+a new output directory, and one to eight item IDs. It creates no new backup,
+does not stage an appearance archive, and never writes to the game automatically.
+The generated cache is about 17 MB.
+
+```sh
+cybermac redscript equip-probe prepare \
+  --compiler /path/to/redscript-cli-aarch64-darwin \
+  --original-cache /path/to/existing-backup/final.redscripts \
+  --out-dir /path/to/new-equip-test \
+  --item Items.Vest_08_basic_01 \
+  --item Items.CyberMac_Probe_Missing_20261024 \
+  --game-app /Applications/Cyberpunk2077.app
+```
+
+The local test uses a vanilla record and a deliberately nonexistent ID as a
+negative control; the latter is not a newly registered clothing item. No items,
+money, quest facts, or persistent fields are added. On equipment restoration,
+the probe reads actual `GetItemRecord` presence and aggregate inventory quantity
+for the requested IDs. Missing records and unavailable transaction systems have
+distinct output values. It wraps the game's slot-specific equip method, always
+calls the original method, and observes at most 32 callbacks per restoration.
+These can include weapons or automatic equips as well as clothing. Output includes
+the numeric record hash, debug name, exact-instance quantity, appearance name,
+and immediate before/after `IsEquipped` values. Immediate state is not evidence
+that a visual model has finished loading or rendered correctly.
+
+The original cache already declares `FTLog`; the probe calls it with the prefix
+`[CyberMacEquipProbe/v1]`. It also posts a twelve-second `SimpleScreenMessage`
+through the game's notification blackboard: a readiness message after restore
+and a short data summary after each observed equip. The native log sink, Mac
+notification visibility and hook timing remain **unverified in gameplay**.
+The [redscript logging documentation](https://wiki.redmodding.org/scripting-cyberpunk/redscript/common-patterns/logging)
+also describes native logging declarations, but does not prove this build's
+messages will enter our macOS log stream. If notifications appear but the recorder
+has no probe prefix, the logging bridge is still missing.
+
+For the test, fully quit the game and run the generated **Install Equip Probe.command**.
+It verifies the exact game executable, original restore copy, prepared cache and
+current game scripts before using the existing verified clone-and-rename placement
+helper. It stops if the game is running or the process check fails. The restore
+command only accepts the expected original or probe cache and does not require
+the compiled probe file to remain intact.
+
+Start CyberMac session recording, launch the game normally and load a manual save.
+Equip a different ordinary clothing item, close inventory immediately and watch
+for a notification. Record a manual marker when doing so. No Lucy installation
+is needed for this baseline. Fully quit and run **Restore Equip Probe.command**
+afterward. Avoid overwriting the reference manual save. Retain the recording
+for checking the probe prefix and actual event data.
+
+Validation: generated source compiled against the original 2.5 cache; streamed
+decompilation confirmed both wrapper/proxy chains preserve the original methods,
+and the record lookups, quantity queries, native log call and notification update
+are present. This establishes preparation, not runtime compatibility.

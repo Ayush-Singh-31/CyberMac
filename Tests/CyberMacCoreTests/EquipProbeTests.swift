@@ -1,0 +1,95 @@
+import Foundation
+import XCTest
+@testable import CyberMacCore
+
+final class EquipProbeTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("Equip probe ' $() \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+
+    func testSourceRejectsInjectionAndOversizedRequests() throws {
+        let generator = RedscriptEquipProbeGenerator()
+        for items in [[], ["Items.X\"); GiveItem()"], ["Items." + String(repeating: "a", count: 250)],
+                      (0..<9).map { "Items.Test\($0)" }] {
+            XCTAssertThrowsError(try generator.source(itemIDs: items))
+        }
+        XCTAssertEqual(try generator.source(itemIDs: [" Items.Test ", "Items.Test"]),
+                       try generator.source(itemIDs: ["Items.Test"]))
+    }
+
+    func testVerifiedRestoreCopyRejectsCorruptionAndSymlinks() throws {
+        let file = root.appendingPathComponent("original.redscripts")
+        try Data("original".utf8).write(to: file)
+        let hash = try PathSafety.sha256(url: file)
+        XCTAssertNoThrow(try EquipProbePreparer.verify(file, sha256: hash))
+        let link = root.appendingPathComponent("link.redscripts")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
+        XCTAssertThrowsError(try EquipProbePreparer.verify(link, sha256: hash))
+        try Data("modified".utf8).write(to: file)
+        XCTAssertThrowsError(try EquipProbePreparer.verify(file, sha256: hash))
+    }
+
+    func testPreparationCannotOverwriteAnExistingExperiment() throws {
+        let output = root.appendingPathComponent("existing")
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: false)
+        let sentinel = output.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: sentinel)
+        XCTAssertThrowsError(try prepare(output: output)) { error in
+            XCTAssertTrue(String(describing: error).contains("never overwritten"))
+        }
+        XCTAssertEqual(try Data(contentsOf: sentinel), Data("keep".utf8))
+    }
+
+    func testPreparationRejectsGamePathsIncludingThroughDirectorySymlink() throws {
+        let app = game.appURL
+        try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("redirect")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: app)
+        XCTAssertThrowsError(try prepare(output: link.appendingPathComponent("new"))) { error in
+            XCTAssertTrue(String(describing: error).contains("outside the game"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: app.appendingPathComponent("new").path))
+    }
+
+    func testUnsupportedGameFailsBeforeCreatingOutput() throws {
+        try FileManager.default.createDirectory(at: game.executableURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("unsupported game build".utf8).write(to: game.executableURL)
+        let output = root.appendingPathComponent("new")
+        XCTAssertThrowsError(try prepare(output: output))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+        XCTAssertEqual(try Data(contentsOf: game.executableURL), Data("unsupported game build".utf8))
+    }
+
+    func testManualScriptsParsePathsWithShellMetacharacters() throws {
+        for restore in [false, true] {
+            let script = EquipProbePreparer.manualScript(executable: game.executableURL,
+                target: root.appendingPathComponent("target ' $().redscripts"),
+                compiled: root.appendingPathComponent("compiled ' $().redscripts"),
+                original: root.appendingPathComponent("original ' $().redscripts"),
+                compiledSHA: String(repeating: "a", count: 64), restore: restore)
+            let url = root.appendingPathComponent("\(restore).command")
+            try Data(script.utf8).write(to: url)
+            let result = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/zsh"),
+                arguments: ["-n", url.path], timeoutSeconds: 5)
+            XCTAssertEqual(result.exitCode, 0)
+        }
+    }
+
+    private var game: GameInstall {
+        let app = root.appendingPathComponent("Game.app")
+        return GameInstall(appURL: app, executableURL: app.appendingPathComponent("Contents/MacOS/Cyberpunk2077"),
+            dataURL: app.appendingPathComponent("Contents/Data"), archiveMacURL: nil, r6URL: nil,
+            storefront: .macAppStore, displayName: "Test")
+    }
+
+    private func prepare(output: URL) throws -> URL {
+        try EquipProbePreparer().prepare(game: game, compiler: root.appendingPathComponent("compiler"),
+            originalCache: root.appendingPathComponent("restore.redscripts"), outputDirectory: output,
+            itemIDs: ["Items.Vest_08_basic_01"])
+    }
+}

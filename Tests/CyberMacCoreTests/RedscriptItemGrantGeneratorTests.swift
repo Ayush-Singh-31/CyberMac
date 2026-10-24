@@ -134,7 +134,7 @@ final class RedscriptItemGrantGeneratorTests: XCTestCase {
         XCTAssertTrue(contents.contains("GameInstance.GetTransactionSystem"))
         XCTAssertTrue(contents.contains("ItemID.FromTDBID"))
         XCTAssertTrue(contents.contains("transactionSystem.GiveItem(player, itemID, 1);"))
-        XCTAssertFalse(contents.contains("LogChannel("), "Vanilla 2.5 does not provide this debug logging function")
+        XCTAssertFalse(contents.contains("LogChannel("), "This helper must compile without adding a logging declaration")
         XCTAssertTrue(contents.contains("transactionSystem.HasItem(player, itemID)"))
         XCTAssertTrue(contents.contains("t\"Items.Lucy_Jacket\""))
         XCTAssertTrue(contents.contains("t\"Items.Some_Pants\""))
