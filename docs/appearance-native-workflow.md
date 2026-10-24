@@ -338,3 +338,13 @@ Validation: generated source compiled against the original 2.5 cache; streamed
 decompilation confirmed both wrapper/proxy chains preserve the original methods,
 and the record lookups, quantity queries, native log call and notification update
 are present. This establishes preparation, not runtime compatibility.
+
+The first gameplay attempt (24 October, 21:29–21:31 Sydney) produced no visible
+notification, according to the user, after equipping clothes and outfits. The
+145-second recording completed normally: 40.18 MB and 35,481 structured events,
+with no probe prefix, FTLog, redscript or TweakDB messages. Eleven Apple-framework
+errors did not identify a clothing or script failure. The original script cache
+was verified afterward. No installed-cache hash was recorded during the session,
+so this result cannot distinguish cache loading, hook execution, notification
+rendering and log delivery. The next experiment needs independent execution
+evidence and a recorded installed-cache fingerprint before launch.
