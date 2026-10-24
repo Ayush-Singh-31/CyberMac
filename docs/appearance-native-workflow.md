@@ -270,6 +270,10 @@ that every game operation is visible.
 
 Recorder verification includes the actual macOS log source, bounded pipe reads,
 source errors, manual stopping, size limits and forced termination, markers,
-single-capture locking, retention, and invalid persisted reports. The app builds;
-recording during a real gameplay session and visual interaction with the new
-panel have not yet been tested.
+single-capture locking, retention, and invalid persisted reports. The first real
+gameplay capture subsequently completed: 103 seconds, 29.94 MB, 26,470 structured
+messages and five lifecycle/user markers. It stopped normally below the raised
+10 GB cap. About half the messages were AppKit gesture diagnostics; no recorded
+TweakDB, ArchiveXL, redscript or garment-equip messages were found. Eight Apple-
+framework error entries did not identify a clothing failure. This validates the
+recorder during play, while item/record tracing still needs targeted instrumentation.
