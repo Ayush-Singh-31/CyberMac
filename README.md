@@ -27,8 +27,10 @@ inherited item properties omitted by the earlier clone writer. The prepared
 vanilla duplicate test received a player report of clothes automatically equipped;
 exact item identities remain unconfirmed. The next package now connects those
 four records to isolated **Lucy jacket, top, pants and boots** assets, preserving
-original garments. It is prepared for one combined gameplay test; original
-inventory icons remain. See the [Lucy duplicate workflow](docs/appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
+original garments. The first isolated package rendered in inventory and Photo Mode but showed donor
+clothes during gameplay and blank icons. The prepared v2 uses unique appearance
+names, a valid default and explicit donor icon lookup, and disables an active
+wardrobe set for the combined test. Gameplay consistency remains unverified. See the [Lucy duplicate workflow](docs/appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
 
 ## Current support
 

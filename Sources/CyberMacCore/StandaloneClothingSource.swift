@@ -20,9 +20,19 @@ enum StandaloneClothingSource {
         pieces.map { .init(source: $0.source, record: $0.record, label: $0.label.replacingOccurrences(of: "CyberMac ", with: "CyberMac Lucy ")) }
     }
 
-    static func render(pieces: [Piece] = Self.pieces) -> String {
+    static func render(pieces: [Piece] = Self.pieces, showPhysicalClothes: Bool = false) -> String {
         let ids = pieces.map { "t\"\($0.record)\"" }.joined(separator: ", ")
         let names = pieces.map { "    if id == t\"\($0.record)\" { return \"\($0.label)\"; }" }.joined(separator: "\n")
+        let sources = pieces.map { "    if id == t\"\($0.record)\" { return t\"\($0.source)\"; }" }.joined(separator: "\n")
+        let wardrobe = showPhysicalClothes ? """
+        if !this.verifyOnly {
+          let equipmentData: ref<EquipmentSystemPlayerData> = EquipmentSystem.GetData(this.player);
+          if IsDefined(equipmentData) && equipmentData.IsVisualSetActive() {
+            equipmentData.UnequipWardrobeSet();
+            this.wardrobePaused = true;
+          }
+        }
+        """ : ""
         return #"""
 module CyberMacStandaloneClothing
 
@@ -44,6 +54,7 @@ protected cb func OnGameAttached() -> Bool {
 public class CyberMacClothingCallback extends DelayCallback {
   public let player: wref<PlayerPuppet>;
   public let verifyOnly: Bool;
+  public let wardrobePaused: Bool;
 
   public func Call() -> Void {
     if !IsDefined(this.player) { return; }
@@ -53,6 +64,7 @@ public class CyberMacClothingCallback extends DelayCallback {
       CyberMacClothingMessages.Show(this.player, "CyberMac: inventory or equipment system unavailable.");
       return;
     }
+    \#(wardrobe)
     let items: [TweakDBID] = [\#(ids)];
     let found: Int32 = 0;
     let equipped: Int32 = 0;
@@ -90,8 +102,13 @@ public class CyberMacClothingCallback extends DelayCallback {
       let check: ref<CyberMacClothingCallback> = new CyberMacClothingCallback();
       check.player = this.player;
       check.verifyOnly = true;
+      check.wardrobePaused = this.wardrobePaused;
       GameInstance.GetDelaySystem(this.player.GetGame()).DelayCallback(check, 2.0);
     } else {
+      if this.wardrobePaused { missing += " Wardrobe set disabled for this test; presets kept."; }
+      if ItemID.IsValid(eq.GetActiveItem(this.player, gamedataEquipmentArea.Outfit)) {
+        missing += " A full-body outfit is equipped and may hide the clothes.";
+      }
       CyberMacClothingMessages.Show(this.player, "CyberMac: " + IntToString(found) + "/4 NEW clothes in inventory; " + IntToString(equipped) + "/4 equipped. Check clothing inventory. Wardrobe outfits can hide them." + missing);
     }
   }
@@ -102,6 +119,7 @@ private final func GetInventoryItemDataInternal(owner: wref<GameObject>, itemDat
   let result: InventoryItemData = wrappedMethod(owner, itemData, itemRecord);
   if IsDefined(itemData) && StrBeginsWith(CyberMacClothingMessages.Name(ItemID.GetTDBID(itemData.GetID())), "CyberMac") {
     InventoryItemData.SetName(result, CyberMacClothingMessages.Name(ItemID.GetTDBID(itemData.GetID())));
+    InventoryItemData.SetIconPath(result, CyberMacClothingMessages.DonorIcon(ItemID.GetTDBID(itemData.GetID()), Equals(this.m_ItemIconGender, ItemIconGender.Male)));
   }
   return result;
 }
@@ -111,7 +129,26 @@ private final func GetInventoryItemDataFromItemRecordInternal(itemRecord: ref<It
   let result: InventoryItemData = wrappedMethod(itemRecord);
   if IsDefined(itemRecord) && StrBeginsWith(CyberMacClothingMessages.Name(itemRecord.GetID()), "CyberMac") {
     InventoryItemData.SetName(result, CyberMacClothingMessages.Name(itemRecord.GetID()));
+    InventoryItemData.SetIconPath(result, CyberMacClothingMessages.DonorIcon(itemRecord.GetID(), Equals(this.m_ItemIconGender, ItemIconGender.Male)));
   }
+  return result;
+}
+
+@wrapMethod(UIInventoryItem)
+public final func GetIconPath() -> String {
+  let result: String = wrappedMethod();
+  let source: TweakDBID = CyberMacClothingMessages.Source(this.GetTweakDBID());
+  if source != this.GetTweakDBID() {
+    return UIInventoryItemsManager.ResolveItemIconName(source, TweakDBInterface.GetItemRecord(source), this.m_manager);
+  }
+  return result;
+}
+
+@wrapMethod(UIInventoryItem)
+public final func GetName() -> String {
+  let result: String = wrappedMethod();
+  let name: String = CyberMacClothingMessages.Name(this.GetTweakDBID());
+  if IsStringValid(name) { return name; }
   return result;
 }
 
@@ -133,6 +170,15 @@ protected cb func OnScreenMessageUpdate(value: Variant) -> Bool {
 }
 
 public class CyberMacClothingMessages extends IScriptable {
+  public static func Source(id: TweakDBID) -> TweakDBID {
+\#(sources)
+    return id;
+  }
+
+  public static func DonorIcon(id: TweakDBID, useMale: Bool) -> String {
+    return NameToString(IconsNameResolver.GetIconsNameResolver().TranslateItemToIconName(CyberMacClothingMessages.Source(id), useMale));
+  }
+
   public static func Name(id: TweakDBID) -> String {
 \#(names)
     return "";

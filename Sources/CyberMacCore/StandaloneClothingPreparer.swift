@@ -40,6 +40,16 @@ public struct StandaloneClothingPreparer {
         var receipts: [AddonProbeTweakDBCloneRecordReport] = []
         let assets = try lucyAssets.map { try LucyClothingAssets(manifestURL: $0) }
         let pieces = assets == nil ? StandaloneClothingSource.pieces : StandaloneClothingSource.lucyPieces
+        // Compile before staging large archives/databases so invalid helpers fail early.
+        let source = output.appendingPathComponent("StandaloneClothing.reds")
+        try Data(StandaloneClothingSource.render(pieces: pieces, showPhysicalClothes: assets != nil).utf8).write(to: source)
+        let compiled = output.appendingPathComponent("clothing.redscripts")
+        let result = try ProcessRunner().run(executableURL: compiler,
+            arguments: ["compile", "-s", source.path, "-b", originalScripts.path, "-o", compiled.path], timeoutSeconds: 60)
+        try Data((result.stdout + result.stderr).utf8).write(to: output.appendingPathComponent("compile.log"))
+        guard try PathSafety.fileSize(url: compiled) > 0 else { throw CyberMacError.invalidInput("Compiler produced an empty clothing cache.") }
+        let compiledSHA = try PathSafety.sha256(url: compiled)
+        guard compiledSHA != EquipProbePreparer.originalSHA else { throw CyberMacError.invalidInput("Clothing helper is unmodified.") }
         if let assets {
             files += try assets.stage(game: game, output: output, originalAppearance: originalAppearance, seals: seals)
         } else if originalAppearance != nil {
@@ -61,7 +71,9 @@ public struct StandaloneClothingPreparer {
                 let folder = output.appendingPathComponent("\(filename)-piece-\(index)")
                 let report = try TweakDBCloneRecordStager().stage(request: .init(fileURL: current,
                     outputDirectoryURL: folder, sourceRecord: piece.source, newRecord: piece.record,
-                    overrides: assets == nil ? [] : [.cName(property: "entityName", value: "cybermac_lucy_" + ["jacket", "top", "pants", "boots"][index])]))
+                    overrides: assets == nil ? [] : [
+                        .cName(property: "entityName", value: "cybermac_lucy_" + ["jacket", "top", "pants", "boots"][index]),
+                        .cName(property: "appearanceName", value: "cybermac_lucy_" + ["jacket", "top", "pants", "boots"][index] + "_")]))
                 guard report.conclusions.contains(.newRecordResolved), report.stagedRecordsSortedByID,
                       report.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID) else {
                     throw CyberMacError.invalidInput("Cloned clothing did not pass structural checks: \(piece.record)")
@@ -82,15 +94,6 @@ public struct StandaloneClothingPreparer {
             files.append(File(target: target.path, original: backup.path, originalSHA256: originalSHA,
                 staged: final.path, stagedSHA256: try PathSafety.sha256(url: final)))
         }
-        let source = output.appendingPathComponent("StandaloneClothing.reds")
-        try Data(StandaloneClothingSource.render(pieces: pieces).utf8).write(to: source)
-        let compiled = output.appendingPathComponent("clothing.redscripts")
-        let result = try ProcessRunner().run(executableURL: compiler,
-            arguments: ["compile", "-s", source.path, "-b", originalScripts.path, "-o", compiled.path], timeoutSeconds: 60)
-        try Data((result.stdout + result.stderr).utf8).write(to: output.appendingPathComponent("compile.log"))
-        guard try PathSafety.fileSize(url: compiled) > 0 else { throw CyberMacError.invalidInput("Compiler produced an empty clothing cache.") }
-        let compiledSHA = try PathSafety.sha256(url: compiled)
-        guard compiledSHA != EquipProbePreparer.originalSHA else { throw CyberMacError.invalidInput("Clothing helper is unmodified.") }
         try EquipProbePreparer.verify(game.executableURL, sha256: EquipProbePreparer.executableSHA)
         try EquipProbePreparer.verify(compiler, sha256: EquipProbePreparer.compilerSHA)
         try EquipProbePreparer.verify(originalScripts, sha256: EquipProbePreparer.originalSHA)
@@ -116,7 +119,7 @@ public struct StandaloneClothingPreparer {
         }
         try JSONEncoder.cybermac.encode(Manifest(gameApp: game.appURL.path, files: files,
             items: pieces, compiledSHA256: compiledSHA,
-            gameplay: assets == nil ? "unverified; new records keep vanilla appearances and icons" : "unverified; isolated Lucy outfit for feminine V; original inventory icons retained")).write(to: output.appendingPathComponent("clothing.json"))
+            gameplay: assets == nil ? "unverified; new records keep vanilla appearances and donor icon lookup" : "unverified v2; isolated Lucy appearance names for feminine V; donor icon lookup; active wardrobe set disabled for test")).write(to: output.appendingPathComponent("clothing.json"))
         try JSONEncoder.cybermac.encode(receipts).write(to: output.appendingPathComponent("clone-receipts.json"))
         complete = true
         return output
@@ -170,7 +173,7 @@ public struct StandaloneClothingPreparer {
         for file in files { result += VerifiedFileReplacement.command(source: file.staged, target: file.target, sha256: file.stagedSHA256) + "\n" }
         result += VerifiedFileReplacement.command(source: compiled.path, target: auxiliary.path, sha256: compiledSHA, requiresAbsentDestination: true) + "\n"
         result += "print 'Four NEW clothing records installed. Load a manual save; the clothes will be added and equipment requested after three seconds.'\n"
-        result += "print 'Keep your reference save untouched. \(lucy ? "These are separate Lucy clothing items for feminine V, with the original inventory icons." : "These are separate records with vanilla looks.") Active wardrobe outfits can hide the equipped pieces.'\n"
+        result += "print 'Keep your reference save untouched. \(lucy ? "Lucy v2 uses unique appearance names and donor icon lookup. An active wardrobe set is disabled for this test; saved presets are kept." : "These are separate records with vanilla looks. Active wardrobe outfits can hide the equipped pieces.")'\n"
         result += "/usr/bin/open -W \(PathSafety.shellQuoted(game.appURL.path)) --args \(PathSafety.shellQuoted("-scriptsBlobPath=" + auxiliary.path))\n"
         return result
     }

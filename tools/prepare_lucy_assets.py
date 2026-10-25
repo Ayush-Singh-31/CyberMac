@@ -137,6 +137,32 @@ def remap(value, mappings):
         for child in value:
             remap(child, mappings)
 
+def isolate_appearance_names(entity, app, old_prefix, new_prefix):
+    """Give the template selectors and appearance definitions separate identities.
+
+    Keeping donor selector names can reuse an appearance cached for that donor.
+    A valid female TPP default also makes spawning without a selector explicit.
+    Every FPP/TPP/partial suffix still selects its original compiled definition.
+    """
+    entries = entity['Data']['RootChunk']['appearances']
+    definitions = app['Data']['RootChunk']['appearances']
+    names = {a['Data']['name']['$value']: new_prefix + a['Data']['name']['$value'] for a in definitions}
+    require(len(names) == len(definitions), 'Duplicate source appearance definitions')
+    for definition in definitions:
+        definition['Data']['name']['$value'] = names[definition['Data']['name']['$value']]
+        parent = definition['Data'].get('parentAppearance')
+        if parent and parent.get('$value') in names:
+            parent['$value'] = names[parent['$value']]
+    for entry in entries:
+        old = entry['name']['$value']
+        require(old.startswith(old_prefix + '&Female'), 'Unexpected template selector')
+        entry['name']['$value'] = new_prefix + old[len(old_prefix):]
+        require(entry['appearanceName']['$value'] in names, 'Unresolved template appearance')
+        entry['appearanceName']['$value'] = names[entry['appearanceName']['$value']]
+    defaults = [e for e in entries if '&FPP' not in e['name']['$value'] and '&Part' not in e['name']['$value']]
+    require(len(defaults) == 1, 'Expected one full female third-person default')
+    entity['Data']['RootChunk']['defaultAppearance']['$value'] = defaults[0]['name']['$value']
+
 def canonical_graph(value):
     """Compare complete values and reference relationships despite ID renumbering.
 
@@ -334,6 +360,8 @@ def main():
         names = {a['appearanceName']['$value'] for a in entity['Data']['RootChunk']['appearances']}
         app['Data']['RootChunk']['appearances'] = [a for a in app['Data']['RootChunk']['appearances'] if a['Data']['name']['$value'] in names]
         require({a['Data']['name']['$value'] for a in app['Data']['RootChunk']['appearances']} == names, 'Incomplete female appearances')
+        recipe['appearanceName'] = recipe['entityName'] + '_'
+        isolate_appearance_names(entity, app, recipe['prefix'], recipe['appearanceName'])
         for path in depot_paths(app):
             if path.endswith('.ent'):
                 parts.add(path)
@@ -396,7 +424,7 @@ def main():
         require(all(d in official or d in resources for d in dependencies), 'Unresolved asset dependency')
     archive_path = args.out / 'lucy-isolated.archive'
     write_archive(archive_path, resources)
-    manifest = dict(version=1, archive=archive_path.name, archiveSHA256=sha(archive_path),
+    manifest = dict(version=2, archive=archive_path.name, archiveSHA256=sha(archive_path),
         jacketSHA256=JACKET_SHA, clothesSHA256=CLOTHES_SHA, recipes=recipes, generated=entries,
         tooling=dict(wolvenkitDLLSHA256=sha(args.wolvenkit_dll), krakenSHA256=sha(args.kraken)),
         resourceHashes=[f'0x{k:016x}' for k in sorted(resources)],

@@ -28,8 +28,10 @@ the same four records isolated Lucy outfit resources for feminine V. It installs
 both databases, adds separate assets to the appearance archive, appends four
 factory mappings in the gamedata archive and uses the explicit script-cache
 route, then restores all four files after exit. Original garment assets and
-factory rows remain intact. Lucy gameplay and item-name display still require
-the combined test; icons remain the original donors'.
+factory rows remain intact. The first isolated package renders Lucy in inventory and Photo Mode but shows
+donor clothing in gameplay and blank thumbnails. V2 gives the appearances unique
+names and resolving defaults, uses donor icon lookup, and disables an active
+wardrobe set for the combined test. The gameplay mismatch remains unverified.
 See [Lucy duplicates](appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,

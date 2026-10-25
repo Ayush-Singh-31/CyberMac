@@ -9,6 +9,24 @@ import zlib
 import prepare_lucy_assets as assets
 
 class LucyAssetsTests(unittest.TestCase):
+    def test_isolated_names_resolve_all_camera_and_partial_variants(self):
+        def name(value):
+            return {'$value': value}
+        selectors = ['&Female&TPP&Full', '&Female&FPP&Full', '&Female&TPP&Part', '&Female&FPP&Part']
+        definitions = ['full', 'fpp', 'partial', 'fpp_partial']
+        entity = {'Data': {'RootChunk': {'defaultAppearance': name('default'), 'appearances': [
+            {'name': name('donor_' + suffix), 'appearanceName': name(appearance)}
+            for suffix, appearance in zip(selectors, definitions)]}}}
+        app = {'Data': {'RootChunk': {'appearances': [{'Data': {'name': name(n)}} for n in definitions]}}}
+        assets.isolate_appearance_names(entity, app, 'donor_', 'lucy_')
+        root = entity['Data']['RootChunk']
+        self.assertEqual(root['defaultAppearance']['$value'], 'lucy_&Female&TPP&Full')
+        lookup = {a['Data']['name']['$value'] for a in app['Data']['RootChunk']['appearances']}
+        for selector, entry in zip(selectors, root['appearances']):
+            self.assertEqual(entry['name']['$value'], 'lucy_' + selector)
+            self.assertIn(entry['appearanceName']['$value'], lookup)
+        self.assertTrue(lookup.isdisjoint(definitions))
+
     def test_reference_renumbering_preserves_aliases_and_detects_retargeting(self):
         before = {'a': {'HandleId': '17', 'Data': {'x': 7}}, 'b': {'HandleId': '28', 'Data': {'x': 8}}, 'ref': {'HandleRefId': '17'}}
         after = {'a': {'HandleId': '0', 'Data': {'x': 7}}, 'b': {'HandleId': '1', 'Data': {'x': 8}}, 'ref': {'HandleRefId': '0'}}

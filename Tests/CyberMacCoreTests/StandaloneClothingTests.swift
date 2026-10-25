@@ -101,7 +101,7 @@ final class StandaloneClothingTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Lucy recipe \(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let manifest: [String: Any] = ["version": 1, "archive": "../outside.archive", "archiveSHA256": "unused",
+        let manifest: [String: Any] = ["version": 2, "archive": "../outside.archive", "archiveSHA256": "unused",
             "jacketSHA256": "85a010c28a0ca96c689f5fde2f97ec6f3e5be583f7cc9fd2e89b93a3c73db9ab",
             "clothesSHA256": "c8d434ce62e2f5eca2d2ec0c4274f7acca3a48c35db45035d19f7cb22a0a1c8f",
             "resourceHashes": [], "originalMeshHashes": []]

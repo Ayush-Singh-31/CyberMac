@@ -731,3 +731,75 @@ SHA-256 is `a6628aff723cad03c9170ddb31789e6b9fbb68f5f78624fce7fd8d4c5a46a621`.
 The records-checksum header is still preserved rather than recomputed, as in the
 prior duplicate package. Offline checks cannot prove appearance loading, fit,
 first-person rendering or inventory labels in gameplay.
+
+### First isolated-outfit result and v2 correction — 25 October
+
+The user reports all four new items can be equipped and unequipped. Lucy clothing
+renders on the inventory character and in Photo Mode. Both looking down during
+play and viewing V on a bike show the donor clothes. Item thumbnail images are
+blank. This establishes partial asset loading and usable items; normal gameplay
+rendering is not yet working. The user confirmed the game was closed before v2
+preparation. Do not mark the gameplay mismatch resolved from offline checks.
+
+Two different paths matter here:
+
+- Every donor's `iconPath` is empty. The actual 2.5 inventory code falls back to
+  `IconsNameResolver.TranslateItemToIconName` using the TweakDB item ID. A clone
+  has no entry in that native lookup. V2 explicitly resolves the donor ID in
+  both legacy InventoryDataManagerV2 builders and UIInventoryItem.GetIconPath.
+  The latter returns the normal UIInventoryItemsManager result with its gender
+  handling and `UIIcon.` prefix. A modern UIInventoryItem.GetName wrapper also
+  applies CyberMac Lucy labels. Each wrapper calls the original first and only
+  overrides our four IDs; native icon methods themselves are not wrapped.
+- V1 kept the donors' full appearance selectors and short definition names.
+  V2 gives the TweakDB `appearanceName`, template selectors and referenced .app
+  definitions unique `cybermac_lucy_*` identities. Each root's defaultAppearance
+  now names its actual female TPP/full entry instead of an absent `default`.
+  The original FPP/TPP/full/partial suffix combinations remain intact. Avoiding
+  donor appearance-name reuse is a correction candidate for runtime caching;
+  the cause of the user's gameplay mismatch is not proven. No existing garment
+  selectors or definitions are changed.
+
+The source package still has 42 archive records. Its manifest version is now 2;
+regenerate a v1 manifest before using the new preparer, because the database
+appearanceName overrides and rebuilt selectors must agree. The new four records
+append eight CNames per database (entity name plus appearance prefix per piece).
+The TweakDB record IDs remain the same, so the helper reuses already owned items.
+Asset preparation verifies all 13 rebuilt resource graphs by rereading them.
+An independent lookup audit checks that each selector references a real unique
+appearance definition, every default resolves, all original female suffix
+combinations survive, and each root points to its separate .app resource.
+
+For this combined Lucy test, the helper now disables an active wardrobe set
+before delivery/equipment so that physical clothing is visible. This is an
+intentional change from v1, which left wardrobe sets active. Saved presets are
+kept; the HUD reports when a set was disabled. The vanilla duplicate workflow
+keeps its previous wardrobe behavior. A full-body Outfit item is not forcibly
+removed, because it may be quest equipment; the helper reports it if present.
+Keep the reference manual save untouched. File restoration does not undo any
+wardrobe/inventory changes written into a save.
+
+Compilation now runs before large archive/database staging, so an invalid helper
+fails before that work. Originals and pinned tools are still verified again at
+the end. Prepared v2 workspace: `.research/lucy-clothing-v2`; asset bundle:
+`.research/lucy-assets-v2`. Use its **Run New Clothing.command** for the next
+combined check of inventory images/names, Photo Mode, bike and first-person views.
+This is not an additional menu-marker experiment.
+
+Validation so far: all 581 Swift tests and four Python tests pass. The official
+0.5.32 compiler accepts the new helper against the original 2.5 cache. Native
+staging and the final independent database, archive and wrapper audits are
+recorded with the local prepared package. Runtime appearance consistency and
+actual thumbnail display remain unverified until the combined game test.
+
+Final v2 audits passed: both databases preserve every original record/flat/typed
+value and add exactly four records, 360 flats and eight CNames. The only original
+archive record changed is the clothing factory; 41 resources are inserted in the
+appearance archive and their payloads/dependencies match the asset bundle.
+Streamed bytecode comparison preserves all six wrapped original method bodies,
+including both modern UIInventoryItem getters. Both generated commands pass zsh
+syntax checks. Helper SHA-256:
+`b41964150862073ec5ef3cad263a5be72dade5954c65d73d1bdecc75651bcb7b`.
+Verified generated v1 archive/database/helper payloads were retired to save space;
+all original restore files and audit evidence remain. The old v1 launch path now
+forwards to the v2 launcher rather than reinstalling the known partial result.
