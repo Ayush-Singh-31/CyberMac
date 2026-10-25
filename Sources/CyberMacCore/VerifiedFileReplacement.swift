@@ -23,12 +23,12 @@ enum VerifiedFileReplacement {
         payload="$temporary/payload"
         trap '/bin/rm -f "$payload"; /bin/rmdir "$temporary"' EXIT
         /bin/cp -c "$source" "$payload"
-        actual=$(/usr/bin/shasum -a 256 "$payload")
+        actual=$(/usr/bin/openssl dgst -sha256 -r "$payload")
         [ "${actual%% *}" = "$expected" ] || fail 'Replacement hash does not match; destination was left unchanged.'
         /bin/chmod 644 "$payload"
         \(ownership)
         \(placement)
-        actual=$(/usr/bin/shasum -a 256 "$target")
+        actual=$(/usr/bin/openssl dgst -sha256 -r "$target")
         [ "${actual%% *}" = "$expected" ] || fail 'Installed file failed verification.'
         """
         return "/bin/sh -c \(PathSafety.shellQuoted(script))"

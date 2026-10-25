@@ -3,10 +3,11 @@ import CyberMacCore
 
 enum StandaloneClothingCommands {
     static func run(_ args: [String]) throws {
-        guard args.first == "prepare" else {
+        let refresh = args.first == "refresh"
+        guard args.first == "prepare" || refresh else {
             throw CyberMacError.invalidInput("Use clothing prepare --compiler <redscript-cli> --original-scripts <verified-original> --out-dir <new-folder> [--game-app <app>] [--lucy-assets <manifest> --original-appearance <existing-original-archive>].")
         }
-        let allowed: Set<String> = ["--compiler", "--original-scripts", "--out-dir", "--game-app", "--lucy-assets", "--original-appearance"]
+        let allowed: Set<String> = refresh ? ["--out-dir", "--game-app"] : ["--compiler", "--original-scripts", "--out-dir", "--game-app", "--lucy-assets", "--original-appearance"]
         var values: [String: String] = [:]
         var index = 1
         while index < args.count {
@@ -15,10 +16,16 @@ enum StandaloneClothingCommands {
                   !args[index + 1].hasPrefix("--") else { throw CyberMacError.invalidInput("Unknown, missing or repeated clothing option: \(key)") }
             values[key] = args[index + 1]; index += 2
         }
-        guard let compiler = values["--compiler"], let original = values["--original-scripts"], let output = values["--out-dir"] else {
-            throw CyberMacError.invalidInput("Clothing preparation needs --compiler, --original-scripts and --out-dir.")
-        }
+        guard let output = values["--out-dir"] else { throw CyberMacError.invalidInput("Clothing commands need --out-dir.") }
         let game = try GameInstallDetector().detect(preferredAppPath: values["--game-app"])
+        if refresh {
+            try StandaloneClothingPreparer().refreshCommands(game: game, output: PathSafety.expandedURL(from: output))
+            print("Launch and recovery commands updated. Existing payloads and restore files reused; no game files changed.")
+            return
+        }
+        guard let compiler = values["--compiler"], let original = values["--original-scripts"] else {
+            throw CyberMacError.invalidInput("Clothing preparation needs --compiler and --original-scripts.")
+        }
         let folder = try StandaloneClothingPreparer().prepare(game: game, compiler: PathSafety.expandedURL(from: compiler),
             originalScripts: PathSafety.expandedURL(from: original), output: PathSafety.expandedURL(from: output),
             lucyAssets: values["--lucy-assets"].map(PathSafety.expandedURL(from:)),

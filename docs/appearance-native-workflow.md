@@ -803,3 +803,67 @@ syntax checks. Helper SHA-256:
 Verified generated v1 archive/database/helper payloads were retired to save space;
 all original restore files and audit evidence remain. The old v1 launch path now
 forwards to the v2 launcher rather than reinstalling the known partial result.
+
+### V2 confirmed in gameplay; launch/recovery performance — 25 October
+
+The user confirms Lucy now appears everywhere they checked and the inventory
+icons show the donor garments. This is the first user-confirmed complete outfit
+result across gameplay and preview views for the independent records. V2 changed
+appearance names/defaults and wardrobe handling together, so this does not isolate
+which change resolved the earlier gameplay mismatch. Save persistence and custom
+Lucy thumbnail artwork are still separate from this result.
+
+The user reported slow launch/cleanup and worried about large copies. Read-only
+checks found cleanup had already finished: both archives and both databases
+matched original hashes, the auxiliary helper was absent, no placement temporary
+folders remained, and Terminal had returned to an idle shell. The generated
+commands use `cp -c` APFS clones and same-volume placement, not new full backups
+per run. Retained prepared/restore files are required for the next launch; they
+share original archive extents. Obsolete v1 staged payloads were already retired;
+the additional unused v1 asset archive has now been removed after hash verification.
+No original restore file was removed.
+
+The old scripts repeatedly streamed the archives through `/usr/bin/shasum`.
+Startup read each file five times across preflight, verified clone and installed
+file checks. Cleanup could read a changed file six times: backup, original-hash
+attempt, staged-hash attempt, repeated original-hash attempt, clone and installed
+file. The optimized commands use the faster built-in OpenSSL SHA-256 implementation
+with identical digest results. Recovery hashes current content once, distinguishes
+original/staged/unknown from that digest and validates a backup only if needed.
+It retains the cloned-payload and installed-file SHA-256 checks. A changed file
+therefore needs four full reads instead of six; an already-original file needs
+one and no restore-copy access. An already-complete cleanup with no auxiliary
+also needs no administrator refresh.
+
+Per-invocation file identities (device/inode/size/mtime/ctime) catch intervening
+updates/replacements before placement or skipping a file. This is not a persistent
+hash cache; every invocation validates content again. Unknown hashes, changed
+restore copies and process-check failures still stop before replacement. Progress
+messages now name the file being checked/restored and end with an explicit
+“Finished … You can close this window.”
+
+`cybermac clothing refresh --out-dir <existing-workspace>` verifies the pinned game,
+original resource seals, all prepared/restore payloads and helper, requires the
+game and existing launch/recovery commands to be closed, and atomically rewrites
+only the two small shell commands. It does not recompile the helper, rebuild the
+databases/archives, create restore copies or change the installed game. The active
+`.research/lucy-clothing-v2` launch path is retained.
+
+New executable fixture coverage checks mixed original/staged recovery, hash read
+counts, cleanup of temporary clones, already-original recovery with missing
+backups and denied sudo, unexpected hashes/bad backups, and a target replaced
+between verification and placement. Shared VerifiedFileReplacement tests still
+check failed clone/hash, source/old inode preservation, exclusive creation and
+symlink refusal. Local benchmark and final validation evidence are retained under
+`.research/clothing-performance`.
+
+Final performance validation: all 585 tests pass (567 core, 18 app). On the actual
+6,994,468,864-byte appearance archive, the old SHA-256 command took 16.125 seconds
+and OpenSSL took 3.417 seconds, producing the same sealed digest. The refreshed
+launch preflight took 15.409 seconds; already-original recovery took 5.357 seconds
+with administrator actions explicitly blocked. This does not time a full modified
+installation/restore or a game launch. Actual modified-state recovery is covered
+by executable fixtures, including retained post-placement content verification.
+The two active v2 command files were refreshed in place with their existing
+payload hashes, and both pass zsh syntax checks. No game files, outfit assets,
+helper bytecode or new backup files were created or changed by this refresh.

@@ -31,7 +31,9 @@ route, then restores all four files after exit. Original garment assets and
 factory rows remain intact. The first isolated package renders Lucy in inventory and Photo Mode but shows
 donor clothing in gameplay and blank thumbnails. V2 gives the appearances unique
 names and resolving defaults, uses donor icon lookup, and disables an active
-wardrobe set for the combined test. The gameplay mismatch remains unverified.
+wardrobe set for the combined test. The user now confirms Lucy appears everywhere
+and donor thumbnail images render. This fulfills the four-piece standalone
+clothing test; arbitrary mod imports and body-shape support remain future work.
 See [Lucy duplicates](appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,
