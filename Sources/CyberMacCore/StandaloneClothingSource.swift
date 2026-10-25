@@ -1,7 +1,7 @@
 import Foundation
 
 /// A real inventory grant and equipment request, using the created instance ID.
-/// The separate record deliberately keeps the donor's vanilla visual resources.
+/// Both vanilla duplicate and isolated Lucy packages use the same item IDs.
 enum StandaloneClothingSource {
     struct Piece: Codable, Sendable {
         let source: String
@@ -16,7 +16,11 @@ enum StandaloneClothingSource {
         .init(source: "Items.Boots_01_basic_01", record: "Items.CyberMac_Standalone_Boots", label: "CyberMac Boots")
     ]
 
-    static func render() -> String {
+    static var lucyPieces: [Piece] {
+        pieces.map { .init(source: $0.source, record: $0.record, label: $0.label.replacingOccurrences(of: "CyberMac ", with: "CyberMac Lucy ")) }
+    }
+
+    static func render(pieces: [Piece] = Self.pieces) -> String {
         let ids = pieces.map { "t\"\($0.record)\"" }.joined(separator: ", ")
         let names = pieces.map { "    if id == t\"\($0.record)\" { return \"\($0.label)\"; }" }.joined(separator: "\n")
         return #"""

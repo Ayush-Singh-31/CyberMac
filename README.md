@@ -24,8 +24,11 @@ current target is usable **standalone items**. `clothing prepare` now prepares
 four independent clothing records, their inventory labels, automatic delivery
 and equipment requests using actual inventory instance IDs. It also fixes
 inherited item properties omitted by the earlier clone writer. The prepared
-pieces keep vanilla looks and icons. Runtime visibility and equipment remain
-unverified; see the [combined clothing workflow](docs/appearance-native-workflow.md#standalone-clothing-records-and-delivery--25-october).
+vanilla duplicate test received a player report of clothes automatically equipped;
+exact item identities remain unconfirmed. The next package now connects those
+four records to isolated **Lucy jacket, top, pants and boots** assets, preserving
+original garments. It is prepared for one combined gameplay test; original
+inventory icons remain. See the [Lucy duplicate workflow](docs/appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
 
 ## Current support
 

@@ -73,14 +73,20 @@ final class StandaloneClothingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let game = GameInstall(appURL: root.appendingPathComponent("Game.app"), executableURL: root.appendingPathComponent("Game.app/Contents/MacOS/Cyberpunk2077"), dataURL: root.appendingPathComponent("Game.app/Contents/Data"), archiveMacURL: nil, r6URL: nil, storefront: .macAppStore, displayName: "Fixture")
         let originalHash = String(repeating: "a", count: 64), stagedHash = String(repeating: "b", count: 64)
-        let files = [StandaloneClothingPreparer.File(target: root.appendingPathComponent("game.bin").path,
-            original: root.appendingPathComponent("original.bin").path, originalSHA256: originalHash,
-            staged: root.appendingPathComponent("staged.bin").path, stagedSHA256: stagedHash)]
+        // The Lucy package restores two archives as well as both databases.
+        let files = ["appearance.archive", "gamedata.archive", "tweakdb.bin", "tweakdb_ep1.bin"].map { name in
+            StandaloneClothingPreparer.File(target: root.appendingPathComponent(name).path,
+                original: root.appendingPathComponent("original-" + name).path, originalSHA256: originalHash,
+                staged: root.appendingPathComponent("staged-" + name).path, stagedSHA256: stagedHash)
+        }
         let script = root.appendingPathComponent("final.redscripts"), aux = root.appendingPathComponent("aux.redscripts")
         let restore = root.appendingPathComponent("restore.command")
         let source = StandaloneClothingPreparer.restoreScript(files: files, executable: game.executableURL,
             scripts: script, auxiliary: aux, compiledSHA: stagedHash)
-        XCTAssertFalse(source.contains(files[0].staged), "Recovery must survive removal of generated database payloads")
+        for file in files {
+            XCTAssertFalse(source.contains(file.staged), "Recovery must survive removal of generated payloads")
+            XCTAssertTrue(source.contains(PathSafety.shellQuoted(file.original)))
+        }
         XCTAssertTrue(source.contains(originalHash)); XCTAssertTrue(source.contains(stagedHash))
         let run = StandaloneClothingPreparer.runScript(files: files, game: game, scripts: script, auxiliary: aux,
             compiled: root.appendingPathComponent("compiled.redscripts"), compiledSHA: stagedHash, restore: restore)
@@ -88,6 +94,21 @@ final class StandaloneClothingTests: XCTestCase {
         for (index, content) in [source, run].enumerated() {
             let file = root.appendingPathComponent("\(index).command"); try Data(content.utf8).write(to: file)
             _ = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/zsh"), arguments: ["-n", file.path], timeoutSeconds: 5)
+        }
+    }
+
+    func testLucyRecipeRejectsArchivePathTraversalBeforeReadingPayload() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Lucy recipe \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manifest: [String: Any] = ["version": 1, "archive": "../outside.archive", "archiveSHA256": "unused",
+            "jacketSHA256": "85a010c28a0ca96c689f5fde2f97ec6f3e5be583f7cc9fd2e89b93a3c73db9ab",
+            "clothesSHA256": "c8d434ce62e2f5eca2d2ec0c4274f7acca3a48c35db45035d19f7cb22a0a1c8f",
+            "resourceHashes": [], "originalMeshHashes": []]
+        let url = root.appendingPathComponent("lucy-assets.json")
+        try JSONSerialization.data(withJSONObject: manifest).write(to: url)
+        XCTAssertThrowsError(try LucyClothingAssets(manifestURL: url)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Unsupported Lucy asset recipe"))
         }
     }
 }

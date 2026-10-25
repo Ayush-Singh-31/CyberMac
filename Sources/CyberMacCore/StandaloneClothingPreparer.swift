@@ -13,7 +13,8 @@ public struct StandaloneClothingPreparer {
 
     public init() {}
 
-    public func prepare(game: GameInstall, compiler: URL, originalScripts: URL, output: URL) throws -> URL {
+    public func prepare(game: GameInstall, compiler: URL, originalScripts: URL, output: URL,
+                        lucyAssets: URL? = nil, originalAppearance: URL? = nil) throws -> URL {
         let gameRoot = game.appURL.resolvingSymlinksInPath().path
         let resolved = EquipProbePreparer.resolvedPath(output)
         guard resolved != gameRoot, !resolved.hasPrefix(gameRoot + "/"),
@@ -37,6 +38,13 @@ public struct StandaloneClothingPreparer {
         defer { if !complete { try? FileManager.default.removeItem(at: output) } }
         var files: [File] = []
         var receipts: [AddonProbeTweakDBCloneRecordReport] = []
+        let assets = try lucyAssets.map { try LucyClothingAssets(manifestURL: $0) }
+        let pieces = assets == nil ? StandaloneClothingSource.pieces : StandaloneClothingSource.lucyPieces
+        if let assets {
+            files += try assets.stage(game: game, output: output, originalAppearance: originalAppearance, seals: seals)
+        } else if originalAppearance != nil {
+            throw CyberMacError.invalidInput("--original-appearance requires --lucy-assets.")
+        }
         for filename in ["tweakdb.bin", "tweakdb_ep1.bin"] {
             let relative = "Data/r6/cache/\(filename)"
             guard let entry = seals[relative] as? [String: Any], let hash = entry["hash2"] as? Data, hash.count == 32 else {
@@ -49,10 +57,11 @@ public struct StandaloneClothingPreparer {
             try PathSafety.copySpaceEfficiently(from: target, to: backup)
             try EquipProbePreparer.verify(backup, sha256: originalSHA)
             var current = backup
-            for (index, piece) in StandaloneClothingSource.pieces.enumerated() {
+            for (index, piece) in pieces.enumerated() {
                 let folder = output.appendingPathComponent("\(filename)-piece-\(index)")
                 let report = try TweakDBCloneRecordStager().stage(request: .init(fileURL: current,
-                    outputDirectoryURL: folder, sourceRecord: piece.source, newRecord: piece.record))
+                    outputDirectoryURL: folder, sourceRecord: piece.source, newRecord: piece.record,
+                    overrides: assets == nil ? [] : [.cName(property: "entityName", value: "cybermac_lucy_" + ["jacket", "top", "pants", "boots"][index])]))
                 guard report.conclusions.contains(.newRecordResolved), report.stagedRecordsSortedByID,
                       report.touchedFlatKeyTables.allSatisfy(\.keyTableSortedByID) else {
                     throw CyberMacError.invalidInput("Cloned clothing did not pass structural checks: \(piece.record)")
@@ -74,7 +83,7 @@ public struct StandaloneClothingPreparer {
                 staged: final.path, stagedSHA256: try PathSafety.sha256(url: final)))
         }
         let source = output.appendingPathComponent("StandaloneClothing.reds")
-        try Data(StandaloneClothingSource.render().utf8).write(to: source)
+        try Data(StandaloneClothingSource.render(pieces: pieces).utf8).write(to: source)
         let compiled = output.appendingPathComponent("clothing.redscripts")
         let result = try ProcessRunner().run(executableURL: compiler,
             arguments: ["compile", "-s", source.path, "-b", originalScripts.path, "-o", compiled.path], timeoutSeconds: 60)
@@ -91,7 +100,7 @@ public struct StandaloneClothingPreparer {
         let restore = Self.restoreScript(files: files, executable: game.executableURL, scripts: gameScripts,
             auxiliary: auxiliary, compiledSHA: compiledSHA)
         let run = Self.runScript(files: files, game: game, scripts: gameScripts, auxiliary: auxiliary,
-            compiled: compiled, compiledSHA: compiledSHA, restore: restoreURL)
+            compiled: compiled, compiledSHA: compiledSHA, restore: restoreURL, lucy: assets != nil)
         for (name, contents) in [(restoreURL.lastPathComponent, restore), ("Run New Clothing.command", run)] {
             let file = output.appendingPathComponent(name)
             try Data(contents.utf8).write(to: file)
@@ -102,11 +111,12 @@ public struct StandaloneClothingPreparer {
             let files: [File]
             let items: [StandaloneClothingSource.Piece]
             let compiledSHA256: String
-            let gameplay = "unverified; new records keep vanilla appearances and icons"
+            let gameplay: String
             let limitations = "Offline TweakDB writer preserves the original records checksum. Runtime record acceptance, inventory display and equipment require the combined test."
         }
         try JSONEncoder.cybermac.encode(Manifest(gameApp: game.appURL.path, files: files,
-            items: StandaloneClothingSource.pieces, compiledSHA256: compiledSHA)).write(to: output.appendingPathComponent("clothing.json"))
+            items: pieces, compiledSHA256: compiledSHA,
+            gameplay: assets == nil ? "unverified; new records keep vanilla appearances and icons" : "unverified; isolated Lucy outfit for feminine V; original inventory icons retained")).write(to: output.appendingPathComponent("clothing.json"))
         try JSONEncoder.cybermac.encode(receipts).write(to: output.appendingPathComponent("clone-receipts.json"))
         complete = true
         return output
@@ -144,12 +154,12 @@ public struct StandaloneClothingPreparer {
             result += VerifiedFileReplacement.command(source: file.original, target: file.target, sha256: file.originalSHA256) + "\nfi\n"
         }
         result += "if [[ -f \(PathSafety.shellQuoted(auxiliary.path)) ]]; then sudo /bin/rm -- \(PathSafety.shellQuoted(auxiliary.path)); fi\n"
-        result += "print 'Original database files verified and restored. Temporary clothing helper removed.'\n"
+        result += "print 'Original game files verified and restored. Temporary clothing helper removed.'\n"
         return result
     }
 
     static func runScript(files: [File], game: GameInstall, scripts: URL, auxiliary: URL, compiled: URL,
-                          compiledSHA: String, restore: URL) -> String {
+                          compiledSHA: String, restore: URL, lucy: Bool = false) -> String {
         var result = preamble(executable: game.executableURL, scripts: scripts) + "\n"
         for file in files {
             result += "verify \(PathSafety.shellQuoted(file.target)) '\(file.originalSHA256)'\nverify \(PathSafety.shellQuoted(file.original)) '\(file.originalSHA256)'\nverify \(PathSafety.shellQuoted(file.staged)) '\(file.stagedSHA256)'\n"
@@ -160,7 +170,7 @@ public struct StandaloneClothingPreparer {
         for file in files { result += VerifiedFileReplacement.command(source: file.staged, target: file.target, sha256: file.stagedSHA256) + "\n" }
         result += VerifiedFileReplacement.command(source: compiled.path, target: auxiliary.path, sha256: compiledSHA, requiresAbsentDestination: true) + "\n"
         result += "print 'Four NEW clothing records installed. Load a manual save; the clothes will be added and equipment requested after three seconds.'\n"
-        result += "print 'Keep your reference save untouched. These are separate records with vanilla looks; active wardrobe outfits can hide the equipped pieces.'\n"
+        result += "print 'Keep your reference save untouched. \(lucy ? "These are separate Lucy clothing items for feminine V, with the original inventory icons." : "These are separate records with vanilla looks.") Active wardrobe outfits can hide the equipped pieces.'\n"
         result += "/usr/bin/open -W \(PathSafety.shellQuoted(game.appURL.path)) --args \(PathSafety.shellQuoted("-scriptsBlobPath=" + auxiliary.path))\n"
         return result
     }

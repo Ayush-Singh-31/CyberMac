@@ -21,12 +21,16 @@ four vanilla donors each supply 90 resolved property flats with this schema.
 The older failure's precise cause is not proven; missing inherited data is a
 concrete implementation defect, not a substitute for the combined runtime result.
 
-The new pieces initially retain their donors' vanilla looks and icons. They
-establish usable independent records before assigning isolated custom resources.
-The prepared command installs both updated databases and the proven explicit
-script-cache route, grants and requests equipment for all four pieces, then
-restores originals after exit. No appearance archive changes are required.
-See [standalone clothing](appearance-native-workflow.md#standalone-clothing-records-and-delivery--25-october).
+The first duplicate test used vanilla looks. The user subsequently reported
+several clothes automatically equipped, consistent with the delivery/equipment
+step, without confirming each individual ID. The next prepared package gives
+the same four records isolated Lucy outfit resources for feminine V. It installs
+both databases, adds separate assets to the appearance archive, appends four
+factory mappings in the gamedata archive and uses the explicit script-cache
+route, then restores all four files after exit. Original garment assets and
+factory rows remain intact. Lucy gameplay and item-name display still require
+the combined test; icons remain the original donors'.
+See [Lucy duplicates](appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
 
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and

@@ -140,6 +140,7 @@ struct CyberMacCLI {
           cybermac scan /path/to/mod.zip
           cybermac appearance inspect <mod.zip|mod.archive> [--archive-entry <path>] [--game-app <app>] [--home <directory>] [--json]
           cybermac clothing prepare --compiler <redscript-cli> --original-scripts <verified-original> --out-dir <new-folder> [--game-app <app>]
+            [--lucy-assets <lucy-assets.json> --original-appearance <existing-original-archive>]
           cybermac appearance stage <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance commands <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance verify <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]

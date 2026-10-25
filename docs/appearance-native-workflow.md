@@ -644,3 +644,90 @@ start the diagnostic recorder; no new recording exists for this clothing run.
 The next clothing milestone is distinct custom appearances for these new records
 while preserving the donor garments. This package still uses the donors' vanilla
 visuals and icons; the old Lucy replacement is not that milestone.
+
+### Lucy outfit on the four duplicates — 25 October
+
+The full outfit is now prepared on the same four independent item IDs: CyberMac
+Lucy Jacket, Top, Pants and Boots. This is an isolated-appearance implementation,
+not another original-garment replacement. Gameplay is still unverified. It targets
+feminine V and retains the donors' inventory icons. Active wardrobe outfits can
+hide physical equipped clothing; the helper preserves the selected wardrobe.
+
+`tools/prepare_lucy_assets.py` accepts the two existing pinned Lucy ZIPs, the game
+app, Python 3.11+, an installed WolvenKit CLI DLL, the dotnet executable and a
+working ARM64 Kraken library. It validates the original appearance/gamedata seals,
+extracts only the necessary resources and rebuilds their typed object graphs. The
+actual Shirt_01 donor uses `t1_shirt_01.app`, not the similarly named tshirt asset.
+It keeps the female basic_01 mappings and the jacket's FPP/TPP variants, clones
+four garment-part entities, and remaps references in both compiled component
+buffers and ordinary fields. Eight mod mesh payloads are re-keyed to unique
+`cybermac/lucy` paths without changing their bytes; the mod's 21 unique material,
+texture and ancillary resources are retained. Every rebuilt graph is reread and
+compared, canonicalizing handle/buffer numbering while preserving references.
+
+The result is a 42-record asset archive: 41 inserted resources plus one edited
+`base/gameplay/factories/items/clothing.csv`. The latter preserves every original
+row in both compiled and editable arrays and appends four `cybermac_lucy_*` keys
+pointing to the separate root entities. The original garment meshes, root
+entities and appearance resources are not replaced. Both database files keep all
+original records and flats; only the four duplicates' `entityName` values use
+these new factory keys. Their `appearanceName` and suffix behavior remain inherited.
+
+WolvenKit 8.18.0 does not recognize the current `PLATFORM_Mac` enum value and reads
+it as None. New isolated entities/appearances use the supported PC cooking marker,
+as do the original Lucy assets. For the one shared Mac factory resource, preparation
+restores the Mac marker after rebuilding, relocates string/name and chunk offsets,
+and recalculates the affected table/header CRCs. It then rereads correctly with
+all original rows intact and exactly four additions. See WolvenKit's
+[resource writer](https://github.com/WolvenKit/WolvenKit/blob/main/WolvenKit.RED4/Archive/IO/CR2WWriter.File.cs)
+and [archive writer](https://github.com/WolvenKit/WolvenKit/blob/main/WolvenKit.RED4/Archive/IO/ArchiveWriter.cs)
+for the format rules used. Native Swift independently validates the generated
+archive index CRC, selected payloads, metadata and dependency ranges when staging.
+
+Local tooling uses the already installed WolvenKit 8.18.0 in an APFS shared copy,
+with an ARM64 library built from
+[rarten/ooz](https://github.com/rarten/ooz/tree/360fc8ab9930123d7fe6ddac8c3fb43a67f037b0)
+and SSE2NEON. Only the local decoder/compressor library is replaced; the installed
+tool remains unchanged. The local source changes select SSE2NEON on ARM64, export
+Kraken_Decompress with C linkage, omit the CLI main, and export Kraken_Compress
+with WolvenKit's four-argument signature, delegating to CompressBlock codec 8.
+A 31,000-byte compression/decompression round trip matched exactly. No third-party
+binaries, game files or mod assets are added to Git. The local library SHA-256 is
+`535584287214f9828ff435fddd624a4fc99a23e14195ec09b2fba38e417f4073`;
+the SSE2NEON header SHA-256 is
+`932e41317cc325846256695d2aa83812ff6b6d065c8994b73a461efaf1f10bc3`.
+
+Developer preparation, after building the asset manifest with the Python tool:
+
+```sh
+cybermac clothing prepare --compiler <official-redscript-cli> \
+  --original-scripts <verified-original-cache> --out-dir <new-workspace> \
+  --lucy-assets <lucy-assets.json> \
+  --original-appearance <existing-verified-appearance-restore>
+```
+
+The existing appearance restore file is required and reused. Gamedata uses one
+APFS restore clone, and both staged archives share original extents: only appended
+assets/indexes and changed headers consume new archive blocks. Full archive-copy
+fallback is refused above 500 MB by the existing copy utility. No second full
+appearance backup is created. The combined launcher verifies all four originals,
+restore files and prepared files before installation; recovery verifies known
+current hashes before restoring. The main script cache stays untouched. Preparation
+itself never writes to the installed game or launches it.
+
+Prepared local command: `.research/lucy-clothing/Run New Clothing.command`.
+Recovery: `.research/lucy-clothing/Restore New Clothing.command`. Load an untouched
+manual save; wait for delivery/equipment and inspect the Lucy pieces. Preserve the
+reference save. A saved custom item needs this package installed on later loads;
+restoring files does not remove saved inventory changes.
+
+Validation: 581 Swift tests passed (563 core, 18 app); three Python tests cover
+reference-graph identity, archive segment/dependency preservation, and Mac marker
+relocation/checksums. Both actual commands pass zsh syntax checks. Independent
+binary audits preserve all original database records, flat keys and typed values,
+adding four records, 360 flats and four entity CNames per database. Streamed
+bytecode comparison preserves all four wrapped original method bodies. The helper
+SHA-256 is `a6628aff723cad03c9170ddb31789e6b9fbb68f5f78624fce7fd8d4c5a46a621`.
+The records-checksum header is still preserved rather than recomputed, as in the
+prior duplicate package. Offline checks cannot prove appearance loading, fit,
+first-person rendering or inventory labels in gameplay.
