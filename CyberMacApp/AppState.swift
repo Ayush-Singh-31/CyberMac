@@ -104,6 +104,11 @@ final class CyberMacAppState {
         }
     }
 
+    func cancelRefresh() {
+        guard currentTask == .refreshing, let id = currentTaskID else { return }
+        finishCurrentTask(id)
+    }
+
     func launchGame() async {
         await runTask(.launching, failureTitle: "Launch failed") { [container] in
             let plan = try container.makeLaunchPlan()
@@ -652,6 +657,7 @@ final class CyberMacAppState {
         do {
             let value = try await BackgroundTaskRunner.run(body)
             try Task.checkCancellation()
+            guard currentTaskID == taskID else { return false }
             finishCurrentTask(taskID)
             onSuccess(value)
             lastError = nil
@@ -663,6 +669,7 @@ final class CyberMacAppState {
             finishCurrentTask(taskID)
             return false
         } catch {
+            guard currentTaskID == taskID else { return false }
             finishCurrentTask(taskID)
             lastError = UserFacingError(title: failureTitle, message: String(describing: error))
             onError(error)

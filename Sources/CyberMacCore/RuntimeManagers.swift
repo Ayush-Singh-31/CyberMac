@@ -173,7 +173,7 @@ public struct RuntimeArchiveImporter: Sendable {
         return try? JSONDecoder.cybermac.decode(RuntimeMetadata.self, from: data)
     }
 
-    private static func versionString(from baseName: String) -> String? {
+    public static func versionString(from baseName: String) -> String? {
         let pattern = #"(?i)(?:^|[-_])v?([0-9]+(?:\.[0-9]+)+(?:[-_](?:preview|alpha|beta|rc)\.?[0-9]+)?)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(baseName.startIndex..<baseName.endIndex, in: baseName)

@@ -32,6 +32,10 @@ public struct AutomaticModInstaller: Sendable {
         switch route {
         case .blocked(let reason): return .blocked(reason)
         case .runtime(let kind):
+            if kind == .redscript, let game = gameOverride ?? (try? GameInstallDetector().detect()),
+               let issue = RedscriptCompatibility.setupIssue(runtimeVersion: RuntimeArchiveImporter.versionString(from: url.deletingPathExtension().lastPathComponent), gameVersion: try RedscriptCompatibility.gameVersion(game)) {
+                return .needsSetup(issue)
+            }
             let importer = RuntimeArchiveImporter(home: home)
             _ = try kind == .redscript ? importer.importRedscript(zipURL: url) : importer.importInputLoader(zipURL: url)
             return .runtimeReady("\(kind == .redscript ? "redscript" : "Input loader") imported. Continuing any mods waiting for setup.")
@@ -83,6 +87,9 @@ public struct AutomaticModInstaller: Sendable {
         guard runtime.installed else {
             return .needsSetup("Mod added to your library. Drop the macOS redscript release ZIP here to finish installation.")
         }
+        if let issue = RedscriptCompatibility.setupIssue(runtimeVersion: runtime.version, gameVersion: try RedscriptCompatibility.gameVersion(game)) {
+            return .needsSetup(issue)
+        }
         guard runtime.quarantinedPaths.isEmpty else {
             return .blocked("Mod added. The redscript tool is quarantined by macOS. Resolve it in Privacy & Security, then Retry.")
         }
@@ -99,7 +106,21 @@ public struct AutomaticModInstaller: Sendable {
             }
             _ = try base.refreshBaseCache(gameInstall: game, dryRun: false)
         }
-        let activation = try ActivationManager(home: home).activateBundleMode(gameInstall: game)
+        let activation: ActivationBundleModeResult
+        do {
+            activation = try ActivationManager(home: home).activateBundleMode(gameInstall: game)
+        } catch {
+            // A failed new import must not poison every later compilation.
+            // Keep its source for retry, but preserve mods already active in game.
+            if !StateStore(home: home).load().activeModIDs.contains(installed.id) {
+                do {
+                    _ = try ModStateManager(home: home).disable(id: installed.id)
+                } catch let cleanupError {
+                    throw CyberMacError.fileSystem("\(error)\nCould not disable the failed import: \(cleanupError). Disable \(installed.displayName) in Library before retrying another mod.")
+                }
+            }
+            throw error
+        }
         guard let originalScriptHash = activation.backup.sha256 else {
             throw CyberMacError.invalidInput("The script backup has no verified digest.")
         }
@@ -117,7 +138,6 @@ public struct AutomaticModInstaller: Sendable {
                 files.append(.init(source: source, target: file.bundlePath, backup: path, originalSHA256: original, installedSHA256: expected))
             }
         }
-        _ = installed
         return .prepared(try ModInstallTransaction(game: game, files: files), appearanceID: nil)
     }
 

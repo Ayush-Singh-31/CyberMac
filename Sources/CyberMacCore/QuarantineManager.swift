@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public struct QuarantineManager: Sendable {
     private let runner: ProcessRunner
@@ -30,18 +31,20 @@ public struct QuarantineManager: Sendable {
     }
 
     public func hasQuarantineAttribute(_ url: URL) -> Bool {
-        let result = try? runner.run(
-            executableURL: URL(fileURLWithPath: "/usr/bin/xattr"),
-            arguments: ["-p", "com.apple.quarantine", url.path],
-            allowFailure: true
-        )
-        return result?.exitCode == 0
+        // A health refresh must not wait for an external xattr process (or its
+        // termination notification). Query the attribute directly, without
+        // following symbolic links or removing any macOS protection.
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return false }
+            return getxattr(path, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW) >= 0
+        }
     }
 
     public func clearQuarantine(under rootURL: URL) throws -> ProcessResult {
         try runner.run(
             executableURL: URL(fileURLWithPath: "/usr/bin/xattr"),
             arguments: ["-r", "-d", "com.apple.quarantine", rootURL.path],
+            timeoutSeconds: 10,
             allowFailure: true
         )
     }

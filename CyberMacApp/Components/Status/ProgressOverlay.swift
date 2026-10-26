@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProgressOverlay: View {
     let title: String
+    var onCancel: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -12,8 +13,9 @@ struct ProgressOverlay: View {
                     ProgressView()
                     Text(title)
                         .font(.headline)
+                    if let onCancel { Button("Stop checking", action: onCancel) }
                 }
-                .frame(width: 280)
+                .frame(minWidth: 280)
             }
         }
     }

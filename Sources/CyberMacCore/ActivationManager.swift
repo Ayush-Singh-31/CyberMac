@@ -71,6 +71,10 @@ public struct ActivationManager: Sendable {
 
     public func activateBundleMode(gameInstall: GameInstall) throws -> ActivationBundleModeResult {
         try home.bootstrap()
+        let runtime = RuntimeArchiveImporter(home: home).redscriptStatus()
+        if let issue = RedscriptCompatibility.setupIssue(runtimeVersion: runtime.version, gameVersion: try RedscriptCompatibility.gameVersion(gameInstall)) {
+            throw CyberMacError.unsupported(issue)
+        }
         try refuseIfBundleChanged(gameInstall: gameInstall)
         try preflightStorage()
         let fingerprint = try baseCacheManager.fingerprint(gameInstall: gameInstall)

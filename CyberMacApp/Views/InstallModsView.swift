@@ -102,6 +102,7 @@ struct InstallModsView: View {
 }
 
 private struct ImportJobCard: View {
+    @Environment(\.openURL) private var openURL
     let job: ModImportJob
     let installer: ModInstallerModel
     let openClothing: () -> Void
@@ -129,6 +130,16 @@ private struct ImportJobCard: View {
                     }
                 }
                 Text(job.message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                if job.phase != .installed, SystemModInstaller.needsAppManagement(job.lastFailure ?? job.message) {
+                    Button("Open App Management", systemImage: "lock.shield") {
+                        openURL(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AppBundles")!)
+                    }
+                }
+                if job.phase != .failed, let failure = job.lastFailure {
+                    DisclosureGroup("Previous installation error") {
+                        Text(failure).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                }
                 if let progress = job.previewProgress {
                     ClothingPreviewProgressView(progress: progress, retry: { installer.resumePreviewRendering(job.id) }, pause: { installer.cancelPreviewRendering(job.id) })
                 }

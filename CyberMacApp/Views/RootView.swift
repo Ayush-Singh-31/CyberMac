@@ -95,7 +95,7 @@ struct RootView: View {
         }
         .overlay {
             if let task = appState.currentTask {
-                ProgressOverlay(title: task.title)
+                ProgressOverlay(title: task.title, onCancel: task == .refreshing ? { appState.cancelRefresh() } : nil)
             }
         }
         .task {

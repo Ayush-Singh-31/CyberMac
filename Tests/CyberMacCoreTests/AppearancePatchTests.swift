@@ -44,6 +44,38 @@ final class AppearancePatchTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: game.dataURL.appendingPathComponent("r6/cache/final.redscripts"), encoding: .utf8), "fixture vanilla scripts")
     }
 
+    func testAutomaticScriptRejectsOldRuntimeBeforeCompilation() throws {
+        let (game, manager) = try game(duplicateOwner: false)
+        _ = try RuntimeArchiveImporter(home: manager.home).importRedscript(zipURL: runtime("0.5.31"))
+        let package = try zip("script.zip", entries: [("r6/scripts/example.reds", Data("// fixture".utf8))])
+        guard case .needsSetup(let message) = try AutomaticModInstaller(home: manager.home).prepare(package, game: game) else {
+            return XCTFail("Expected a runtime update request")
+        }
+        XCTAssertTrue(message.contains("0.5.32"))
+        XCTAssertNil(StateStore(home: manager.home).load().pendingActivation)
+    }
+
+    func testFailedScriptImportIsDisabledAndCanBeRetried() throws {
+        let (game, manager) = try game(duplicateOwner: false)
+        let runtimeZIP = try runtime("0.5.32")
+        let status = try RuntimeArchiveImporter(home: manager.home).importRedscript(zipURL: runtimeZIP)
+        let compiler = try XCTUnwrap(status.toolURL)
+        try Data("#!/bin/sh\necho 'incompatible method' >&2\nexit 1\n".utf8).write(to: compiler)
+        let package = try zip("broken-script.zip", entries: [("r6/scripts/example.reds", Data("// fixture".utf8))])
+        let installer = AutomaticModInstaller(home: manager.home)
+        XCTAssertThrowsError(try installer.prepare(package, game: game))
+        let manifests = try ManifestStore(home: manager.home).list()
+        XCTAssertEqual(manifests.count, 1)
+        XCTAssertEqual(manifests.first?.status, .disabled)
+        XCTAssertNil(StateStore(home: manager.home).load().pendingActivation)
+        // Replacing the fixture compiler simulates correcting the mod/runtime.
+        _ = try RuntimeArchiveImporter(home: manager.home).importRedscript(zipURL: runtimeZIP)
+        guard case .prepared = try installer.prepare(package, game: game) else { return XCTFail("Expected retry to prepare") }
+        XCTAssertEqual(try ManifestStore(home: manager.home).list().count, 1)
+        XCTAssertEqual(try ManifestStore(home: manager.home).list().first?.status, .enabled)
+        XCTAssertEqual(try String(contentsOf: game.dataURL.appendingPathComponent("r6/cache/final.redscripts"), encoding: .utf8), "fixture vanilla scripts")
+    }
+
     func testNativeReaderRejectsTruncationBadCountsAndOutOfBoundsPayloads() throws {
         let file = root.appendingPathComponent("malformed.archive")
         try Data("RDAR".utf8).write(to: file)

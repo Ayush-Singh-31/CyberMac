@@ -9,6 +9,11 @@ final class AppSafetyTests: XCTestCase {
         XCTAssertTrue(source.contains("ModInstallTransaction(game: game, files: plan.files)"))
         XCTAssertTrue(source.contains("PathSafety.validateContainedPath"))
         XCTAssertFalse(source.contains("ManualCommand"))
+        XCTAssertTrue(source.contains("ModInstallerPackage.build(plan: validated"))
+        XCTAssertTrue(source.contains("/System/Library/CoreServices/Installer.app"))
+        XCTAssertFalse(source.contains("FileManager(authorization:"))
+        XCTAssertFalse(source.contains("osascript"))
+        XCTAssertFalse(source.contains("with administrator privileges"))
     }
     func testOnlyTypedInstallerCanExecutePrivilegedCommands() throws {
         let appDirectory = try packageRoot().appendingPathComponent("CyberMacApp", isDirectory: true)

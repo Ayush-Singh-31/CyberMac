@@ -11,6 +11,7 @@ struct ModImportJob: Identifiable, Codable, Sendable {
     var url: URL
     var phase: ModImportPhase = .queued
     var message = "Waiting to inspect…"
+    var lastFailure: String?
     var variants: [String] = []
     var variant: String?
     var transaction: ModInstallTransaction?
@@ -35,7 +36,7 @@ protocol ModInstallerProviding: Sendable {
     func prepare(_ url: URL, variant: String?, clothingRecords: [String]?) throws -> ModInstallPreparation
     func contents(_ url: URL) throws -> ModPackageContents?
     func clothingCatalog(_ contents: ModPackageContents) throws -> ClothingImportCatalog
-    func apply(_ transaction: ModInstallTransaction) throws
+    func apply(_ transaction: ModInstallTransaction) async throws
     func verify(_ transaction: ModInstallTransaction, appearanceID: String?) throws
     func load() throws -> [ModImportJob]
     func save(_ jobs: [ModImportJob]) throws
@@ -73,7 +74,7 @@ struct ModInstallerService: ModInstallerProviding {
             return ClothingImportCatalog(contents: contents, wardrobe: nil, notice: "Could not open the wardrobe: \(error)")
         }
     }
-    func apply(_ transaction: ModInstallTransaction) throws { try SystemModInstaller(home: home).apply(transaction) }
+    func apply(_ transaction: ModInstallTransaction) async throws { try await SystemModInstaller(home: home).apply(transaction) }
     func verify(_ transaction: ModInstallTransaction, appearanceID: String?) throws {
         try AutomaticModInstaller(home: home).verify(transaction, appearanceID: appearanceID)
     }
@@ -345,9 +346,12 @@ final class ModInstallerModel {
         jobs[index].phase = .working; jobs[index].message = "Restoring the files from before this install…"
         do {
             try await persist()
-            try await BackgroundTaskRunner.run { [service] in try service.apply(transaction.reversed()) }
+            try await service.apply(transaction.reversed())
             jobs[index].phase = .restored; jobs[index].message = "Previous files restored and verified."
-        } catch { jobs[index].phase = .failed; jobs[index].message = String(describing: error) }
+        } catch {
+            jobs[index].phase = .failed; jobs[index].message = String(describing: error)
+            jobs[index].lastFailure = jobs[index].message
+        }
         do { try await persist() } catch { historyError = String(describing: error) }
         busy = false
         await drain()
@@ -411,16 +415,15 @@ final class ModInstallerModel {
                     }
                 }
                 if jobs[index].phase == .working, let transaction = jobs[index].transaction {
-                    jobs[index].message = "Installing… macOS may ask for your password."
+                    jobs[index].message = "Complete the macOS Installer window to continue. CyberMac will verify the game files when it finishes."
                     // Persist recovery information BEFORE asking macOS to write.
                     try await persist()
                     let appearanceID = jobs[index].appearanceID
-                    try await BackgroundTaskRunner.run { [service] in
-                        // If the app closed after writing but before verification,
-                        // finish verification without writing the same files again.
-                        if (try? transaction.verify()) == nil { try service.apply(transaction) }
-                        try service.verify(transaction, appearanceID: appearanceID)
-                    }
+                    // Finish an interrupted verification without asking for
+                    // authorization or writing the same files again.
+                    let alreadyApplied = await Task.detached { (try? transaction.verify()) != nil }.value
+                    if !alreadyApplied { try await service.apply(transaction) }
+                    try await BackgroundTaskRunner.run { [service] in try service.verify(transaction, appearanceID: appearanceID) }
                     jobs[index].phase = .installed
                     jobs[index].message = appearanceID == nil
                         ? "Installed and verified. Your enabled script mods and input patches are active."
@@ -429,6 +432,7 @@ final class ModInstallerModel {
                 try await persist()
             } catch {
                 jobs[index].phase = .failed; jobs[index].message = String(describing: error)
+                jobs[index].lastFailure = jobs[index].message
                 do { try await persist() } catch { historyError = "Could not save recovery history: \(error)" }
             }
         }

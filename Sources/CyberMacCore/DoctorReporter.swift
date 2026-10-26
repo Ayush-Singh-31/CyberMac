@@ -71,6 +71,10 @@ public struct DoctorReporter: Sendable {
             )
         }
 
+        let redscriptIssue = redscriptStatus.installed ? RedscriptCompatibility.setupIssue(runtimeVersion: redscriptStatus.version, gameVersion: try RedscriptCompatibility.gameVersion(game)) : nil
+        if let redscriptIssue {
+            warnings.append(DoctorWarning(code: "redscript-version", message: redscriptIssue))
+        }
         let bundleSnapshot = try resolver.snapshot(gameInstall: game)
         let inputStatus = try? InputMappingManager(home: home).status(gameInstall: game)
         if !bundleSnapshot.bundle.overlayMirrorPresent {
@@ -111,8 +115,8 @@ public struct DoctorReporter: Sendable {
                 activeModIDs: bundleSnapshot.activeModIDs,
                 bundleChangedSinceLastActivation: bundleSnapshot.bundleChangedSinceLastActivation,
                 manualPrivilegedWriteRequired: true,
-                safeToProceedToActivation: !bundleSnapshot.activationBlocked && bundleSnapshot.bundle.baseSnapshotSHA256 != nil,
-                nextStep: bundleSnapshot.nextStep
+                safeToProceedToActivation: redscriptIssue == nil && !bundleSnapshot.activationBlocked && bundleSnapshot.bundle.baseSnapshotSHA256 != nil,
+                nextStep: redscriptIssue ?? bundleSnapshot.nextStep
             ),
             inputMappings: inputStatus,
             warnings: warnings,

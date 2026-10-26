@@ -57,10 +57,11 @@ public struct ModInstallTransaction: Codable, Sendable {
         }
     }
 
-    /// Run only through the app's system authorization boundary. Root ownership
-    /// is omitted for fixture tests; normal app installs always request it.
-    public func command(requiresAdministrator: Bool = true) -> String {
+    /// Read-only checks also run before the password prompt, then again under
+    /// authorization to catch changes while the prompt was open.
+    public func preflightCommand() -> String {
         var lines = ["set -eu", "fail() { printf '%s\\n' \"$1\" >&2; exit 1; }",
+            "matches() { [ -f \"$1\" ] && [ ! -L \"$1\" ] && actual=$(/usr/bin/openssl dgst -sha256 -r \"$1\") && [ \"${actual%% *}\" = \"$2\" ]; }",
             "check() { [ -f \"$1\" ] && [ ! -L \"$1\" ] || fail 'A planned file is missing or is a symbolic link.'; actual=$(/usr/bin/openssl dgst -sha256 -r \"$1\"); [ \"${actual%% *}\" = \"$2\" ] || fail 'A planned file changed. Import the mod again.'; }",
             "if /usr/bin/pgrep -x \(PathSafety.shellQuoted(executableName)) >/dev/null; then fail 'Fully close Cyberpunk 2077 before installing or restoring mods.'; fi"]
         for file in files {
@@ -71,11 +72,18 @@ public struct ModInstallTransaction: Codable, Sendable {
                 lines.append("[ \"$actual_parent\" = \(PathSafety.shellQuoted(physicalPath(parent))) ] || fail 'A planned folder changed its symbolic-link destination.'")
             }
         }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Run only through the app's system authorization boundary. Root ownership
+    /// is omitted for fixture tests; normal app installs always request it.
+    public func command(requiresAdministrator: Bool = true) -> String {
+        var lines = [preflightCommand()]
         lines += ["applied=0", "rollback() {", "  status=$?", "  trap - EXIT INT TERM", "  if [ \"$status\" -ne 0 ]; then", "    rollback_failed=0"]
         for (index, file) in files.enumerated().reversed() {
             let restore = VerifiedFileReplacement.command(source: file.backup, target: file.target,
                 sha256: file.originalSHA256, requiresAdministrator: false)
-            lines.append("    if [ \"$applied\" -ge \(index + 1) ]; then if ! \(restore); then rollback_failed=1; fi; fi")
+            lines.append("    if [ \"$applied\" -ge \(index + 1) ]; then if matches \(PathSafety.shellQuoted(file.target)) \(PathSafety.shellQuoted(file.originalSHA256)); then :; elif ! \(restore); then rollback_failed=1; fi; fi")
         }
         lines += ["    if [ \"$rollback_failed\" -ne 0 ]; then printf '%s\\n' 'Automatic rollback failed. Use the saved recovery plan in CyberMac.' >&2; fi",
                   "  fi", "  exit \"$status\"", "}", "trap rollback EXIT", "trap 'exit 1' INT TERM"]

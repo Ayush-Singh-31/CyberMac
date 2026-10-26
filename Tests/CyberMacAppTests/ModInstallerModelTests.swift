@@ -5,6 +5,23 @@ import XCTest
 
 @MainActor
 final class ModInstallerModelTests: XCTestCase {
+    func testRestorePreservesOriginalInstallErrorAcrossReload() async throws {
+        let service = InstallerFixtureService()
+        service.plan = try fixturePlan()
+        service.failApply = true
+        let model = ModInstallerModel(service: service)
+        await model.enqueue([url("install.zip")])
+        XCTAssertEqual(model.jobs[0].phase, .failed)
+        let failure = try XCTUnwrap(model.jobs[0].lastFailure)
+        service.failApply = false
+        await model.restore(model.jobs[0].id)
+        XCTAssertEqual(model.jobs[0].phase, .restored)
+        XCTAssertEqual(model.jobs[0].lastFailure, failure)
+        let reopened = ModInstallerModel(service: service)
+        await reopened.load()
+        XCTAssertEqual(reopened.jobs[0].lastFailure, failure)
+    }
+
     func testInitialPreviewWorkIsBoundedInsteadOfRenderingWholeCollection() async throws {
         let service = InstallerFixtureService()
         service.catalog = ModPackageContents(archives: (0..<30).map { .init(path: "Clothes/Other/variant\($0).archive", preparedPieces: []) })
@@ -322,6 +339,7 @@ private final class InstallerFixtureService: ModInstallerProviding, @unchecked S
     private var previewCalls: [[String]] = []
     let release = DispatchSemaphore(value: 0)
     var failSave = false
+    var failApply = false
     var plan: ModInstallTransaction?
     var history: [ModImportJob] = []
     var catalog: ModPackageContents?
@@ -354,7 +372,10 @@ private final class InstallerFixtureService: ModInstallerProviding, @unchecked S
         default: return .ready("Finished")
         }
     }
-    func apply(_ transaction: ModInstallTransaction) throws { lock.withLock { applyCount += 1 } }
+    func apply(_ transaction: ModInstallTransaction) throws {
+        lock.withLock { applyCount += 1 }
+        if failApply { throw CyberMacError.fileSystem("mv: Operation not permitted") }
+    }
     func verify(_ transaction: ModInstallTransaction, appearanceID: String?) throws { }
     func load() throws -> [ModImportJob] { lock.withLock { history } }
     func save(_ jobs: [ModImportJob]) throws {

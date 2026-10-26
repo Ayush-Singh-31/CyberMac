@@ -5,6 +5,35 @@ import XCTest
 
 @MainActor
 final class CyberMacAppStateTests: XCTestCase {
+    func testStoppedRefreshCannotClearNewTaskOrPublishLateError() async throws {
+        let service = FakeAppService()
+        let refreshRelease = DispatchSemaphore(value: 0)
+        let activationRelease = DispatchSemaphore(value: 0)
+        service.loadSnapshotHandler = {
+            _ = refreshRelease.wait(timeout: .now() + 3)
+            throw FakeError.unexpectedCall
+        }
+        service.generateActivationHandler = {
+            _ = activationRelease.wait(timeout: .now() + 3)
+            throw FakeError.activationFailed
+        }
+        let appState = CyberMacAppState(container: service)
+        let refresh = Task { await appState.refresh() }
+        try await waitForCondition { service.loadSnapshotCallCount == 1 }
+        appState.cancelRefresh()
+        XCTAssertNil(appState.currentTask)
+        let activation = Task { await appState.generateActivation() }
+        try await waitForCondition { service.generateActivationCallCount == 1 }
+        refreshRelease.signal()
+        await refresh.value
+        XCTAssertEqual(appState.currentTask, .preparingActivation)
+        XCTAssertNil(appState.lastError)
+        activationRelease.signal()
+        await activation.value
+        XCTAssertNil(appState.currentTask)
+        XCTAssertEqual(appState.lastError?.title, "Activation failed")
+    }
+
     func testGenerateActivationSuccessClearsTaskAndShowsCommand() async {
         let service = FakeAppService()
         service.generateActivationResult = .success(makeActivationResult())
@@ -158,6 +187,7 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
     private let lock = NSLock()
     var generateActivationResult: Result<ActivationBundleModeResult, Error> = .success(makeActivationResult())
     var generateActivationHandler: (() throws -> ActivationBundleModeResult)?
+    var loadSnapshotHandler: (() throws -> AppSnapshot)?
     private var _generateActivationCallCount = 0
     private var _loadSnapshotCallCount = 0
 
@@ -176,7 +206,9 @@ private final class FakeAppService: AppServiceProviding, @unchecked Sendable {
     func loadSnapshot() throws -> AppSnapshot {
         lock.lock()
         _loadSnapshotCallCount += 1
+        let handler = loadSnapshotHandler
         lock.unlock()
+        if let handler { return try handler() }
         return Self.snapshot()
     }
 
