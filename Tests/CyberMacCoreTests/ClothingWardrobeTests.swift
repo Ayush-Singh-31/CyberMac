@@ -4,6 +4,38 @@ import ZIPFoundation
 @testable import CyberMacCore
 
 final class ClothingWardrobeTests: XCTestCase {
+    func testLocalJingujiPackListsAllVariantsAndOnlyThreePreparedGarments() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let zip = root.deletingLastPathComponent().appendingPathComponent("Resources/JingujiAllInOne.zip")
+        guard FileManager.default.fileExists(atPath: zip.path) else { throw XCTSkip("Local Jinguji download is not bundled with the source.") }
+        let contents = try ClothingWardrobeManager().packageContents(in: zip)
+        XCTAssertEqual(contents.archives.count, 214)
+        XCTAssertEqual(Set(contents.archives.map(\.category)).count, 17)
+        XCTAssertEqual(contents.preparedPieces.count, 3)
+        XCTAssertEqual(contents.unpreparedArchives.count, 211)
+        XCTAssertEqual(Set(contents.preparedPieces.map(\.id)), Set(StandaloneClothingSource.jingujiPieces.map(\.record)))
+        XCTAssertFalse(contents.archives.contains { PathSafety.isMacArchiveMetadata($0.path) })
+    }
+
+    func testContentsIncludesUnpreparedArchivesAndExcludesFinderMetadata() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let zip = root.appendingPathComponent("collection.zip")
+        let archive = try Archive(url: zip, accessMode: .create)
+        for path in ["Clothes/Tops/red.archive", "Clothes/Boots/black.archive", "__MACOSX/Clothes/Tops/._red.archive"] {
+            let data = Data("fixture".utf8)
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(data.count), provider: { position, size in
+                data.subdata(in: Int(position)..<min(data.count, Int(position) + size))
+            })
+        }
+        let contents = try ClothingWardrobeManager().packageContents(in: zip)
+        XCTAssertEqual(contents.archives.count, 2)
+        XCTAssertEqual(Set(contents.archives.map(\.category)), ["Tops", "Boots"])
+        XCTAssertTrue(contents.preparedPieces.isEmpty)
+        XCTAssertEqual(contents.unpreparedArchives.count, 2)
+    }
+
     func fixture(_ root: URL) throws -> URL {
         let workspace = root.appendingPathComponent("wardrobe")
         try FileManager.default.createDirectory(at: workspace.appendingPathComponent("previews"), withIntermediateDirectories: true)

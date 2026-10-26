@@ -36,6 +36,7 @@ public struct ModArchiveScanner: Sendable {
             try PathSafety.validateArchivePath(entry.path)
             let path = entry.path
             let lower = path.lowercased()
+            if PathSafety.isMacArchiveMetadata(path) { continue }
             allEntries.append(path)
             updatePathMarkers(
                 lowerPath: lower,

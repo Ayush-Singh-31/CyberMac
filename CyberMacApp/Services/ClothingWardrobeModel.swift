@@ -35,14 +35,6 @@ final class ClothingWardrobeModel {
             wardrobe = value; selected = value.selectedRecords; session = nil; message = "Wardrobe opened. Choose the pieces you want."
         }
     }
-    func importZIP(_ url: URL) async {
-        guard wardrobe != nil else { error = "Open your prepared wardrobe first."; return }
-        await perform("Reading clothing package…") {
-            let records = try await BackgroundTaskRunner.run { try ClothingWardrobeManager().pieces(in: url) }
-            selected.formUnion(records)
-            message = "Selected \(records.count) supported pieces from \(url.lastPathComponent)."
-        }
-    }
     func toggle(_ id: String) {
         if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
     }

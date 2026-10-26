@@ -22,7 +22,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.19")
+        .package(path: "Vendor/ZIPFoundation")
     ],
     targets: [
         .target(
@@ -30,7 +30,7 @@ let package = Package(
             path: "Sources/CyberMacBC7Decoder",
             publicHeadersPath: "include",
             cSettings: [
-                .headerSearchPath("include")
+                .headerSearchPath("private")
             ]
         ),
         .target(

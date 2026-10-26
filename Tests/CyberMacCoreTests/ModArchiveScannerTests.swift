@@ -7,6 +7,20 @@ final class ModArchiveScannerTests: XCTestCase {
     private var tempDir: URL!
     private let scanner = ModArchiveScanner()
 
+    func testFinderMetadataIsNotClassifiedAsScriptsArchivesOrFrameworks() throws {
+        let zipURL = try makeZip(named: "finder-metadata.zip", entries: [
+            .file("r6/scripts/main.reds"),
+            .file("__MACOSX/r6/scripts/._main.reds"),
+            .file("__MACOSX/archive/pc/mod/._clothes.archive"),
+            .file("__MACOSX/red4ext/._plugin.dll")
+        ])
+        let result = try scanner.scan(zipURL: zipURL)
+        XCTAssertEqual(result.redscriptEntries, ["r6/scripts/main.reds"])
+        XCTAssertTrue(result.archiveEntries.isEmpty)
+        XCTAssertTrue(result.dependencyMarkers.frameworkMarkerLabels.isEmpty)
+        XCTAssertTrue(result.sidecarInstallable)
+    }
+
     override func setUpWithError() throws {
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CyberMacScannerTests-\(UUID().uuidString)", isDirectory: true)

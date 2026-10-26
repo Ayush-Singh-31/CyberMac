@@ -7,81 +7,8 @@ struct ModsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Mods")
+                Text("Library")
                     .font(.largeTitle.weight(.semibold))
-                InteractiveDropZone(
-                    title: "Drop a mod archive",
-                    subtitle: "Supports redscript and input mapping mods."
-                ) { urls in
-                    if let url = urls.first {
-                        Task { await appState.scanMod(url: url) }
-                    }
-                }
-
-                if let scan = appState.scanResult {
-                    CyberPanel(accent: scanPanelAccent(scan)) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(scan.displayName)
-                                        .font(.headline)
-                                    Text(scan.kind.displayName)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(scan.displayStatusLabel)
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(scanPanelAccent(scan).color.opacity(0.14), in: Capsule())
-                            }
-                            if scan.requiresInputMappingPatch {
-                                Text("CyberMac can install the redscript file and prepare the required input XML patch. Manual copy and verification are required before the keybinds work.")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                Text("Input patch required")
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 5)
-                                    .background(CyberAccent.amber.color.opacity(0.14), in: Capsule())
-                            }
-                            if scan.kind == .archiveOnly {
-                                Text("For the prepared Lucy and Jinguji clothes, use Clothing in the sidebar. This general installer accepts script and input mods; other archive packages need conversion first.")
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                scanMarkerPills(scan.dependencyMarkers.archiveMarkerLabels, accent: .amber)
-                            }
-                            if scan.kind == .frameworkStack {
-                                Text("Unsupported framework mod. CyberMac currently supports redscript and input XML patching only.")
-                                    .font(.callout)
-                                    .foregroundStyle(CyberAccent.red.color)
-                                scanMarkerPills(scan.dependencyMarkers.frameworkMarkerLabels, accent: .red)
-                            }
-                            ForEach(scan.reasons, id: \.self) { reason in
-                                Text(reason)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let block = scan.installBlockReason {
-                                Text(block)
-                                    .font(.callout)
-                                    .foregroundStyle(CyberAccent.amber.color)
-                            }
-                            HStack {
-                                PrimaryButton(
-                                    title: "Install",
-                                    systemImage: "square.and.arrow.down",
-                                    disabled: !scan.sidecarInstallable,
-                                    variant: .primary,
-                                    accent: .cyan
-                                ) {
-                                    Task { await appState.installScannedMod() }
-                                }
-                                Spacer()
-                            }
-                        }
-                    }
-                }
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Installed")
                         .font(.title2.weight(.semibold))
@@ -92,7 +19,7 @@ struct ModsView: View {
                                 .foregroundStyle(.secondary)
                             Text("No mods installed")
                                 .font(.callout.weight(.semibold))
-                            Text("Drop a .zip above to get started.")
+                            Text("Use Install mods to add a download.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -111,23 +38,6 @@ struct ModsView: View {
         }
     }
 
-    private func scanPanelAccent(_ scan: ModScanResult) -> CyberAccent {
-        if scan.sidecarInstallable { return .green }
-        if scan.kind == .frameworkStack { return .red }
-        return .amber
-    }
-
-    private func scanMarkerPills(_ labels: [String], accent: CyberAccent) -> some View {
-        WrappingHStack(horizontalSpacing: 8, verticalSpacing: 8) {
-            ForEach(labels, id: \.self) { label in
-                Text(label)
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(accent.color.opacity(0.14), in: Capsule())
-            }
-        }
-    }
 }
 
 private struct ModRow: View {
@@ -143,15 +53,21 @@ private struct ModRow: View {
                 wideLayout
                 compactLayout
             }
+            .padding(.trailing, 34)
+        }
+        .overlay(alignment: .topTrailing) {
+            RemoveModButton(label: "Remove \(ModDisplayFormatter.displayName(for: mod)) from the library", disabled: appState.currentTask != nil) {
+                showingDeleteConfirmation = true
+            }.padding(12)
         }
         .opacity(rowOpacity)
         .hoverGlow(rowAccent, enabled: true, scale: 1.006, cornerRadius: 24)
         .confirmationDialog(
-            "Delete mod from CyberMac?",
+            "Remove mod from the library?",
             isPresented: $showingDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete permanently", role: .destructive) {
+            Button("Remove from library", role: .destructive) {
                 Task { await appState.deleteMod(mod) }
             }
             Button("Cancel", role: .cancel) {}

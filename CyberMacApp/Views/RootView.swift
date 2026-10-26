@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 enum AppScreen: String, CaseIterable, Identifiable {
-    case home = "Home"
+    case home = "Install mods"
     case appearance = "Clothing"
-    case mods = "Mods"
+    case mods = "Library"
     case outfits = "Outfits"
     case activation = "Activation"
     case archiveLab = "Archive Lab"
@@ -43,6 +43,7 @@ enum AppScreen: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @State private var appState = CyberMacAppState()
+    @State private var installer = ModInstallerModel()
     @State private var selection: AppScreen = .home
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -52,6 +53,7 @@ struct RootView: View {
                 get: { selection },
                 set: { newValue in if let newValue { selection = newValue } }
             ))
+            .disabled(installer.busy)
         } detail: {
             ZStack {
                 background
@@ -71,6 +73,7 @@ struct RootView: View {
                         .padding(.top, 28)
                     }
                     selectedView
+                        .disabled(selection != .home && installer.busy)
                         .padding(28)
                         .id(selection)
                         .transition(.opacity)
@@ -96,7 +99,11 @@ struct RootView: View {
             }
         }
         .task {
+            await installer.load()
             await appState.refresh()
+        }
+        .onChange(of: installer.busy) { _, busy in
+            if !busy { Task { await appState.refresh() } }
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)) {
             appState.sessionLog.recordGameLifecycle($0)
@@ -105,6 +112,7 @@ struct RootView: View {
             appState.sessionLog.recordGameLifecycle($0)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            installer.stopPreviewRendering()
             appState.sessionLog.stopForTermination()
         }
     }
@@ -113,9 +121,12 @@ struct RootView: View {
     private var selectedView: some View {
         switch selection {
         case .home:
-            HomeView(appState: appState)
+            InstallModsView(installer: installer, appState: appState) { selection = .appearance }
         case .appearance:
-            ClothingWardrobeView()
+            ClothingWardrobeView { url in
+                selection = .home
+                Task { await installer.enqueue([url]) }
+            }
         case .mods:
             ModsView(appState: appState)
         case .outfits:

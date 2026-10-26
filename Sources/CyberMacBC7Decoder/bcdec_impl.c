@@ -1,6 +1,6 @@
 /*
  * Compiles the bcdec.h header-only library and exposes the BC7 entry point
- * used by CyberMac. bcdec.h itself is vendored under include/bcdec.h, MIT /
+ * used by CyberMac. bcdec.h itself is vendored under private/bcdec.h, MIT /
  * Unlicense dual-licensed by Sergii "iOrange" Kudlai (see header for full
  * notice and also THIRD_PARTY_NOTICES.md at the repo root).
  *

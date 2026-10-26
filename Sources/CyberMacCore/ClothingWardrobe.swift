@@ -81,28 +81,51 @@ public struct ClothingWardrobeManager: Sendable {
                                 selectedRecords: Set(selected), previewStyle: icons.previewStyle)
     }
 
-    /// Validated supported ZIPs enable their prepared pieces. This deliberately
-    /// does not claim to convert arbitrary archives or every Jinguji variant.
-    public func pieces(in zip: URL) throws -> [String] {
-        let package = try Archive(url: zip, accessMode: .read)
-        let recipes: [(String, String, [String])] = [
+    private static let recipes: [(String, String, [String])] = [
             ("JingujiAllInOne/Corset Top/Jinguji_MuscleTankToCorsetBlackSilver.archive", "892d84a512e8124a62518829fb375c0d7de3390146921eb21f95769905fcb7cb", ["Items.CyberMac_Jinguji_Corset"]),
             ("JingujiAllInOne/Judy Pants/Jinguji_ShinosToJudyPantsBlack.archive", "6316f0a15d4f04cb7bd040527a680bcf026f003164c49f69222fcd7f9801d18e", ["Items.CyberMac_Jinguji_Pants"]),
             ("JingujiAllInOne/Chrome Heels/Jinguji_FleetsToChromeHeels.archive", "4cac455d865db1b6a91dffb603d9793132d0bc43cb6ebffe4c21a888b505fe4c", ["Items.CyberMac_Jinguji_Heels"]),
             ("Edgerunners_Jacket/Edgerunners_Lucy_Jacket_xBaebsae.archive", "85a010c28a0ca96c689f5fde2f97ec6f3e5be583f7cc9fd2e89b93a3c73db9ab", ["Items.CyberMac_Standalone_Jacket"]),
             ("Edgerunners_Clothes/Edgerunners_Lucy_Clothes_Heladios.archive", "c8d434ce62e2f5eca2d2ec0c4274f7acca3a48c35db45035d19f7cb22a0a1c8f", ["Items.CyberMac_Standalone_Top", "Items.CyberMac_Standalone_Pants", "Items.CyberMac_Standalone_Boots"])
         ]
-        var found: [String] = []
-        for (path, digest, records) in recipes {
-            guard let entry = package[path] else { continue }
+
+    /// Validated supported ZIPs enable their prepared pieces. This deliberately
+    /// does not claim to convert arbitrary archives or every Jinguji variant.
+    public func pieces(in zip: URL) throws -> [String] {
+        let contents = try packageContents(in: zip)
+        if contents.archives.contains(where: { $0.problem != nil }) {
+            throw CyberMacError.invalidInput("This clothing variant differs from the supported recipe.")
+        }
+        let found = contents.preparedPieces.map(\.id)
+        guard !found.isEmpty else { throw CyberMacError.unsupported("This ZIP has no prepared Lucy or Jinguji pieces. Other variants need conversion first.") }
+        return found
+    }
+
+    /// List every actual archive, even when only a subset has prepared wardrobe
+    /// records. A Finder resource fork is metadata, never another garment.
+    public func packageContents(in zip: URL) throws -> ModPackageContents {
+        let scan = try ModArchiveScanner().scan(zipURL: zip)
+        let package = try Archive(url: zip, accessMode: .read)
+        let archives = try scan.archiveEntries.map { path -> ModPackageContents.Archive in
+            guard let entry = package[path], entry.type == .file else {
+                return .init(path: path, preparedPieces: [], problem: "This entry is not a regular file.")
+            }
+            guard let (_, digest, records) = Self.recipes.first(where: { $0.0 == path }) else {
+                return .init(path: path, preparedPieces: [])
+            }
             guard entry.uncompressedSize <= 80 * 1024 * 1024 else { throw CyberMacError.invalidInput("Clothing archive is too large.") }
             var data = Data()
             _ = try package.extract(entry) { data.append($0) }
-            guard PathSafety.sha256(data: data) == digest else { throw CyberMacError.invalidInput("This clothing variant differs from the supported recipe.") }
-            found += records
+            guard PathSafety.sha256(data: data) == digest else {
+                return .init(path: path, preparedPieces: [], problem: "Differs from the prepared clothing recipe.")
+            }
+            let pieces = records.map { record in
+                let name = StandaloneClothingSource.wardrobePieces.first { $0.record == record }?.label ?? record
+                return ModPackageContents.Piece(id: record, name: name.replacingOccurrences(of: "CyberMac ", with: ""))
+            }
+            return .init(path: path, preparedPieces: pieces)
         }
-        guard !found.isEmpty else { throw CyberMacError.unsupported("This ZIP has no prepared Lucy or Jinguji pieces. Other variants need conversion first.") }
-        return found
+        return ModPackageContents(archives: archives)
     }
 
     public func prepareLaunch(workspace: URL, records: [String]) throws -> URL {

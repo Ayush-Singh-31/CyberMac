@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Binding var selection: AppScreen?
+    @State private var advancedExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -11,7 +12,7 @@ struct SidebarView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 8)
 
-            ForEach(AppScreen.allCases) { screen in
+            ForEach([AppScreen.home, .appearance, .mods, .settings]) { screen in
                 SidebarItemView(
                     screen: screen,
                     selected: selection == screen
@@ -19,6 +20,14 @@ struct SidebarView: View {
                     selection = screen
                 }
             }
+            DisclosureGroup("Advanced", isExpanded: $advancedExpanded) {
+                ForEach([AppScreen.outfits, .activation, .archiveLab, .archiveIndex, .backups, .diagnostics]) { screen in
+                    SidebarItemView(screen: screen, selected: selection == screen) { selection = screen }
+                }
+            }
+            .font(.callout)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
             Spacer()
         }
         .padding(.vertical, 10)

@@ -12,6 +12,38 @@ final class AppearancePatchTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
+    func testAutomaticArchiveWorkflowPreparesInstallsVerifiesAndRestoresFixture() throws {
+        let (game, manager) = try game(duplicateOwner: false)
+        let mod = try archive("automatic.archive", records: [Fixture(1, "new jacket", [2])])
+        let package = try zip("automatic.zip", entries: [("archive/pc/mod/automatic.archive", Data(contentsOf: mod))])
+        let installer = AutomaticModInstaller(home: manager.home)
+        let target = game.dataURL.appendingPathComponent("archive/Mac/content/basegame_test.archive")
+        let original = try PathSafety.sha256(url: target)
+        guard case .prepared(let transaction, let appearanceID) = try installer.prepare(package, game: game) else {
+            return XCTFail("Expected a prepared native install")
+        }
+        XCTAssertEqual(try PathSafety.sha256(url: target), original, "Preparation must not edit the game")
+        XCTAssertEqual(transaction.files.count, 1)
+        _ = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", transaction.command(requiresAdministrator: false)], timeoutSeconds: 10)
+        XCTAssertNoThrow(try installer.verify(transaction, appearanceID: appearanceID, game: game))
+        XCTAssertNotEqual(try PathSafety.sha256(url: target), original)
+        _ = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", transaction.reversed().command(requiresAdministrator: false)], timeoutSeconds: 10)
+        XCTAssertEqual(try PathSafety.sha256(url: target), original)
+    }
+
+    func testAutomaticScriptSetupRetainsOneModAcrossRuntimeRetries() throws {
+        let (game, manager) = try game(duplicateOwner: false)
+        let package = try zip("script.zip", entries: [("r6/scripts/example.reds", Data("// fixture".utf8))])
+        let installer = AutomaticModInstaller(home: manager.home)
+        for _ in 0..<2 {
+            guard case .needsSetup = try installer.prepare(package, game: game) else { return XCTFail("Expected runtime setup") }
+        }
+        XCTAssertEqual(try ManifestStore(home: manager.home).list().count, 1)
+        XCTAssertEqual(try String(contentsOf: game.dataURL.appendingPathComponent("r6/cache/final.redscripts"), encoding: .utf8), "fixture vanilla scripts")
+    }
+
     func testNativeReaderRejectsTruncationBadCountsAndOutOfBoundsPayloads() throws {
         let file = root.appendingPathComponent("malformed.archive")
         try Data("RDAR".utf8).write(to: file)

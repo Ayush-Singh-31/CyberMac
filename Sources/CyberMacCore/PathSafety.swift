@@ -6,6 +6,10 @@ public enum PathSafety {
     public static let maxArchiveBytes: UInt64 = 500 * 1024 * 1024
     public static let maxArchiveEntries = 50_000
 
+    public static func isMacArchiveMetadata(_ path: String) -> Bool {
+        path.split(separator: "/").contains { $0 == "__MACOSX" || $0.hasPrefix("._") || $0 == ".DS_Store" }
+    }
+
     /// APFS copy-on-write avoids allocating a second full game archive.
     /// Never silently fall back to a large physical copy on other volumes.
     static func copySpaceEfficiently(from source: URL, to destination: URL) throws {

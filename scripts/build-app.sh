@@ -10,6 +10,14 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 for resource in "$build_dir"/*.bundle; do
   /usr/bin/ditto "$resource" "$app/Contents/Resources/${resource:t}"
 done
+preview_resources="$app/Contents/Resources/ClothingPreviewRenderer"
+mkdir -p "$preview_resources/licenses"
+for preview_source in render_clothing_package.py render_clothing_thumbnails.py prepare_lucy_assets.py clothing_materials.py clothing_texture_decode.py; do
+  /bin/cp "tools/$preview_source" "$preview_resources/$preview_source"
+done
+/bin/cp tools/licenses/WolvenKit-GPL-3.0.txt "$preview_resources/licenses/WolvenKit-GPL-3.0.txt"
+python3 tools/configure_clothing_previews.py --out .research/renderer-tools.json
+/bin/cp .research/renderer-tools.json "$preview_resources/renderer-tools.json"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

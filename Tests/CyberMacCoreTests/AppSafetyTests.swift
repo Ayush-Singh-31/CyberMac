@@ -2,7 +2,15 @@ import Foundation
 import XCTest
 
 final class AppSafetyTests: XCTestCase {
-    func testCyberMacAppDoesNotExecuteManualPrivilegedCommands() throws {
+    func testAutomaticPrivilegeBoundaryAcceptsTypedPlansOnly() throws {
+        let file = try packageRoot().appendingPathComponent("CyberMacApp/Services/SystemModInstaller.swift")
+        let source = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(source.contains("func apply(_ plan: ModInstallTransaction)"))
+        XCTAssertTrue(source.contains("ModInstallTransaction(game: game, files: plan.files)"))
+        XCTAssertTrue(source.contains("PathSafety.validateContainedPath"))
+        XCTAssertFalse(source.contains("ManualCommand"))
+    }
+    func testOnlyTypedInstallerCanExecutePrivilegedCommands() throws {
         let appDirectory = try packageRoot().appendingPathComponent("CyberMacApp", isDirectory: true)
         let swiftFiles = try swiftSourceFiles(in: appDirectory)
         let forbiddenPatterns = [
@@ -24,6 +32,9 @@ final class AppSafetyTests: XCTestCase {
         var violations: [String] = []
 
         for file in swiftFiles {
+            // User-authorized automatic installs have one typed boundary.
+            // Legacy manual panels must still never execute display strings.
+            if file.lastPathComponent == "SystemModInstaller.swift" { continue }
             let contents = try String(contentsOf: file, encoding: .utf8)
             let lines = contents.split(separator: "\n", omittingEmptySubsequences: false)
             for (index, lineValue) in lines.enumerated() {

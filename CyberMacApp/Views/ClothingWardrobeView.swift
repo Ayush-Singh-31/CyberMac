@@ -4,6 +4,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ClothingWardrobeView: View {
+    let onImportZIP: (URL) -> Void
     @State private var model = ClothingWardrobeModel()
     @State private var showAdvanced = false
     private let columns = [GridItem(.adaptive(minimum: 205, maximum: 280), spacing: 16)]
@@ -144,6 +145,6 @@ struct ClothingWardrobeView: View {
     }
     private func chooseZIP() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.zip]; panel.title = "Select a supported clothing ZIP"
-        if panel.runModal() == .OK, let url = panel.url { Task { await model.importZIP(url) } }
+        if panel.runModal() == .OK, let url = panel.url { onImportZIP(url) }
     }
 }

@@ -27,29 +27,12 @@ struct InteractiveDropZone: View {
             y: isTargeted ? 10 : 0
         )
         .animation(.easeOut(duration: 0.18), value: isTargeted)
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isTargeted) { providers in
-            loadFileURLs(from: providers)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !urls.isEmpty else { return false }
+            onFiles(urls)
             return true
-        }
+        } isTargeted: { isTargeted = $0 }
         .help("Drop a mod archive")
     }
 
-    private func loadFileURLs(from providers: [NSItemProvider]) {
-        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                let url: URL?
-                if let data = item as? Data {
-                    url = URL(dataRepresentation: data, relativeTo: nil)
-                } else if let itemURL = item as? URL {
-                    url = itemURL
-                } else {
-                    url = nil
-                }
-                guard let url, url.pathExtension.lowercased() == "zip" else { return }
-                DispatchQueue.main.async {
-                    onFiles([url])
-                }
-            }
-        }
-    }
 }
