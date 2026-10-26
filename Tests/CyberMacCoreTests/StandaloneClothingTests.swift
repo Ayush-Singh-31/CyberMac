@@ -3,6 +3,88 @@ import XCTest
 @testable import CyberMacCore
 
 final class StandaloneClothingTests: XCTestCase {
+    func testSelectionRefusesExistingLockWithoutRemovingAnotherSelectorsWork() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("SelectionLock-\(UUID().uuidString)")
+        let output = root.appendingPathComponent("wardrobe"), lock = output.appendingPathComponent(".selection-lock")
+        try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sentinel = lock.appendingPathComponent("active")
+        try Data("another selection".utf8).write(to: sentinel)
+        let game = GameInstall(appURL: root.appendingPathComponent("Game.app"), executableURL: root.appendingPathComponent("unused"), dataURL: root, archiveMacURL: nil, r6URL: nil, storefront: .macAppStore, displayName: "Fixture")
+        let manifest = StandaloneClothingPreparer.Manifest(gameApp: game.appURL.path, files: [],
+            items: StandaloneClothingSource.wardrobePieces, compiledSHA256: String(repeating: "a", count: 64),
+            gameplay: "fixture", limitations: "fixture", selection: "both", compiler: "unused", originalScripts: "unused")
+        try JSONEncoder().encode(manifest).write(to: output.appendingPathComponent("clothing.json"))
+        XCTAssertThrowsError(try StandaloneClothingPreparer().selectClothes(game: game, output: output, group: "jinguji"))
+        XCTAssertEqual(try String(contentsOf: sentinel, encoding: .utf8), "another selection")
+        XCTAssertThrowsError(try StandaloneClothingPreparer().selectClothes(game: game, output: game.appURL, group: "jinguji"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: game.appURL.path))
+    }
+
+    func testRefreshRejectsMalformedHashesBeforeGeneratingCommands() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("HashBoundary-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let game = GameInstall(appURL: root.appendingPathComponent("Game.app"), executableURL: root.appendingPathComponent("unused"), dataURL: root, archiveMacURL: nil, r6URL: nil, storefront: .macAppStore, displayName: "Fixture")
+        let manifest: [String: Any] = ["gameApp": game.appURL.path, "files": [], "compiledSHA256": "'; touch injected; '"]
+        try JSONSerialization.data(withJSONObject: manifest).write(to: root.appendingPathComponent("clothing.json"))
+        XCTAssertThrowsError(try StandaloneClothingPreparer().refreshCommands(game: game, output: root)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("hashes are malformed"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Run New Clothing.command").path))
+    }
+
+    func testWardrobeSelectionLimitsGrantsAndKeepsAllLabelsWithoutEquipmentChanges() throws {
+        let all = StandaloneClothingSource.wardrobePieces
+        XCTAssertEqual(Set(all.map(\.record)).count, 7)
+        for (group, count) in [("jinguji", 3), ("lucy", 4), ("both", 7), ("none", 0)] {
+            let selected = try StandaloneClothingSource.selectedPieces(group: group)
+            XCTAssertEqual(selected.count, count)
+            let source = StandaloneClothingSource.render(pieces: all, showPhysicalClothes: true, delivery: selected, autoEquip: false)
+            let ids = try XCTUnwrap(source.split(separator: "\n").first { $0.contains("let items:") })
+            for piece in all {
+                XCTAssertEqual(ids.contains(piece.record), selected.contains(piece))
+                XCTAssertTrue(source.contains("return \"\(piece.label)\""))
+            }
+            XCTAssertFalse(source.contains("QueueRequest"))
+            XCTAssertFalse(source.contains("UnequipWardrobeSet"))
+            XCTAssertTrue(source.contains("/\(count) selected clothes"))
+        }
+        XCTAssertThrowsError(try StandaloneClothingSource.selectedPieces(group: "typo"))
+        XCTAssertTrue(StandaloneClothingSource.render().contains("eq.QueueRequest(request)"), "Legacy equipment test remains supported")
+    }
+
+    func testChooserRunsOnlySelectedGroupWithQuotedWorkspacePaths() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Chooser ' $() \(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let receipt = root.appendingPathComponent("args")
+        let cli = root.appendingPathComponent("tool")
+        try Data(("#!/bin/zsh\nprint -rl -- \"$@\" > " + PathSafety.shellQuoted(receipt.path) + "\n").utf8).write(to: cli)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cli.path)
+        let run = root.appendingPathComponent("Run New Clothing.command")
+        try Data("#!/bin/zsh\nprint launched\n".utf8).write(to: run)
+        let game = GameInstall(appURL: root.appendingPathComponent("Game.app"), executableURL: root.appendingPathComponent("unused"), dataURL: root, archiveMacURL: nil, r6URL: nil, storefront: .macAppStore, displayName: "Fixture")
+        let chooser = root.appendingPathComponent("Choose.command")
+        let inputFile = root.appendingPathComponent("choice-input")
+        try Data(StandaloneClothingPreparer.chooserScript(game: game, output: root, commandLineTool: cli).utf8).write(to: chooser)
+        for (input, group) in [("1", "jinguji"), ("2", "lucy"), ("3", "both"), ("4", "none")] {
+            try Data((input + "\n").utf8).write(to: inputFile)
+            let result = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/zsh"),
+                arguments: ["-c", "exec /bin/zsh " + PathSafety.shellQuoted(chooser.path) + " < " + PathSafety.shellQuoted(inputFile.path)], timeoutSeconds: 5)
+            let args = try String(contentsOf: receipt, encoding: .utf8).split(separator: "\n").map(String.init)
+            XCTAssertEqual(args, ["clothing", "select", "--out-dir", root.path, "--game-app", game.appURL.path, "--group", group])
+            XCTAssertTrue(result.stdout.contains("launched"))
+        }
+        try FileManager.default.removeItem(at: receipt)
+        try Data("bad\n".utf8).write(to: inputFile)
+        let result = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/zsh"),
+            arguments: ["-c", "exec /bin/zsh " + PathSafety.shellQuoted(chooser.path) + " < " + PathSafety.shellQuoted(inputFile.path)], timeoutSeconds: 5, allowFailure: true)
+        XCTAssertNotEqual(result.exitCode, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: receipt.path))
+        XCTAssertFalse(result.stdout.contains("launched"))
+    }
+
     func testGeneratedPreflightRunsAndRefusesFailedProcessEnumeration() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Clothing guards ' \(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -107,7 +189,7 @@ final class StandaloneClothingTests: XCTestCase {
             "resourceHashes": [], "originalMeshHashes": []]
         let url = root.appendingPathComponent("lucy-assets.json")
         try JSONSerialization.data(withJSONObject: manifest).write(to: url)
-        XCTAssertThrowsError(try LucyClothingAssets(manifestURL: url)) { error in
+        XCTAssertThrowsError(try IsolatedClothingAssets(manifestURL: url)) { error in
             XCTAssertTrue(error.localizedDescription.contains("Unsupported Lucy asset recipe"))
         }
     }

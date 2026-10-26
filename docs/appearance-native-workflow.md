@@ -867,3 +867,88 @@ by executable fixtures, including retained post-placement content verification.
 The two active v2 command files were refreshed in place with their existing
 payload hashes, and both pass zsh syntax checks. No game files, outfit assets,
 helper bytecode or new backup files were created or changed by this refresh.
+
+### Jinguji alongside Lucy — 26 October
+
+The approved next outfit is three saved `JingujiAllInOne.zip` variants:
+
+| New item | Donor record | Appearance |
+| --- | --- | --- |
+| `Items.CyberMac_Jinguji_Corset` | `Items.TShirt_06_basic_01` | Black/silver corset |
+| `Items.CyberMac_Jinguji_Pants` | `Items.Pants_10_basic_01` | Black Judy pants |
+| `Items.CyberMac_Jinguji_Heels` | `Items.Boots_05_basic_01` | Chrome heels |
+
+`tools/prepare_jinguji_assets.py` uses the existing Lucy archive/codec/CR2W
+helpers. It verifies the three source archive digests and the working Lucy v2
+bundle, preserves all 41 Lucy garment resources verbatim, and adds 12 Jinguji
+resources. Each Jinguji item has a separate root entity, appearance resource,
+garment-part entity and re-keyed mesh. The factory retains all prior rows and
+adds the three new mappings, giving 54 combined resources. The original 11
+garment mesh hashes are absent. Both databases clone all seven records with
+independent entity and appearance CNames; original records are retained.
+
+The selected mod mesh hashes were resolved against 165 native appearance
+resources, rather than inferred from ZIP names alone. The current donor apps
+select material names such as `grey`, `camo_sand` and `leather_blue_stripes`.
+The selected Jinguji variants use `default`; the converter updates matching
+compiled mesh components and their named part overrides, preserving unrelated
+shadow components. Every generated graph is compared after re-serialization,
+and the factory rows are re-read after restoring the Mac cooking marker.
+This is still a build-specific recipe, not support for all 214 Jinguji archives.
+
+Prepare assets with the same local WolvenKit DLL, dotnet and ARM64 codec used
+for Lucy, passing `--jinguji-zip`, `--lucy-assets` and a new ignored `--out` folder.
+Then prepare the wardrobe:
+
+```sh
+cybermac clothing prepare --compiler <pinned-redscript-cli> \
+  --original-scripts <verified-original-final.redscripts> \
+  --assets <wardrobe-assets.json> --restore-from <existing-Lucy-clothing.json> \
+  --game-app /Applications/Cyberpunk2077.app --out-dir <new-workspace>
+```
+
+All four restore paths are reused from the existing verified manifest. The
+two staged archives use APFS clones. There is one compiled helper, not one per
+selection; selecting again replaces that small cache and removes its temporary
+compiler output. No full archive extraction or new downloads are required.
+
+Run **Choose Clothes and Play.command** from the prepared folder. Choose
+Jinguji, Lucy, both or no new grants. The latter keeps all seven records/assets
+available for items already saved. Existing copies in the player's inventory
+are skipped; items stored only in the stash are not included in that check.
+The helper does not request equipment or disable wardrobe sets. Equip pieces
+in clothing inventory; turn off an active wardrobe outfit if it hides them.
+Names are specific to each new item; thumbnails remain the original donors.
+
+`clothing select --out-dir <workspace> --group <jinguji|lucy|both|none>` recompiles
+only the helper against the pinned original scripts/compiler. It requires the
+game and prior launch/restore commands to be closed, uses an exclusive selection
+lock and validates the manifest's target paths, seals, identities and hash
+syntax. The launcher checks all payload/restore hashes before game writes.
+If helper/metadata replacement is interrupted, a mismatched launcher refuses
+installation; rerun selection after the old selector has stopped. A lock left
+by forced termination needs inspection before removal. No failed selection
+should require a game-file restore because selection only writes the workspace.
+
+The launcher installs both databases, both archive changes and the separate
+auxiliary script cache, then restores originals after game exit. The game is
+never launched by preparation. Keep the reference manual save untouched; saved
+custom items need their records installed on later loads. First-person, bike,
+inventory and Photo Mode appearance consistency must be checked together for
+Jinguji; offline verification does not establish that rendering result.
+
+Final local validation: 589 Swift tests pass (571 core, 18 app) and six Python
+asset tests pass. The first full run exposed a timeout in the new chooser test's
+shell-pipeline input harness; feeding the same choices through a file with
+`exec` removed that extra process chain, and the full suite passed with the
+same assertions and deadline. The real pinned compiler also accepted all four
+choices, taking 2.64 seconds total; only the final Jinguji cache is retained.
+Independent audits verify seven records, 630 flats and 14 new CNames in each
+database, with original records/values/query/tag bytes retained. The appearance
+archive adds 53 resources; the gamedata archive changes only the factory.
+Staged payloads and dependencies match the bundle. Streamed comparison verifies
+all six wrapped original game method bodies. All three command files parse.
+Malformed paths, source identities, digests and mesh collisions are rejected
+before a preparation workspace is created. All four restore paths are reused,
+with no new original-backup files. The installed game remains original and the
+auxiliary helper is absent. Prepared workspace: `.research/jinguji-clothing`.

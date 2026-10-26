@@ -186,6 +186,15 @@ CyberMac stores its sidecar files under:
 
 v0.1 developer preview. API/UI may change. Source-only release.
 
+The four independent Lucy items are confirmed working locally across gameplay
+and preview views. A combined Lucy/Jinguji developer package now prepares three
+additional items: a black/silver corset, black Judy pants and chrome heels. It
+keeps both collections' records/assets together and offers a Terminal chooser
+for grants without auto-equipping or disabling wardrobe outfits. Jinguji still
+requires its combined gameplay check. This supports these specific saved
+variants, not arbitrary Jinguji archives or body-shape mods. See the
+[combined wardrobe workflow](docs/appearance-native-workflow.md#jinguji-alongside-lucy--26-october).
+
 For the fresh 2.5 installation results and next milestones, see the
 [24 October 2026 reinstall check](docs/reinstall-check-2026-10-24.md). The
 [23 October development audit](docs/development-audit-2026-10-23.md) records the

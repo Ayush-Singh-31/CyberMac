@@ -4,10 +4,11 @@ import CyberMacCore
 enum StandaloneClothingCommands {
     static func run(_ args: [String]) throws {
         let refresh = args.first == "refresh"
-        guard args.first == "prepare" || refresh else {
+        let select = args.first == "select"
+        guard args.first == "prepare" || refresh || select else {
             throw CyberMacError.invalidInput("Use clothing prepare --compiler <redscript-cli> --original-scripts <verified-original> --out-dir <new-folder> [--game-app <app>] [--lucy-assets <manifest> --original-appearance <existing-original-archive>].")
         }
-        let allowed: Set<String> = refresh ? ["--out-dir", "--game-app"] : ["--compiler", "--original-scripts", "--out-dir", "--game-app", "--lucy-assets", "--original-appearance"]
+        let allowed: Set<String> = select ? ["--out-dir", "--game-app", "--group"] : (refresh ? ["--out-dir", "--game-app"] : ["--compiler", "--original-scripts", "--out-dir", "--game-app", "--lucy-assets", "--original-appearance", "--assets", "--restore-from"])
         var values: [String: String] = [:]
         var index = 1
         while index < args.count {
@@ -18,6 +19,12 @@ enum StandaloneClothingCommands {
         }
         guard let output = values["--out-dir"] else { throw CyberMacError.invalidInput("Clothing commands need --out-dir.") }
         let game = try GameInstallDetector().detect(preferredAppPath: values["--game-app"])
+        if select {
+            guard let group = values["--group"] else { throw CyberMacError.invalidInput("Selection needs --group jinguji, lucy, both or none.") }
+            try StandaloneClothingPreparer().selectClothes(game: game, output: PathSafety.expandedURL(from: output), group: group)
+            print("Selection prepared: \(group). Clothing will be added without auto-equipping. No game files changed.")
+            return
+        }
         if refresh {
             try StandaloneClothingPreparer().refreshCommands(game: game, output: PathSafety.expandedURL(from: output))
             print("Launch and recovery commands updated. Existing payloads and restore files reused; no game files changed.")
@@ -29,7 +36,18 @@ enum StandaloneClothingCommands {
         let folder = try StandaloneClothingPreparer().prepare(game: game, compiler: PathSafety.expandedURL(from: compiler),
             originalScripts: PathSafety.expandedURL(from: original), output: PathSafety.expandedURL(from: output),
             lucyAssets: values["--lucy-assets"].map(PathSafety.expandedURL(from:)),
-            originalAppearance: values["--original-appearance"].map(PathSafety.expandedURL(from:)))
+            originalAppearance: values["--original-appearance"].map(PathSafety.expandedURL(from:)),
+            assetsManifest: values["--assets"].map(PathSafety.expandedURL(from:)),
+            reuseRestoreManifest: values["--restore-from"].map(PathSafety.expandedURL(from:)))
+        if values["--assets"] != nil {
+            try StandaloneClothingPreparer().writeClothingChooser(game: game, output: folder,
+                commandLineTool: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL)
+            print("Lucy and Jinguji wardrobe prepared. No game files changed.")
+            print("Run: \(folder.appendingPathComponent("Choose Clothes and Play.command").path)")
+            print("Choose Jinguji, Lucy, both or no new grants. Equip the pieces yourself; active wardrobe outfits may hide them.")
+            print("Jinguji gameplay is unverified. Keep your reference save untouched.")
+            return
+        }
         print("Four independent clothing records and their inventory/equipment helper are prepared. No game files changed.")
         print("Run: \(folder.appendingPathComponent("Run New Clothing.command").path)")
         print("The command installs, launches, adds the new pieces and requests equipment on save load, then restores originals after exit.")

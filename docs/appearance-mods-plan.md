@@ -36,6 +36,15 @@ and donor thumbnail images render. This fulfills the four-piece standalone
 clothing test; arbitrary mod imports and body-shape support remain future work.
 See [Lucy duplicates](appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
 
+**Next approved milestone — 26 October:** add the saved Jinguji black/silver
+corset, black Judy pants and chrome heels alongside Lucy. The combined package
+uses seven independent records with separate meshes/entities/appearance names,
+and a chooser grants Jinguji, Lucy, both or nothing without changing equipment
+or the active wardrobe. Only these three Jinguji variants are prepared; their
+gameplay result remains unverified. Reuse all four existing restore files.
+The saved collection has no player body-shape package; NPCs Gone Wild targets
+NPCs and is not a substitute for a V body with matching clothing refits.
+
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and
 compress research evidence. Do not accumulate full game backups or download a

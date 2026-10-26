@@ -3,10 +3,15 @@ import Foundation
 /// A real inventory grant and equipment request, using the created instance ID.
 /// Both vanilla duplicate and isolated Lucy packages use the same item IDs.
 enum StandaloneClothingSource {
-    struct Piece: Codable, Sendable {
+    struct Piece: Codable, Sendable, Equatable {
         let source: String
         let record: String
         let label: String
+        let entityName: String?
+
+        init(source: String, record: String, label: String, entityName: String? = nil) {
+            self.source = source; self.record = record; self.label = label; self.entityName = entityName
+        }
     }
 
     static let pieces: [Piece] = [
@@ -17,20 +22,54 @@ enum StandaloneClothingSource {
     ]
 
     static var lucyPieces: [Piece] {
-        pieces.map { .init(source: $0.source, record: $0.record, label: $0.label.replacingOccurrences(of: "CyberMac ", with: "CyberMac Lucy ")) }
+        zip(pieces, ["jacket", "top", "pants", "boots"]).map { piece, key in
+            .init(source: piece.source, record: piece.record,
+                  label: piece.label.replacingOccurrences(of: "CyberMac ", with: "CyberMac Lucy "), entityName: "cybermac_lucy_" + key)
+        }
     }
 
-    static func render(pieces: [Piece] = Self.pieces, showPhysicalClothes: Bool = false) -> String {
-        let ids = pieces.map { "t\"\($0.record)\"" }.joined(separator: ", ")
+    static let jingujiPieces: [Piece] = [
+        .init(source: "Items.TShirt_06_basic_01", record: "Items.CyberMac_Jinguji_Corset", label: "CyberMac Jinguji Corset - Black Silver", entityName: "cybermac_jinguji_corset"),
+        .init(source: "Items.Pants_10_basic_01", record: "Items.CyberMac_Jinguji_Pants", label: "CyberMac Jinguji Judy Pants - Black", entityName: "cybermac_jinguji_pants"),
+        .init(source: "Items.Boots_05_basic_01", record: "Items.CyberMac_Jinguji_Heels", label: "CyberMac Jinguji Chrome Heels", entityName: "cybermac_jinguji_heels")
+    ]
+
+    static var wardrobePieces: [Piece] { lucyPieces + jingujiPieces }
+
+    static func selectedPieces(group: String) throws -> [Piece] {
+        switch group {
+        case "jinguji": return jingujiPieces
+        case "lucy": return lucyPieces
+        case "both": return wardrobePieces
+        case "none": return []
+        default: throw CyberMacError.invalidInput("Choose jinguji, lucy, both or none.")
+        }
+    }
+
+    static func render(pieces: [Piece] = Self.pieces, showPhysicalClothes: Bool = false,
+                       delivery: [Piece]? = nil, autoEquip: Bool = true) -> String {
+        let selected = delivery ?? pieces
+        let ids = selected.map { "t\"\($0.record)\"" }.joined(separator: ", ")
         let names = pieces.map { "    if id == t\"\($0.record)\" { return \"\($0.label)\"; }" }.joined(separator: "\n")
         let sources = pieces.map { "    if id == t\"\($0.record)\" { return t\"\($0.source)\"; }" }.joined(separator: "\n")
-        let wardrobe = showPhysicalClothes ? """
+        let wardrobe = showPhysicalClothes && autoEquip ? """
         if !this.verifyOnly {
           let equipmentData: ref<EquipmentSystemPlayerData> = EquipmentSystem.GetData(this.player);
           if IsDefined(equipmentData) && equipmentData.IsVisualSetActive() {
             equipmentData.UnequipWardrobeSet();
             this.wardrobePaused = true;
           }
+        }
+        """ : ""
+        let equipment = autoEquip ? """
+        if eq.IsEquippable(this.player, data) {
+          let request: ref<EquipRequest> = new EquipRequest();
+          request.owner = this.player;
+          // Equip the actual created instance, including its seed.
+          request.itemID = data.GetID();
+          request.slotIndex = 0;
+          request.addToInventory = false;
+          eq.QueueRequest(request);
         }
         """ : ""
         return #"""
@@ -84,15 +123,7 @@ public class CyberMacClothingCallback extends DelayCallback {
           if this.verifyOnly {
             if eq.IsEquipped(this.player, data.GetID()) { equipped += 1; }
           } else {
-            if eq.IsEquippable(this.player, data) {
-              let request: ref<EquipRequest> = new EquipRequest();
-              request.owner = this.player;
-              // Equip the actual created instance, including its seed.
-              request.itemID = data.GetID();
-              request.slotIndex = 0;
-              request.addToInventory = false;
-              eq.QueueRequest(request);
-            }
+            \#(equipment)
           }
         } else { missing += " Inventory rejected " + CyberMacClothingMessages.Name(id) + "."; }
       } else { missing += " Missing record: " + CyberMacClothingMessages.Name(id) + "."; }
@@ -109,7 +140,7 @@ public class CyberMacClothingCallback extends DelayCallback {
       if ItemID.IsValid(eq.GetActiveItem(this.player, gamedataEquipmentArea.Outfit)) {
         missing += " A full-body outfit is equipped and may hide the clothes.";
       }
-      CyberMacClothingMessages.Show(this.player, "CyberMac: " + IntToString(found) + "/4 NEW clothes in inventory; " + IntToString(equipped) + "/4 equipped. Check clothing inventory. Wardrobe outfits can hide them." + missing);
+      CyberMacClothingMessages.Show(this.player, "CyberMac: " + IntToString(found) + "/\#(selected.count) selected clothes in inventory; " + IntToString(equipped) + " equipped. \#(autoEquip ? "Check clothing inventory." : "Equip your chosen pieces in clothing inventory.") Wardrobe outfits can hide them." + missing);
     }
   }
 }
