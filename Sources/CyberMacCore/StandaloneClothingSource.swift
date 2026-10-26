@@ -47,11 +47,12 @@ enum StandaloneClothingSource {
     }
 
     static func render(pieces: [Piece] = Self.pieces, showPhysicalClothes: Bool = false,
-                       delivery: [Piece]? = nil, autoEquip: Bool = true) -> String {
+                       delivery: [Piece]? = nil, autoEquip: Bool = true, customIcons: Bool = false) -> String {
         let selected = delivery ?? pieces
         let ids = selected.map { "t\"\($0.record)\"" }.joined(separator: ", ")
         let names = pieces.map { "    if id == t\"\($0.record)\" { return \"\($0.label)\"; }" }.joined(separator: "\n")
         let sources = pieces.map { "    if id == t\"\($0.record)\" { return t\"\($0.source)\"; }" }.joined(separator: "\n")
+        let icons = customIcons ? pieces.map { "    if id == t\"\($0.record)\" { return \"CyberMac_\($0.record.split(separator: ".").last!)\"; }" }.joined(separator: "\n") : ""
         let wardrobe = showPhysicalClothes && autoEquip ? """
         if !this.verifyOnly {
           let equipmentData: ref<EquipmentSystemPlayerData> = EquipmentSystem.GetData(this.player);
@@ -168,6 +169,8 @@ private final func GetInventoryItemDataFromItemRecordInternal(itemRecord: ref<It
 @wrapMethod(UIInventoryItem)
 public final func GetIconPath() -> String {
   let result: String = wrappedMethod();
+  let custom: String = CyberMacClothingMessages.IconName(this.GetTweakDBID());
+  if IsStringValid(custom) { return "UIIcon." + custom; }
   let source: TweakDBID = CyberMacClothingMessages.Source(this.GetTweakDBID());
   if source != this.GetTweakDBID() {
     return UIInventoryItemsManager.ResolveItemIconName(source, TweakDBInterface.GetItemRecord(source), this.m_manager);
@@ -201,12 +204,19 @@ protected cb func OnScreenMessageUpdate(value: Variant) -> Bool {
 }
 
 public class CyberMacClothingMessages extends IScriptable {
+  public static func IconName(id: TweakDBID) -> String {
+\#(icons)
+    return "";
+  }
+
   public static func Source(id: TweakDBID) -> TweakDBID {
 \#(sources)
     return id;
   }
 
   public static func DonorIcon(id: TweakDBID, useMale: Bool) -> String {
+    let custom: String = CyberMacClothingMessages.IconName(id);
+    if IsStringValid(custom) { return custom; }
     return NameToString(IconsNameResolver.GetIconsNameResolver().TranslateItemToIconName(CyberMacClothingMessages.Source(id), useMale));
   }
 

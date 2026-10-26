@@ -5,6 +5,7 @@ public enum AddonProbeTweakDBCloneOverride: Equatable, Sendable {
     case string(property: String, value: String)
     case tweakDBID(property: String, value: String)
     case locKey(property: String, value: UInt64)
+    case resource(property: String, path: String)
 
     public var property: String {
         switch self {
@@ -12,6 +13,7 @@ public enum AddonProbeTweakDBCloneOverride: Equatable, Sendable {
         case .string(let property, _): return property
         case .tweakDBID(let property, _): return property
         case .locKey(let property, _): return property
+        case .resource(let property, _): return property
         }
     }
 
@@ -21,6 +23,7 @@ public enum AddonProbeTweakDBCloneOverride: Equatable, Sendable {
         case .string: return "String"
         case .tweakDBID: return "TweakDBID"
         case .locKey: return "gamedataLocKeyWrapper"
+        case .resource: return "raRef:CResource"
         }
     }
 
@@ -30,6 +33,7 @@ public enum AddonProbeTweakDBCloneOverride: Equatable, Sendable {
         case .string: return "string"
         case .tweakDBID: return "tweakDBID"
         case .locKey: return "locKey"
+        case .resource: return "resource"
         }
     }
 }
@@ -357,10 +361,11 @@ public struct TweakDBCloneRecordStager: Sendable {
 
         let sourceTypeHashHex = Self.hex(sourceRecord.typeHash)
         let sourceTypeName = Self.recordTypeNameForHash[sourceRecord.typeHash]
+        let properties = TweakDBStructureInspector.recordProperties(typeName: sourceTypeName)
 
         var clonedFlats: [AddonProbeTweakDBCloneFlatPlan] = []
         var touchedFlatTypeIndices = Set<Int>()
-        for property in TweakDBStructureInspector.itemRecordProperties {
+        for property in properties {
             let sourceFlatID = Self.tweakDBID("\(request.sourceRecord).\(property)")
             guard let location = parsed.flatLocationByID[sourceFlatID] else { continue }
             let newFlatID = Self.tweakDBID("\(request.newRecord).\(property)")
@@ -529,7 +534,7 @@ public struct TweakDBCloneRecordStager: Sendable {
                 conclusions.append(.failed)
             }
             let knownOverridesResolved = request.overrides.allSatisfy { override in
-                guard TweakDBStructureInspector.itemRecordProperties.contains(override.property) else { return true }
+                guard properties.contains(override.property) else { return true }
                 guard !overrideWarnings.contains(where: { $0.contains(override.property) }) else { return false }
                 return report.trace.knownFlats.contains { $0.property == override.property }
             }
@@ -560,7 +565,7 @@ public struct TweakDBCloneRecordStager: Sendable {
             nextRecord: nextRecord,
             stagedRecordsSortedByID: stagedRecordsOrderIssue == nil,
             touchedFlatKeyTables: touchedFlatKeyTables,
-            knownSchemaPropertyCount: TweakDBStructureInspector.itemRecordProperties.count,
+            knownSchemaPropertyCount: properties.count,
             clonedFlats: clonedFlats,
             appliedOverrides: appliedOverrides,
             verificationStatus: verificationStatus,
@@ -1359,6 +1364,10 @@ public struct TweakDBCloneRecordStager: Sendable {
             return PreparedOverride(bytes: littleEndianBytes64(id), equality: .tweakDBID(id), summary: "TweakDBID \(hex(id)) (\(value))")
         case .locKey(_, let value):
             return PreparedOverride(bytes: littleEndianBytes64(value), equality: .locKey(value), summary: "LocKey \(value)")
+        case .resource(_, let path):
+            let value = TweakDBPackedStringAnalyzer.fnv1a64(Array(path.lowercased().replacingOccurrences(of: "/", with: "\\").utf8))
+            let data = littleEndianBytes64(value)
+            return PreparedOverride(bytes: data, equality: .raw(data), summary: "ResourcePathHash \(hex(value))")
         }
     }
 

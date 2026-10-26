@@ -188,12 +188,25 @@ v0.1 developer preview. API/UI may change. Source-only release.
 
 The four independent Lucy items are confirmed working locally across gameplay
 and preview views. A combined Lucy/Jinguji developer package now prepares three
-additional items: a black/silver corset, black Judy pants and chrome heels. It
-keeps both collections' records/assets together and offers a Terminal chooser
-for grants without auto-equipping or disabling wardrobe outfits. Jinguji still
-requires its combined gameplay check. This supports these specific saved
+additional items: a black/silver corset, black Judy pants and chrome heels. The
+user confirms both outfits work together, including Jinguji in all modes, and
+the in-game CyberMac notification is visible. The new **Clothing** app screen
+shows model-rendered previews, collection filters and per-piece selection. Its
+launch button prepares the selected inventory grants and opens the verified
+launcher in Terminal for the macOS password; originals restore after exit.
+Seven native custom icons are prepared and still need their in-game display
+check. Previews use the garments' source textures and material colours under
+studio lighting, which can differ from the game's lighting.
+This supports these specific saved
 variants, not arbitrary Jinguji archives or body-shape mods. See the
 [combined wardrobe workflow](docs/appearance-native-workflow.md#jinguji-alongside-lucy--26-october).
+
+Build a double-clickable local app with `scripts/build-app.sh`; output is
+`dist/CyberMac.app`. A prepared icon wardrobe is registered with
+`cybermac clothing register --workspace <folder>` or opened from the Clothing
+screen's menu. Registration references existing archives and restore files.
+ZIP selection recognizes the saved Lucy packages and the three prepared Jinguji
+variants; arbitrary new mod conversion is not exposed as a working app feature.
 
 For the fresh 2.5 installation results and next milestones, see the
 [24 October 2026 reinstall check](docs/reinstall-check-2026-10-24.md). The

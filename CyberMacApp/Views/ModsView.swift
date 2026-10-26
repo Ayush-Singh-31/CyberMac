@@ -46,7 +46,7 @@ struct ModsView: View {
                                     .background(CyberAccent.amber.color.opacity(0.14), in: Capsule())
                             }
                             if scan.kind == .archiveOnly {
-                                Text("Archive-only asset mod detected. CyberMac can identify this package, but archive installation is not enabled until a Mac archive load-path probe succeeds.")
+                                Text("For the prepared Lucy and Jinguji clothes, use Clothing in the sidebar. This general installer accepts script and input mods; other archive packages need conversion first.")
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                                 scanMarkerPills(scan.dependencyMarkers.archiveMarkerLabels, accent: .amber)

@@ -22,6 +22,8 @@ public struct StandaloneClothingPreparer {
         var selection: String?
         let compiler: String?
         let originalScripts: String?
+        var iconManifestPath: String? = nil
+        var selectedRecords: [String]? = nil
     }
 
     public init() {}
@@ -158,6 +160,18 @@ public struct StandaloneClothingPreparer {
     /// unchanged. The launch command verifies every payload before installation.
     public func selectClothes(game: GameInstall, output: URL, group: String) throws {
         let delivery = try StandaloneClothingSource.selectedPieces(group: group)
+        try selectClothes(game: game, output: output, delivery: delivery, group: group)
+    }
+
+    public func selectClothes(game: GameInstall, output: URL, records: [String]) throws {
+        let known = StandaloneClothingSource.wardrobePieces
+        guard Set(records).count == records.count, Set(records).isSubset(of: Set(known.map(\.record))) else {
+            throw CyberMacError.invalidInput("Selected clothing contains an unknown or duplicate item.")
+        }
+        try selectClothes(game: game, output: output, delivery: known.filter { records.contains($0.record) }, group: "custom")
+    }
+
+    private func selectClothes(game: GameInstall, output: URL, delivery: [StandaloneClothingSource.Piece], group: String) throws {
         let root = EquipProbePreparer.resolvedPath(output), gameRoot = EquipProbePreparer.resolvedPath(game.appURL)
         guard root != gameRoot, !root.hasPrefix(gameRoot + "/") else {
             throw CyberMacError.unsafePath("Clothing selection workspace must be outside the game.")
@@ -177,28 +191,38 @@ public struct StandaloneClothingPreparer {
         defer { try? FileManager.default.removeItem(at: lock) }
         try refreshCommands(game: game, output: output, verifyPayloads: false, verifyHelper: false)
         let compiler = URL(fileURLWithPath: compilerPath), original = URL(fileURLWithPath: originalPath)
-        try EquipProbePreparer.verify(compiler, sha256: EquipProbePreparer.compilerSHA)
-        try EquipProbePreparer.verify(original, sha256: EquipProbePreparer.originalSHA)
-        let source = lock.appendingPathComponent("SelectedClothing.reds")
-        let compiled = lock.appendingPathComponent("clothing.redscripts")
-        let text = StandaloneClothingSource.render(pieces: manifest.items, delivery: delivery, autoEquip: false)
-        try Data(text.utf8).write(to: source)
-        let result = try ProcessRunner().run(executableURL: compiler,
-            arguments: ["compile", "-s", source.path, "-b", original.path, "-o", compiled.path], timeoutSeconds: 60)
-        try Data((result.stdout + result.stderr).utf8).write(to: output.appendingPathComponent("selection-compile.log"), options: .atomic)
-        guard try PathSafety.fileSize(url: compiled) > 0 else { throw CyberMacError.invalidInput("Compiler produced an empty clothing helper.") }
-        let digest = try PathSafety.sha256(url: compiled)
-        guard digest != EquipProbePreparer.originalSHA else { throw CyberMacError.invalidInput("Selection helper is unmodified.") }
-        try EquipProbePreparer.verify(compiler, sha256: EquipProbePreparer.compilerSHA)
-        try EquipProbePreparer.verify(original, sha256: EquipProbePreparer.originalSHA)
+        let text = StandaloneClothingSource.render(pieces: manifest.items, delivery: delivery, autoEquip: false,
+                                                 customIcons: manifest.iconManifestPath != nil)
+        let (compiled, digest) = try Self.compileHelper(text: text, compiler: compiler, original: original, directory: lock)
+        try Data(contentsOf: lock.appendingPathComponent("compile.log")).write(to: output.appendingPathComponent("selection-compile.log"), options: .atomic)
         // Atomic replacement avoids retaining a cache for each combination. If a
         // later metadata write fails, the prior launcher refuses its hash; select
         // can be retried without touching any game files.
         try Data(contentsOf: compiled).write(to: output.appendingPathComponent("clothing.redscripts"), options: .atomic)
         try Data(text.utf8).write(to: output.appendingPathComponent("StandaloneClothing.reds"), options: .atomic)
         manifest.compiledSHA256 = digest; manifest.selection = group
+        manifest.selectedRecords = delivery.map(\.record)
         try JSONEncoder.cybermac.encode(manifest).write(to: manifestURL, options: .atomic)
         try Self.writeCommands(files: manifest.files, game: game, output: output, compiledSHA: digest, lucy: true, inventoryOnly: true)
+    }
+
+    static func compileHelper(text: String, compiler: URL, original: URL, directory: URL) throws -> (URL, String) {
+        try EquipProbePreparer.verify(compiler, sha256: EquipProbePreparer.compilerSHA)
+        try EquipProbePreparer.verify(original, sha256: EquipProbePreparer.originalSHA)
+        let source = directory.appendingPathComponent("SelectedClothing.reds")
+        let compiled = directory.appendingPathComponent("clothing.redscripts")
+        try Data(text.utf8).write(to: source)
+        let result = try ProcessRunner().run(executableURL: compiler,
+            arguments: ["compile", "-s", source.path, "-b", original.path, "-o", compiled.path], timeoutSeconds: 60)
+        try Data((result.stdout + result.stderr).utf8).write(to: directory.appendingPathComponent("compile.log"), options: .atomic)
+        guard FileManager.default.fileExists(atPath: compiled.path), try PathSafety.fileSize(url: compiled) > 0 else {
+            throw CyberMacError.invalidInput("Clothing compilation produced no helper: " + String((result.stdout + result.stderr).suffix(4000)))
+        }
+        let digest = try PathSafety.sha256(url: compiled)
+        guard digest != EquipProbePreparer.originalSHA else { throw CyberMacError.invalidInput("Clothing helper is unmodified.") }
+        try EquipProbePreparer.verify(compiler, sha256: EquipProbePreparer.compilerSHA)
+        try EquipProbePreparer.verify(original, sha256: EquipProbePreparer.originalSHA)
+        return (compiled, digest)
     }
 
     public func writeClothingChooser(game: GameInstall, output: URL, commandLineTool: URL) throws {
@@ -296,7 +320,7 @@ public struct StandaloneClothingPreparer {
         try Self.writeCommands(files: manifest.files, game: game, output: output, compiledSHA: manifest.compiledSHA256, lucy: targets == expectedLucy, inventoryOnly: manifest.selection != nil)
     }
 
-    private static func writeCommands(files: [File], game: GameInstall, output: URL, compiledSHA: String, lucy: Bool, inventoryOnly: Bool = false) throws {
+    static func writeCommands(files: [File], game: GameInstall, output: URL, compiledSHA: String, lucy: Bool, inventoryOnly: Bool = false) throws {
         let gameScripts = game.appURL.appendingPathComponent("Contents/Data/r6/cache/final.redscripts")
         let auxiliary = gameScripts.deletingLastPathComponent().appendingPathComponent("cybermac-standalone.redscripts")
         let restoreURL = output.appendingPathComponent("Restore New Clothing.command")
@@ -366,6 +390,24 @@ public struct StandaloneClothingPreparer {
     static func runScript(files: [File], game: GameInstall, scripts: URL, auxiliary: URL, compiled: URL,
                           compiledSHA: String, restore: URL, lucy: Bool = false, inventoryOnly: Bool = false) -> String {
         var result = preamble(executable: game.executableURL, scripts: scripts) + "\n"
+        let sessionFile = restore.deletingLastPathComponent().appendingPathComponent("session.json")
+        let session = #"""
+        status_file=\#(PathSafety.shellQuoted(sessionFile.path))
+        session_status() {
+          local temporary="${status_file}.tmp.$$"
+          if ! (print -r -- "{\"status\":\"$1\"}" > "$temporary" && /bin/mv -f -- "$temporary" "$status_file"); then
+            print 'Could not update app status. Continue following Terminal; game recovery still runs.' >&2
+            /bin/rm -f -- "$temporary" || true
+          fi
+          return 0
+        }
+        session_status preparing
+        # zsh can exit directly from a failed function without running EXIT.
+        # ZERR records those preflight failures too; neither status write may
+        # prevent the safety-critical game restore path.
+        trap 'session_status failed' ZERR EXIT
+        """#
+        result = result.replacingOccurrences(of: "\nclosed\n", with: "\n" + session + "\nclosed\n")
         result += "[[ ! -e \(PathSafety.shellQuoted(restore.deletingLastPathComponent().appendingPathComponent(".selection-lock").path)) ]] || { print 'Clothing selection is being prepared. Wait for it to finish.' >&2; exit 1; }\n"
         for file in files {
             result += "print -r -- \(PathSafety.shellQuoted("Checking: " + URL(fileURLWithPath: file.target).lastPathComponent))\n"
@@ -373,7 +415,7 @@ public struct StandaloneClothingPreparer {
         }
         result += "verify \(PathSafety.shellQuoted(compiled.path)) '\(compiledSHA)'\n"
         result += "[[ ! -e \(PathSafety.shellQuoted(auxiliary.path)) && ! -L \(PathSafety.shellQuoted(auxiliary.path)) ]] || { print 'Temporary clothing cache already exists.' >&2; exit 1; }\n"
-        result += "sudo -v\ncleanup() {\n local result=$?\n trap - EXIT\n /bin/zsh \(PathSafety.shellQuoted(restore.path)) || { print 'Automatic cleanup stopped; run Restore New Clothing.command after closing the game.' >&2; exit 1; }\n exit \"$result\"\n}\ntrap cleanup EXIT\ntrap 'exit 130' INT TERM\n"
+        result += "sudo -v\ntrap - ZERR\ncleanup() {\n local result=$?\n trap - EXIT ZERR\n session_status restoring\n /bin/zsh \(PathSafety.shellQuoted(restore.path)) || { session_status failed; print 'Automatic cleanup stopped; run Restore New Clothing.command after closing the game.' >&2; exit 1; }\n if [[ \"$result\" == 0 ]]; then session_status finished; else session_status failed; fi\n exit \"$result\"\n}\ntrap cleanup EXIT\ntrap 'exit 130' INT TERM\n"
         for file in files {
             result += "print -r -- \(PathSafety.shellQuoted("Installing: " + URL(fileURLWithPath: file.target).lastPathComponent))\n"
             result += VerifiedFileReplacement.command(source: file.staged, target: file.target, sha256: file.stagedSHA256) + "\n"
@@ -386,7 +428,7 @@ public struct StandaloneClothingPreparer {
             result += "print 'Four NEW clothing records installed. Load a manual save; the clothes will be added and equipment requested after three seconds.'\n"
             result += "print 'Keep your reference save untouched. \(lucy ? "Lucy uses unique appearance names and donor icon lookup. An active wardrobe set is disabled for this test; saved presets are kept." : "These are separate records with vanilla looks. Active wardrobe outfits can hide the equipped pieces.")'\n"
         }
-        result += "/usr/bin/open -W \(PathSafety.shellQuoted(game.appURL.path)) --args \(PathSafety.shellQuoted("-scriptsBlobPath=" + auxiliary.path))\n"
+        result += "session_status playing\n/usr/bin/open -W \(PathSafety.shellQuoted(game.appURL.path)) --args \(PathSafety.shellQuoted("-scriptsBlobPath=" + auxiliary.path))\n"
         return result
     }
 }

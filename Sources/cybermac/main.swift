@@ -144,6 +144,9 @@ struct CyberMacCLI {
             [--assets <wardrobe-assets.json> --restore-from <existing-clothing.json>]
           cybermac clothing refresh --out-dir <existing-workspace> [--game-app <app>]
           cybermac clothing select --out-dir <wardrobe-workspace> --group <jinguji|lucy|both|none> [--game-app <app>]
+          cybermac clothing select --out-dir <wardrobe-workspace> --records <comma-separated item IDs> [--game-app <app>]
+          cybermac clothing icons --workspace <working-wardrobe> --icons <icons.json> --out-dir <new-folder> [--game-app <app>]
+          cybermac clothing register --workspace <icon-wardrobe>
           cybermac appearance stage <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance commands <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance verify <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]

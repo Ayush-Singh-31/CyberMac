@@ -952,3 +952,113 @@ Malformed paths, source identities, digests and mesh collisions are rejected
 before a preparation workspace is created. All four restore paths are reused,
 with no new original-backup files. The installed game remains original and the
 auxiliary helper is absent. Prepared workspace: `.research/jinguji-clothing`.
+
+### Rendered icons and the Clothing app screen — 26 October
+
+The user confirms the intended three-piece Jinguji outfit works with Lucy in all
+modes and confirms seeing an in-game CyberMac notification. They specifically
+request distinct icons because the donor pictures are confusing, and ask whether
+previews can be rendered while preparing the mod.
+
+`tools/prepare_clothing_icons.py` now exports only the meshes used by each
+selected full feminine appearance to GLB, using the existing local WolvenKit
+CLI and codec. `tools/render_clothing_thumbnails.py` runs the already-installed
+Blender headlessly, renders a transparent 256×256 image of each garment, and
+frames the actual visible garment geometry rather than rig helper shapes or
+degenerate triangles. Following the user's texture correction, the builder
+resolves the selected component/mesh materials, their parent instances, source
+textures, multilayer setups/templates and mask tiles. The pinned Lucy meshes
+retain some stale donor selectors/tables; their authored replacement material
+buffer or default mesh appearance supplies the garment textures. Unknown
+Jinguji selectors fail explicitly.
+
+WolvenKit's image export requires DirectXTex and fails on Mac. The builder instead
+uses Pillow's BC1/BC3/BC4/BC5/BC7 decoder and reconstructs the MLMASK tiles from
+their source atlas. The mask reconstruction follows WolvenKit's GPL-3.0 source;
+that Python module has a separate license notice and the license is retained in
+`tools/licenses`. Blender uses the official Cyberpunk Blender add-on 2.0.0 shader
+modules without installing/registering its UI or physics tools. A narrow JSON
+loader adapter retains version checks/path normalization without requiring
+interactive add-on preferences. Only visible mesh sections build materials,
+so unused donor glass sections do not trigger the add-on's missing-mask bug.
+The images now use source fabric colours, masks, normals, decals and metal
+values under neutral studio lighting; they are not engine screenshots.
+
+The preparation tool requires a Python environment with Pillow and NumPy and
+`--addon-source` pointing to the add-on's `i_scene_cp77_gltf` directory, alongside
+the existing Blender, WolvenKit, dotnet and Kraken inputs. Material extraction
+is limited to 256 dependencies and 384 MB. This build decoded 251 texture/mask
+images for the seven garments; intermediate images are removed after verified
+rendering, leaving the seven previews and small atlas. The app reuses those
+previews rather than extracting textures at every launch.
+
+Seven distinct previews form a 1024×512 sheet with cyan collection strips for
+Lucy and purple strips for Jinguji. The tool builds a new texture and atlas,
+following the [documented native icon format](https://github.com/CDPR-Modding-Documentation/Cyberpunk-Modding-Docs/blob/main/modding-guides/custom-icons-and-ui/custom-in-game-icons.md).
+It verifies complete CR2W graph round trips and the exact RGBA buffer. Atlas
+parts use each garment's unique entity name. The bundle has only two new
+resources, `cybermac/ui/clothing.inkatlas` and `cybermac/ui/clothing.xbm`, and
+neither collides with an official resource.
+
+Preparation uses the existing seven-item wardrobe:
+
+```sh
+cybermac clothing icons --workspace <working-wardrobe> \
+  --icons <generated-icons.json> --out-dir <new-icon-wardrobe>
+cybermac clothing register --workspace <new-icon-wardrobe>
+scripts/build-app.sh
+```
+
+The new preparation compiles the helper before staging files. It appends two
+resources to an APFS clone of the working appearance archive and clones seven
+`UIIcon.ItemIcon` records to separately named `UIIcon.CyberMac_*` records in each
+database. Their fields are a CName `atlasPartName` and an eight-byte ResourceRef
+hash for `atlasResourcePath`. Icon schema has two properties; the clothing schema
+remains the previously tested 91 candidates. This does not modify the seven
+clothing records or the original icon records. The new modern and legacy icon
+lookups apply only to our known item IDs. Original UI method bodies remain
+preserved by the wrappers.
+
+The app's **Clothing** screen provides actual-model preview cards, collection
+badges, slot labels, search, Lucy/Jinguji filters, per-piece selection, and an
+**Add selected & play** action. Selecting an existing supported ZIP enables its
+prepared pieces after validating source archive digests. It does not claim to
+convert arbitrary unknown ZIPs or all 214 Jinguji variants. Registration stores
+only a workspace reference; no large archive/restore files are copied into app
+support. Selecting changes only the single compiled helper and small metadata,
+with all seven item and icon records still available for saved items. Empty
+selection adds nothing.
+
+The launch button opens the verified command in Terminal so the existing macOS
+password/App Management flow owns game-file writes. It does not ask the user to
+copy Terminal commands. The command writes tiny atomic phase updates for
+preparing, playing, restoring, finished or failed; these reflect launcher state,
+not internal engine inventory telemetry. Preflight failures report failed before
+administrator actions; finished is written only after successful restoration.
+The app shows these states and offers the verified restore command. Equipment
+and wardrobe are still left to the user. Other appearance experiments remain in
+the advanced tools sheet.
+
+Local package: `.research/wardrobe-textured-clothing`; generated icons and provenance:
+`.research/textured-icons`; audits: `.research/clothing-icons` and
+`.research/material-preview`. The previous
+working Jinguji/Lucy package and original restore files remain available. The
+local signed app is `dist/CyberMac.app`, without game/mod assets bundled into it.
+
+Validation: 597 Swift tests pass (579 core, 18 app). The new tests cover typed
+UIIcon cloning, preservation of source values and clothing schema, per-piece
+selection, before-admin failure status, registration without copying payloads,
+missing/tampered previews and files, malformed status, and unsupported/modified
+ZIPs. Real two-item and zero-item selections also compile with all seven icon
+mappings. Independent audits retain all previous database values/records except
+for one appended resource-path value, add seven icon records/fourteen flats per
+database, preserve the existing appearance rows, and confirm the gamedata
+archive is unchanged. The seven previews have distinct verified hashes and
+valid atlas mappings. Streamed bytecode comparison preserves all six original
+wrapped game method bodies. Automatic live UI inspection was unavailable because
+computer access to CyberMac was not approved; compilation and model tests do
+not establish an interactive UI result. The new icons still need an in-game
+display test; garment rendering was already user-confirmed.
+Seventeen Python checks include BC4 interpolation, two-channel normal data, top-mip
+offsets, raw RGBA row padding, mask resolution fallback, selector conflicts,
+the Lucy material-buffer exception, rejection of unsupported selectors, and cleanup on conversion failure without deleting pre-existing output.

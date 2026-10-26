@@ -4,6 +4,12 @@ These are confirmed only on one local setup. This does not guarantee compatibili
 
 ## Confirmed locally
 
+- Lucy four-piece outfit plus Jinguji black/silver corset, black Judy pants and
+  chrome heels on independent item records
+  Status: user confirms both collections together and Jinguji in all modes on
+  App Store 2.5. The CyberMac in-game notification also works. The new rendered
+  inventory icons are prepared but their game display is not yet confirmed.
+
 - Reset Attributes Always Available
   Type: redscript
   Status: confirmed locally

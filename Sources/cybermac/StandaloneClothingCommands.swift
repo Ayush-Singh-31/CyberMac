@@ -3,12 +3,38 @@ import CyberMacCore
 
 enum StandaloneClothingCommands {
     static func run(_ args: [String]) throws {
+        if args.first == "register" {
+            guard args.count == 3, args[1] == "--workspace" else { throw CyberMacError.invalidInput("Use clothing register --workspace <icon-wardrobe>.") }
+            let wardrobe = try ClothingWardrobeManager().register(workspace: PathSafety.expandedURL(from: args[2]))
+            print("\(wardrobe.items.count) clothing pieces registered in the app. Existing large files referenced; no game files changed.")
+            return
+        }
+        if args.first == "icons" {
+            let allowed: Set<String> = ["--workspace", "--icons", "--out-dir", "--game-app"]
+            var options: [String: String] = [:]
+            var i = 1
+            while i < args.count {
+                guard allowed.contains(args[i]), options[args[i]] == nil, i + 1 < args.count,
+                      !args[i + 1].hasPrefix("--") else { throw CyberMacError.invalidInput("Invalid clothing icons option.") }
+                options[args[i]] = args[i + 1]; i += 2
+            }
+            guard let workspace = options["--workspace"], let icons = options["--icons"], let output = options["--out-dir"] else {
+                throw CyberMacError.invalidInput("Use clothing icons --workspace <working-wardrobe> --icons <icons.json> --out-dir <new-folder>.")
+            }
+            let game = try GameInstallDetector().detect(preferredAppPath: options["--game-app"])
+            let root = try StandaloneClothingPreparer().prepareIcons(game: game, workspace: PathSafety.expandedURL(from: workspace),
+                iconsURL: PathSafety.expandedURL(from: icons), output: PathSafety.expandedURL(from: output))
+            try StandaloneClothingPreparer().writeClothingChooser(game: game, output: root,
+                commandLineTool: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL)
+            print("Rendered icon wardrobe prepared: \(root.path). No game files changed; icons require a gameplay check.")
+            return
+        }
         let refresh = args.first == "refresh"
         let select = args.first == "select"
         guard args.first == "prepare" || refresh || select else {
             throw CyberMacError.invalidInput("Use clothing prepare --compiler <redscript-cli> --original-scripts <verified-original> --out-dir <new-folder> [--game-app <app>] [--lucy-assets <manifest> --original-appearance <existing-original-archive>].")
         }
-        let allowed: Set<String> = select ? ["--out-dir", "--game-app", "--group"] : (refresh ? ["--out-dir", "--game-app"] : ["--compiler", "--original-scripts", "--out-dir", "--game-app", "--lucy-assets", "--original-appearance", "--assets", "--restore-from"])
+        let allowed: Set<String> = select ? ["--out-dir", "--game-app", "--group", "--records"] : (refresh ? ["--out-dir", "--game-app"] : ["--compiler", "--original-scripts", "--out-dir", "--game-app", "--lucy-assets", "--original-appearance", "--assets", "--restore-from"])
         var values: [String: String] = [:]
         var index = 1
         while index < args.count {
@@ -20,9 +46,16 @@ enum StandaloneClothingCommands {
         guard let output = values["--out-dir"] else { throw CyberMacError.invalidInput("Clothing commands need --out-dir.") }
         let game = try GameInstallDetector().detect(preferredAppPath: values["--game-app"])
         if select {
-            guard let group = values["--group"] else { throw CyberMacError.invalidInput("Selection needs --group jinguji, lucy, both or none.") }
-            try StandaloneClothingPreparer().selectClothes(game: game, output: PathSafety.expandedURL(from: output), group: group)
-            print("Selection prepared: \(group). Clothing will be added without auto-equipping. No game files changed.")
+            guard (values["--group"] == nil) != (values["--records"] == nil) else {
+                throw CyberMacError.invalidInput("Use --group jinguji|lucy|both|none or --records <comma-separated item IDs>.")
+            }
+            if let group = values["--group"] {
+                try StandaloneClothingPreparer().selectClothes(game: game, output: PathSafety.expandedURL(from: output), group: group)
+            } else if let raw = values["--records"] {
+                try StandaloneClothingPreparer().selectClothes(game: game, output: PathSafety.expandedURL(from: output),
+                    records: raw.isEmpty ? [] : raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init))
+            }
+            print("Clothing selection prepared without auto-equipping. No game files changed.")
             return
         }
         if refresh {

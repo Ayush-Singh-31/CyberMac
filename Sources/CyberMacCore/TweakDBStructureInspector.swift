@@ -270,6 +270,10 @@ public struct TweakDBStructureInspector: Sendable {
         "objectActions", "savable", "questFactPreventDualWield", "craftingData"
     ]
 
+    internal static func recordProperties(typeName: String?) -> [String] {
+        typeName == "UIIcon" ? ["atlasPartName", "atlasResourcePath"] : itemRecordProperties
+    }
+
     public init() {}
 
     public func inspect(request: AddonProbeTweakDBStructureInspectRequest) throws -> AddonProbeTweakDBStructureReport {
@@ -1053,7 +1057,7 @@ public struct TweakDBStructureInspector: Sendable {
     private static func trace(recordName: String, parsed: ParsedFile) -> AddonProbeTweakDBRecordTrace {
         let recordID = tweakDBID(recordName)
         let recordEntry = parsed.recordsByID[recordID]
-        let knownFlats = itemRecordProperties.compactMap { property -> AddonProbeTweakDBFlatTrace? in
+        let knownFlats = recordProperties(typeName: recordEntry?.recordTypeName).compactMap { property -> AddonProbeTweakDBFlatTrace? in
             let flatName = "\(recordName).\(property)"
             let flatID = tweakDBID(flatName)
             guard let entry = parsed.flatEntriesByID[flatID] else { return nil }
@@ -1109,7 +1113,7 @@ public struct TweakDBStructureInspector: Sendable {
         recordName: String,
         parsed: ParsedFile
     ) -> [AddonProbeTweakDBRuntimeLookupFlatValidation] {
-        itemRecordProperties.compactMap { property -> AddonProbeTweakDBRuntimeLookupFlatValidation? in
+        recordProperties(typeName: parsed.recordsByID[tweakDBID(recordName)]?.recordTypeName).compactMap { property -> AddonProbeTweakDBRuntimeLookupFlatValidation? in
             let flatID = tweakDBID("\(recordName).\(property)")
             guard let entry = parsed.flatEntriesByID[flatID],
                   parsed.flatTypes.indices.contains(entry.flatTypeIndex)

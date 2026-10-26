@@ -45,6 +45,14 @@ gameplay result remains unverified. Reuse all four existing restore files.
 The saved collection has no player body-shape package; NPCs Gone Wild targets
 NPCs and is not a substitute for a V body with matching clothing refits.
 
+**Confirmed:** the user received Lucy plus the intended one Jinguji outfit and
+reports Jinguji working in all modes. The in-game CyberMac notification also
+appeared. Next, replace confusing donor thumbnails with model renders and expose
+the seven prepared pieces through the app. The new icon-enabled package and
+Clothing screen are implemented; inventory icon display still needs its game
+check. The app selects individual pieces and recognizes the saved supported
+ZIPs, rather than claiming generic conversion of every Jinguji archive.
+
 Storage constraint: minimize local disk usage. Keep one active large experiment,
 reuse verified originals, use APFS clones, clear redundant derived caches and
 compress research evidence. Do not accumulate full game backups or download a
