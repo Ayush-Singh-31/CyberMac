@@ -6,12 +6,9 @@ struct OutfitsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Outfits")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Manage desired-state appearance profiles and legacy outfit bundles. CyberMac never runs privileged archive install commands here; it prints them for Terminal.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
+                CyberPageTitle("Outfits", subtitle: "Manage desired-state appearance profiles and legacy outfit bundles. CyberMac never runs privileged archive install commands here; it prints them for Terminal.")
+                Divider()
 
                 if let command = appState.commandToRun,
                    command.title.hasPrefix("Install outfit profile")
@@ -89,7 +86,7 @@ struct OutfitsView: View {
                     }
                 }
             }
-            .frame(maxWidth: 1080, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

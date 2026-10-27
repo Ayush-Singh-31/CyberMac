@@ -5,16 +5,12 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Settings")
-                    .font(.largeTitle.weight(.semibold))
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
+                CyberPageTitle("Settings", subtitle: "Manage CyberMac, game detection and storage.")
+                Divider()
                 settingsSection("Developer", accent: .purple) {
-                    Toggle("Developer mode", isOn: developerBinding)
-                        .toggleStyle(.switch)
-                        .cyberCursor()
-                    Toggle("Show raw hashes in UI", isOn: rawHashesBinding)
-                        .toggleStyle(.switch)
-                        .cyberCursor()
+                    settingsToggle("Developer mode", isOn: developerBinding)
+                    settingsToggle("Show raw hashes in UI", isOn: rawHashesBinding)
                 }
                 settingsSection("Storage", accent: .green) {
                     HStack {
@@ -50,7 +46,7 @@ struct SettingsView: View {
                     .help("Clear temporary activation outputs")
                 }
             }
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -59,6 +55,14 @@ struct SettingsView: View {
             get: { appState.developerMode },
             set: { appState.developerMode = $0 }
         )
+    }
+
+    private func settingsToggle(_ title: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch).cyberCursor()
+        }
     }
 
     private var rawHashesBinding: Binding<Bool> {

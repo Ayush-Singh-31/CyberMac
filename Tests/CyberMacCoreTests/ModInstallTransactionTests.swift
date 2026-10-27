@@ -3,6 +3,16 @@ import XCTest
 @testable import CyberMacCore
 
 final class ModInstallTransactionTests: XCTestCase {
+    func testScriptOnlyPackageSuccessUsesExactIdentifierFromInstallerHistory() throws {
+        let identifier = "com.cybermac.mod-files.test-unique-id"
+        func history(_ ids: [String], process: String = "Installer") throws -> Data {
+            try PropertyListSerialization.data(fromPropertyList: [["packageIdentifiers": ids, "processName": process]], format: .binary, options: 0)
+        }
+        XCTAssertTrue(ModInstallerPackage.successRecorded(identifier: identifier, history: try history([identifier])))
+        XCTAssertFalse(ModInstallerPackage.successRecorded(identifier: identifier, history: try history([identifier + "-other"])))
+        XCTAssertFalse(ModInstallerPackage.successRecorded(identifier: identifier, history: try history([identifier], process: "Other")))
+        XCTAssertFalse(ModInstallerPackage.successRecorded(identifier: identifier, history: Data("invalid plist".utf8)))
+    }
     private var root: URL!
     private var game: GameInstall!
     override func setUpWithError() throws {
@@ -165,6 +175,24 @@ final class ModInstallTransactionTests: XCTestCase {
         XCTAssertEqual(try PathSafety.sha256(url: URL(fileURLWithPath: files[0].target)), files[0].originalSHA256)
         try Data("changed package".utf8).write(to: package.url)
         XCTAssertThrowsError(try package.verifyPackage())
+    }
+    func testLargeArchiveInstallBuildsTinyPackageWithoutCopyingArchiveIntoPayload() throws {
+        var files = try fixtures()
+        let invalid = try ModInstallTransaction(game: game, files: files)
+        let source = try FileHandle(forWritingTo: URL(fileURLWithPath: files[0].source))
+        try source.truncate(atOffset: PathSafety.maxArchiveBytes + 1)
+        try source.close()
+        XCTAssertThrowsError(try ModInstallerPackage.build(plan: invalid, under: root.appendingPathComponent("rejected-packages")))
+        let first = files[0]
+        files[0] = .init(source: first.source, target: first.target, backup: first.backup, originalSHA256: first.originalSHA256,
+                         installedSHA256: try PathSafety.sha256(url: URL(fileURLWithPath: first.source)))
+        let plan = try ModInstallTransaction(game: game, files: files)
+        let package = try ModInstallerPackage.build(plan: plan, under: root.appendingPathComponent("packages"))
+        XCTAssertLessThan(try PathSafety.fileSize(url: package.url), 1024 * 1024)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: package.directory.appendingPathComponent("Payload").path))
+        XCTAssertEqual(try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-n", package.directory.appendingPathComponent("Scripts/postinstall").path], timeoutSeconds: 5).exitCode, 0)
+        for file in files { XCTAssertEqual(try PathSafety.sha256(url: URL(fileURLWithPath: file.target)), file.originalSHA256) }
     }
     private func nativeReplace(_ target: URL, _ payload: URL) throws {
         _ = try FileManager.default.replaceItemAt(target, withItemAt: payload, backupItemName: nil, options: [])

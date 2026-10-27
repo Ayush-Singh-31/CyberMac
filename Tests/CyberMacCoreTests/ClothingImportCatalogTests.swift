@@ -3,6 +3,20 @@ import XCTest
 @testable import CyberMacCore
 
 final class ClothingImportCatalogTests: XCTestCase {
+    func testRepeatedArchiveContentsProduceOneSelectableItem() {
+        let piece = ModPackageContents.Piece(id: "Items.Same", name: "Same garment", requiresConversion: true)
+        let contents = ModPackageContents(archives: [.init(path: "A.archive", preparedPieces: [piece]), .init(path: "Copy/A.archive", preparedPieces: [piece])])
+        XCTAssertEqual(ClothingImportCatalog(contents: contents, wardrobe: nil).items.count, 1)
+    }
+    func testDiscoveredAdditionIsSelectableWithoutARegisteredWardrobeOrPreview() throws {
+        let contents = ModPackageContents(archives: [.init(path: "My Clothes/Pink.archive", preparedPieces: [
+            .init(id: "Items.CyberMac_Import_abcd", name: "Pink heels", requiresConversion: true)
+        ])])
+        let catalog = ClothingImportCatalog(contents: contents, wardrobe: nil)
+        XCTAssertEqual(catalog.availableItems.count, 1)
+        XCTAssertNil(catalog.items[0].previewURL)
+        XCTAssertNoThrow(try catalog.validateSelection(["Items.CyberMac_Import_abcd"]))
+    }
     private func contents() -> ModPackageContents {
         ModPackageContents(archives: [
             .init(path: "Jinguji/Tops/corset.archive", preparedPieces: [.init(id: "Items.Corset", name: "Corset")]),

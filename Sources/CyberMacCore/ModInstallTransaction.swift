@@ -28,7 +28,7 @@ public struct ModInstallTransaction: Codable, Sendable {
             let target = URL(fileURLWithPath: file.target)
             try PathSafety.validateContainedPath(target.resolvingSymlinksInPath(), in: data)
             let relative = try PathSafety.relativePath(of: target, in: game.dataURL)
-            let allowed = ["r6/cache/final.redscripts", "r6/config/inputContexts_mac.xml",
+            let allowed = ["r6/cache/final.redscripts", "r6/cache/tweakdb.bin", "r6/cache/tweakdb_ep1.bin", "r6/config/inputContexts_mac.xml",
                            "r6/config/inputContexts.xml", "r6/config/inputUserMappings.xml"]
             guard allowed.contains(relative) || (relative.hasPrefix("archive/Mac/") && target.pathExtension == "archive"),
                   [file.originalSHA256, file.installedSHA256].allSatisfy({ $0.count == 64 && $0.allSatisfy { $0.isHexDigit } }) else {

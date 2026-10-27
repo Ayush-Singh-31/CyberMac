@@ -3,146 +3,167 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var selection: AppScreen?
     @State private var advancedExpanded = false
+    @Namespace private var selectionNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let advancedScreens: [AppScreen] = [.outfits, .activation, .archiveLab, .archiveIndex, .backups, .diagnostics]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("CyberMac")
-                .font(.title2.weight(.semibold))
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                sidebarIcon
+                    .resizable().scaledToFit().frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .accessibilityHidden(true)
+                Text("CyberMac").font(.title3.weight(.semibold))
+                    .foregroundStyle(colorScheme == .dark ? Color.white : Color.black)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 20)
+            .padding(.bottom, 24)
 
-            ForEach([AppScreen.home, .appearance, .mods, .settings]) { screen in
-                SidebarItemView(
-                    screen: screen,
-                    selected: selection == screen
-                ) {
-                    selection = screen
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach([AppScreen.home, .appearance, .mods]) { screen in
+                        navigationRow(screen)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                advancedExpanded.toggle()
+                            }
+                        } label: {
+                            HStack {
+                                Text("Advanced").font(.caption.weight(.medium))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .rotationEffect(.degrees(advancedExpanded ? 90 : 0))
+                            }
+                            .foregroundStyle((colorScheme == .dark ? Color.white : Color.black).opacity(0.55))
+                            .padding(.horizontal, 12)
+                            .frame(height: 32)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Advanced navigation")
+                        .accessibilityValue(advancedExpanded ? "Expanded" : "Collapsed")
+                        if advancedExpanded {
+                            ForEach(advancedScreens) { screen in navigationRow(screen) }
+                        }
+                    }.padding(.top, 18)
+                }.padding(.horizontal, 4)
             }
-            DisclosureGroup("Advanced", isExpanded: $advancedExpanded) {
-                ForEach([AppScreen.outfits, .activation, .archiveLab, .archiveIndex, .backups, .diagnostics]) { screen in
-                    SidebarItemView(screen: screen, selected: selection == screen) { selection = screen }
-                }
-            }
-            .font(.callout)
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            Spacer()
+            .scrollIndicators(.hidden)
+
+            Divider().overlay(.white.opacity(0.06))
+                .padding(.horizontal, 12).padding(.bottom, 10)
+            navigationRow(.settings).padding(.horizontal, 4).padding(.bottom, 12)
         }
-        .padding(.vertical, 10)
-        .background(.regularMaterial)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .modifier(SidebarGlassSurface(reduceTransparency: reduceTransparency))
+        .padding(12)
+        .background {
+            if !reduceTransparency {
+                RadialGradient(colors: [CyberAccent.cyan.color.opacity(0.09), .clear], center: .topLeading, startRadius: 0, endRadius: 300)
+            }
+        }
         .frame(minWidth: 220)
+        .onChange(of: selection, initial: true) { _, screen in
+            if let screen, advancedScreens.contains(screen) { advancedExpanded = true }
+        }
+    }
+
+    private var sidebarIcon: Image {
+        if let url = Bundle.module.url(forResource: "CyberMacIcon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return Image(nsImage: image)
+        }
+        return Image(systemName: "bolt.fill")
+    }
+
+    private func navigationRow(_ screen: AppScreen) -> some View {
+        SidebarItemView(screen: screen, selected: selection == screen, selectionNamespace: selectionNamespace) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86)) {
+                selection = screen
+            }
+        }
+    }
+}
+
+private struct SidebarGlassSurface: ViewModifier {
+    let reduceTransparency: Bool
+    private let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(Color(nsColor: .windowBackgroundColor), in: shape)
+                .overlay { shape.stroke(.white.opacity(0.12), lineWidth: 1) }
+        } else if #available(macOS 26.0, *) {
+            content.background(Color(nsColor: .windowBackgroundColor).opacity(0.45), in: shape)
+                .glassEffect(.regular, in: shape)
+                .overlay { shape.stroke(.white.opacity(0.12), lineWidth: 1) }
+        } else {
+            content.background(.ultraThinMaterial, in: shape)
+                .overlay {
+                    shape.stroke(LinearGradient(colors: [.white.opacity(0.22), .white.opacity(0.04), .white.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
+        }
     }
 }
 
 private struct SidebarItemView: View {
     let screen: AppScreen
     let selected: Bool
+    let selectionNamespace: Namespace.ID
     let action: () -> Void
     @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
 
-    private var accent: CyberAccent { screen.sidebarAccent }
+    private var labelColor: Color { colorScheme == .dark ? .white : .black }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: screen.systemImage)
-                    .font(.system(size: 18, weight: selected ? .semibold : .medium))
-                    .frame(width: 22)
-                    .foregroundStyle(selected || isHovering ? accent.color : .secondary)
-                    .shadow(
-                        color: accent.color.opacity(selected ? 0.68 : (isHovering ? 0.42 : 0)),
-                        radius: selected ? 9 : 6
-                    )
-                Text(screen.rawValue)
-                    .font(.callout.weight(selected ? .semibold : .regular))
-                    .opacity(selected ? 1.0 : (isHovering ? 0.95 : 0.72))
-                Spacer()
+                    .font(.system(size: 16, weight: selected ? .semibold : .regular))
+                    .frame(width: 20)
+                    .foregroundStyle(selected ? CyberAccent.cyan.color : labelColor.opacity(0.6))
+                Text(screen.rawValue).font(.callout.weight(selected ? .semibold : .regular))
+                    .foregroundStyle(labelColor.opacity(selected ? 1 : 0.7))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .background {
+            if selected {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(LinearGradient(colors: [CyberAccent.cyan.color.opacity(reduceTransparency ? 0.24 : 0.18), CyberAccent.cyan.secondary.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.26), CyberAccent.cyan.color.opacity(0.22), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                    }
+                    .matchedGeometryEffect(id: "sidebar-selection", in: selectionNamespace)
+            } else if isHovering && isEnabled {
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.05))
             }
         }
-        .buttonStyle(SidebarRowButtonStyle(accent: accent, selected: selected, isHovering: isHovering))
-        .padding(.horizontal, 10)
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .opacity(isEnabled ? 1 : 0.5)
         .hoverCursor(.pointingHand)
         .onHover { isHovering = $0 }
-        .animation(.easeOut(duration: 0.16), value: isHovering)
-        .animation(.easeOut(duration: 0.16), value: selected)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovering)
+        .accessibilityLabel(screen.rawValue)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
-}
-
-private struct SidebarRowButtonStyle: ButtonStyle {
-    let accent: CyberAccent
-    let selected: Bool
-    let isHovering: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .padding(.horizontal, 14)
-            .frame(height: 46)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(background)
-            }
-            .overlay(alignment: .leading) {
-                if selected {
-                    Capsule()
-                        .fill(accent.color)
-                        .frame(width: 3, height: 24)
-                        .shadow(color: accent.color.opacity(0.72), radius: 8)
-                        .padding(.leading, 3)
-                } else if isHovering {
-                    Circle()
-                        .fill(accent.color.opacity(0.86))
-                        .frame(width: 5, height: 5)
-                        .shadow(color: accent.color.opacity(0.54), radius: 6)
-                        .padding(.leading, 5)
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(accent.color.opacity(selected ? 0.22 : (isHovering ? 0.14 : 0)), lineWidth: 1)
-            }
-            .scaleEffect(configuration.isPressed ? 0.98 : (isHovering ? 1.008 : 1.0))
-            .offset(x: isHovering && !selected ? 2 : 0)
-            .shadow(
-                color: accent.color.opacity(configuration.isPressed ? 0.08 : (selected ? 0.18 : (isHovering ? 0.12 : 0))),
-                radius: selected || isHovering ? 12 : 0,
-                y: selected || isHovering ? 5 : 0
-            )
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
-    }
-
-    private var background: LinearGradient {
-        let primaryOpacity: Double
-        let secondaryOpacity: Double
-        if selected {
-            primaryOpacity = isHovering ? 0.24 : 0.18
-            secondaryOpacity = isHovering ? 0.12 : 0.08
-        } else if isHovering {
-            primaryOpacity = 0.12
-            secondaryOpacity = 0.06
-        } else {
-            primaryOpacity = 0
-            secondaryOpacity = 0
-        }
-        return LinearGradient(
-            colors: [
-                accent.color.opacity(primaryOpacity),
-                accent.secondary.opacity(secondaryOpacity),
-                Color.white.opacity(isHovering && !selected ? 0.035 : 0)
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-}
-
-private extension AppScreen {
-    /// Single primary accent for all sidebar rows. Per the design guideline,
-    /// six different per-screen colors diluted meaning; cyan is the primary
-    /// accent (matching the existing Launch CTA), red is reserved for
-    /// destructive actions, and status pills retain semantic color.
-    var sidebarAccent: CyberAccent { .cyan }
 }

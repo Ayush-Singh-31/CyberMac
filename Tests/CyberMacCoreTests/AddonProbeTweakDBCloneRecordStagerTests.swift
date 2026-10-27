@@ -3,6 +3,34 @@ import XCTest
 @testable import CyberMacCore
 
 final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
+    func testClothingBatchMatchesSequentialClonesAndPreservesTheDonor() throws {
+        let fixture = try makeCloneFixture(name: "batch.bin", includeEntityName: true)
+        let original = try Data(contentsOf: fixture.url)
+        let pieces = ["Pink", "Gold"].map { StandaloneClothingSource.Piece(source: "Items.Source", record: "Items.\($0)", label: $0, entityName: "cybermac_\($0.lowercased())") }
+        let output = tempDir.appendingPathComponent("batch/result.bin")
+        try TweakDBCloneRecordStager().stageClothingAdditions(fileURL: fixture.url, outputURL: output, pieces: pieces)
+        var sequential = fixture.url
+        for piece in pieces {
+            let report = try TweakDBCloneRecordStager().stage(request: .init(fileURL: sequential,
+                outputDirectoryURL: tempDir.appendingPathComponent("sequential/\(piece.record)"),
+                sourceRecord: piece.source, newRecord: piece.record,
+                overrides: [.cName(property: "entityName", value: piece.entityName!), .cName(property: "appearanceName", value: piece.entityName! + "_")]))
+            XCTAssertTrue(report.conclusions.contains(.newRecordResolved))
+            sequential = URL(fileURLWithPath: report.stagedFilePath)
+        }
+        XCTAssertEqual(try Data(contentsOf: output), try Data(contentsOf: sequential))
+        XCTAssertEqual(try Data(contentsOf: fixture.url), original)
+        XCTAssertThrowsError(try TweakDBCloneRecordStager().stageClothingAdditions(fileURL: output, outputURL: tempDir.appendingPathComponent("duplicate.bin"), pieces: pieces))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("duplicate.bin").path))
+    }
+
+    func testClothingBatchRejectsAnIncompleteDonorBeforeProducingAFile() throws {
+        let fixture = try makeCloneFixture(name: "incomplete.bin")
+        let output = tempDir.appendingPathComponent("no-result.bin")
+        XCTAssertThrowsError(try TweakDBCloneRecordStager().stageClothingAdditions(fileURL: fixture.url, outputURL: output,
+            pieces: [.init(source: "Items.Source", record: "Items.New", label: "New", entityName: "cybermac_new")]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+    }
     private var tempDir: URL!
     private var home: CyberMacHomeManager!
 
@@ -774,7 +802,7 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
         let initialInt32ValueCount: Int
     }
 
-    private func makeCloneFixture(name: String) throws -> CloneFixture {
+    private func makeCloneFixture(name: String, includeEntityName: Bool = false) throws -> CloneFixture {
         var data = Data()
         // Header placeholder
         appendUInt32(0x0BB1DB47, to: &data)
@@ -802,9 +830,11 @@ final class AddonProbeTweakDBCloneRecordStagerTests: XCTestCase {
         for value in cNameValues {
             data.append(encodeLengthPrefixedString(value))
         }
-        let cNameKeys: [(UInt64, Int32)] = [
+        var cNameKeys: [(UInt64, Int32)] = [
             (tweakDBID("Items.Source.appearanceName"), 0)
         ]
+        if includeEntityName { cNameKeys.append((tweakDBID("Items.Source.entityName"), 1)) }
+        cNameKeys.sort { $0.0 < $1.0 }
         appendUInt32(UInt32(cNameKeys.count), to: &data)
         for key in cNameKeys {
             appendUInt64(key.0, to: &data)

@@ -5,9 +5,9 @@ struct ActivationView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Activation")
-                    .font(.largeTitle.weight(.semibold))
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
+                CyberPageTitle("Activation", subtitle: "Check and apply your enabled script mods.")
+                Divider()
                 CyberPanel(accent: heroAccent, interactive: !primaryDisabled) {
                     HStack(alignment: .center, spacing: 18) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -60,7 +60,7 @@ struct ActivationView: View {
                     }
                 }
             }
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

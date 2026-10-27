@@ -16,8 +16,16 @@ for preview_source in render_clothing_package.py render_clothing_thumbnails.py p
   /bin/cp "tools/$preview_source" "$preview_resources/$preview_source"
 done
 /bin/cp tools/licenses/WolvenKit-GPL-3.0.txt "$preview_resources/licenses/WolvenKit-GPL-3.0.txt"
-python3 tools/configure_clothing_previews.py --out .research/renderer-tools.json
-/bin/cp .research/renderer-tools.json "$preview_resources/renderer-tools.json"
+if [[ -f .research/renderer-tools.json ]]; then
+  /bin/cp .research/renderer-tools.json "$preview_resources/renderer-tools.json"
+fi
+conversion_resources="$app/Contents/Resources/ClothingConversion"
+mkdir -p "$conversion_resources"
+for conversion_source in prepare_clothing_additions.py prepare_lucy_assets.py prepare_jinguji_assets.py; do
+  /bin/cp "tools/$conversion_source" "$conversion_resources/$conversion_source"
+done
+python3 tools/configure_clothing_conversion.py --out .research/conversion-tools.json
+/bin/cp .research/conversion-tools.json "$conversion_resources/conversion-tools.json"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

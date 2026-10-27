@@ -12,8 +12,8 @@ struct ClothingPreviewProgressView: View {
                 if progress.isActive { ProgressView().controlSize(.small) }
                 Text(title).font(.callout.weight(.semibold))
                 Spacer()
-                if progress.isActive { Button("Pause", action: pause).buttonStyle(.borderless) }
-                else if progress.failed > 0 || progress.state != "finished" { Button("Resume previews", action: retry).buttonStyle(.borderless) }
+                if progress.isActive { Button("Pause", action: pause).buttonStyle(CyberButtonStyle(.ghost)).controlSize(.small) }
+                else if progress.failed > 0 || progress.state != "finished" { Button("Resume previews", action: retry).buttonStyle(CyberButtonStyle(.ghost)).controlSize(.small) }
             }
             if progress.isActive && progress.total > 0 {
                 ProgressView(value: Double(progress.completed), total: Double(progress.total))
@@ -27,7 +27,7 @@ struct ClothingPreviewProgressView: View {
             }
         }
         .padding(12)
-        .background(CyberAccent.cyan.color.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .cyberSurface(radius: CyberStyle.rowRadius)
     }
 
     private var title: String {

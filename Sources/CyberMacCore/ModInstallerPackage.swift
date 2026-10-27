@@ -11,7 +11,11 @@ public struct ModInstallerPackage: Sendable {
     public let directory: URL
 
     public static func build(plan: ModInstallTransaction, under root: URL) throws -> Self {
-        _ = try NativeModInstallTransaction(plan: plan) // Read-only validation.
+        _ = try NativeModInstallTransaction(plan: plan) // Read-only validation before authorization.
+        let bytes = try plan.files.reduce(UInt64(0)) { try $0 + PathSafety.fileSize(url: URL(fileURLWithPath: $1.source)) }
+        if bytes > PathSafety.maxArchiveBytes {
+            return try buildLocalFilePackage(plan: plan, under: root)
+        }
         let identifier = "com.cybermac.mod-files.\(UUID().uuidString.lowercased())"
         let directory = root.appendingPathComponent(identifier)
         let payload = directory.appendingPathComponent("Payload")
@@ -87,6 +91,23 @@ public struct ModInstallerPackage: Sendable {
         return try Self(url: url, identifier: identifier, sha256: PathSafety.sha256(url: url), directory: directory)
     }
 
+    /// Large clothing archives stay as local APFS clones, rather than being
+    /// compressed into multi-gigabyte packages. Installer runs our typed plan
+    /// after authorization; its first operation rechecks all hashes and paths.
+    private static func buildLocalFilePackage(plan: ModInstallTransaction, under root: URL) throws -> Self {
+        let identifier = "com.cybermac.mod-files.\(UUID().uuidString.lowercased())"
+        let directory = root.appendingPathComponent(identifier)
+        let scripts = directory.appendingPathComponent("Scripts")
+        try FileManager.default.createDirectory(at: scripts, withIntermediateDirectories: true)
+        let script = scripts.appendingPathComponent("postinstall")
+        try Data(("#!/bin/sh\n" + plan.command() + "\n").utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let url = directory.appendingPathComponent("CyberMac Game Files.pkg")
+        _ = try ProcessRunner().run(executableURL: URL(fileURLWithPath: "/usr/bin/pkgbuild"),
+            arguments: ["--nopayload", "--scripts", scripts.path, "--identifier", identifier, "--version", "1.0", "--install-location", "/", url.path], timeoutSeconds: 60)
+        return try Self(url: url, identifier: identifier, sha256: PathSafety.sha256(url: url), directory: directory)
+    }
+
     private static func physicalPath(_ url: URL) throws -> String {
         guard let path = url.path.withCString({ realpath($0, nil) }) else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
         defer { free(path) }
@@ -100,6 +121,23 @@ public struct ModInstallerPackage: Sendable {
     public var hasInstallationReceipt: Bool {
         let result = try? ProcessRunner().run(executableURL: URL(fileURLWithPath: "/usr/sbin/pkgutil"),
             arguments: ["--pkg-info", identifier], timeoutSeconds: 5, allowFailure: true)
-        return result?.exitCode == 0
+        if result?.exitCode == 0 { return true }
+        // Successful --nopayload packages have no pkgutil receipt. Installer
+        // still commits their unique identifier to the system install history
+        // after postinstall succeeds. Never use payload visibility as success.
+        let history = URL(fileURLWithPath: "/Library/Receipts/InstallHistory.plist")
+        var info = stat()
+        guard lstat(history.path, &info) == 0, info.st_uid == 0,
+              (info.st_mode & S_IFMT) == S_IFREG, (info.st_mode & 0o022) == 0,
+              let data = try? Data(contentsOf: history) else { return false }
+        return Self.successRecorded(identifier: identifier, history: data)
+    }
+
+    static func successRecorded(identifier: String, history: Data) -> Bool {
+        guard let records = (try? PropertyListSerialization.propertyList(from: history, format: nil)) as? [[String: Any]] else { return false }
+        return records.contains {
+            $0["processName"] as? String == "Installer" &&
+            ($0["packageIdentifiers"] as? [String])?.contains(identifier) == true
+        }
     }
 }

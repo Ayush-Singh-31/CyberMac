@@ -6,9 +6,9 @@ struct ModsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Library")
-                    .font(.largeTitle.weight(.semibold))
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
+                CyberPageTitle("Library", subtitle: "Manage the mods you have added to CyberMac.")
+                Divider()
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Installed")
                         .font(.title2.weight(.semibold))
@@ -34,7 +34,7 @@ struct ModsView: View {
                     }
                 }
             }
-            .frame(maxWidth: 1080, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -61,7 +61,7 @@ private struct ModRow: View {
             }.padding(12)
         }
         .opacity(rowOpacity)
-        .hoverGlow(rowAccent, enabled: true, scale: 1.006, cornerRadius: 24)
+        .hoverGlow(.cyan, enabled: true, cornerRadius: CyberStyle.panelRadius)
         .confirmationDialog(
             "Remove mod from the library?",
             isPresented: $showingDeleteConfirmation,
@@ -349,7 +349,7 @@ private struct RenameModView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Rename mod")
                     .font(.title3.weight(.semibold))
@@ -388,7 +388,8 @@ private struct RenameModView: View {
                 .disabled(!canSave)
             }
         }
-        .padding(24)
+        .padding(CyberStyle.pagePadding)
+        .cyberSheet()
         .onAppear {
             DispatchQueue.main.async {
                 nameFieldFocused = true

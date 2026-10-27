@@ -17,10 +17,9 @@ struct AppearanceModsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Appearance Mods").font(.largeTitle.weight(.semibold))
-                Text("Feminine V · Clothes first, then body shapes and matching refits")
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
+                CyberPageTitle("Appearance Mods", subtitle: "Feminine V · Clothes first, then body shapes and matching refits")
+                Divider()
                 CyberPanel(accent: .purple) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Choose one clothing mod").font(.title3.weight(.semibold))
@@ -73,7 +72,7 @@ struct AppearanceModsView: View {
                     }
                 }
             }
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .disabled(busy != nil)
         }
         .overlay { if let busy { ProgressOverlay(title: busy) } }

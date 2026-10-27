@@ -8,10 +8,9 @@ struct DiagnosticsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
                 HStack {
-                    Text("Diagnostics")
-                        .font(.largeTitle.weight(.semibold))
+                    CyberPageTitle("Diagnostics", subtitle: "Check game detection, session logs and reports.")
                     Spacer()
                     Button {
                         Task { await appState.refresh() }
@@ -35,6 +34,7 @@ struct DiagnosticsView: View {
                     .buttonStyle(CyberButtonStyle(.primary, accent: .cyan))
                     .help("Export diagnostic report")
                 }
+                Divider()
                 SessionLogPanel(model: appState.sessionLog)
                 if let report = appState.doctor {
                     diagnosticsBox(DoctorReportFormatter.format(report, developerMode: true))
@@ -51,7 +51,7 @@ struct DiagnosticsView: View {
                     CommandBox(command: command.displayCommand)
                 }
             }
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

@@ -139,14 +139,15 @@ struct ArchiveIndexView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
                 header
+                Divider()
                 scopePanel
                 statsPanel
                 searchPanel
                 resultsPanel
             }
-            .frame(maxWidth: 980, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .task {
             await loadStats()
@@ -155,12 +156,7 @@ struct ArchiveIndexView: View {
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Archive Index")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Search indexed Cyberpunk archive assets and view any attached preview images.")
-                    .foregroundStyle(.secondary)
-            }
+            CyberPageTitle("Archive Index", subtitle: "Search indexed Cyberpunk archive assets and view any attached preview images.")
             Spacer()
         }
     }

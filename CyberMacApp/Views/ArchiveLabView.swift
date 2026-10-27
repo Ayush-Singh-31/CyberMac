@@ -140,26 +140,22 @@ struct ArchiveLabView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
                 header
+                Divider()
                 statusPanel
                 provenWorkflows
                 archiveTools
                 classificationPanel
                 nextCandidatesPanel
             }
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private var header: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Archive Lab")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Small, manual research workflow for official archive patching and Nexus replacer conversion.")
-                    .foregroundStyle(.secondary)
-            }
+            CyberPageTitle("Archive Lab", subtitle: "Small, manual research workflow for official archive patching and Nexus replacer conversion.")
             Spacer()
             HStack(spacing: 8) {
                 ArchiveLabBadge(kind: .experimental)

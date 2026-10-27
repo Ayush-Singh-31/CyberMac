@@ -4,7 +4,10 @@ public struct ModPackageContents: Codable, Sendable {
     public struct Piece: Codable, Identifiable, Sendable {
         public let id: String
         public let name: String
-        public init(id: String, name: String) { self.id = id; self.name = name }
+        public let requiresConversion: Bool?
+        public init(id: String, name: String, requiresConversion: Bool = false) {
+            self.id = id; self.name = name; self.requiresConversion = requiresConversion ? true : nil
+        }
     }
     public struct Archive: Codable, Identifiable, Sendable {
         public let path: String
@@ -18,6 +21,7 @@ public struct ModPackageContents: Codable, Sendable {
         }
     }
     public let archives: [Archive]
+    public let clothingDiscoveryVersion: Int?
     public var preparedPieces: [Piece] { archives.flatMap(\.preparedPieces) }
     public var unpreparedArchives: [Archive] { archives.filter { $0.preparedPieces.isEmpty } }
     public var isClothingCollection: Bool {
@@ -25,5 +29,7 @@ public struct ModPackageContents: Codable, Sendable {
         let pattern = #"(?i)(?:^|[/_\s-])(jinguji|clothing|clothes|outfits?|corset|shirts?|dresses|dress|pants|boots|jacket|heels|bodysuit|skirt|bolero|sandals|stockings|lingerie|bra)(?:$|[/_\s.-])"#
         return archives.contains { $0.path.range(of: pattern, options: .regularExpression) != nil }
     }
-    public init(archives: [Archive]) { self.archives = archives }
+    public init(archives: [Archive], clothingDiscoveryVersion: Int? = nil) {
+        self.archives = archives; self.clothingDiscoveryVersion = clothingDiscoveryVersion
+    }
 }

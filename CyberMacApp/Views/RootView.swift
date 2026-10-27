@@ -53,6 +53,7 @@ struct RootView: View {
                 get: { selection },
                 set: { newValue in if let newValue { selection = newValue } }
             ))
+            .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
             .disabled(installer.busy)
         } detail: {
             ZStack {
@@ -74,13 +75,15 @@ struct RootView: View {
                     }
                     selectedView
                         .disabled(selection != .home && installer.busy)
-                        .padding(28)
+                        .padding(CyberStyle.pagePadding)
                         .id(selection)
                         .transition(.opacity)
                 }
             }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: selection)
         }
+        .tint(CyberAccent.cyan.color)
+        .buttonStyle(CyberButtonStyle())
         .alert(
             appState.lastError?.title ?? "",
             isPresented: Binding(
@@ -147,14 +150,6 @@ struct RootView: View {
     }
 
     private var background: some View {
-        LinearGradient(
-            colors: [
-                Color(nsColor: .windowBackgroundColor),
-                Color(red: 0.08, green: 0.10, blue: 0.12)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
+        CyberBackground()
     }
 }

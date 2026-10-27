@@ -77,13 +77,20 @@ struct SystemModInstaller: Sendable {
             let deadline = Date().addingTimeInterval(15 * 60)
             while Date() < deadline {
                 try Task.checkCancellation()
-                // A receipt is committed only after Installer's postinstall
-                // verification, so visible payload bytes alone are not success.
+                // Receipt or system install history is committed after
+                // postinstall succeeds. Game files must also pass verification.
                 if try await BackgroundTaskRunner.run({ package.hasInstallationReceipt }) {
                     try await BackgroundTaskRunner.run { try plan.verify() }
                     return
                 }
                 if !(await Self.installerRunning(pid)) {
+                    // Allow the system's success record to finish committing
+                    // when Installer closes between the two checks.
+                    try await Task.sleep(for: .milliseconds(500))
+                    if try await BackgroundTaskRunner.run({ package.hasInstallationReceipt }) {
+                        try await BackgroundTaskRunner.run { try plan.verify() }
+                        return
+                    }
                     throw CyberMacError.fileSystem("macOS Installer closed without completing this package. Choose Retry to reopen it. If Installer reported an error, its Installation Log has the details.")
                 }
                 try await Task.sleep(for: .seconds(2))

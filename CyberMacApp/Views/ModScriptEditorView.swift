@@ -47,7 +47,8 @@ struct ModScriptEditorView: View {
             editorLayout
             footer
         }
-        .padding(24)
+        .padding(CyberStyle.pagePadding)
+        .cyberSheet()
         .task {
             await loadScripts(selectFirst: true)
         }
@@ -96,13 +97,7 @@ struct ModScriptEditorView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Edit scripts")
-                    .font(.title2.weight(.semibold))
-                Text(ModDisplayFormatter.displayName(for: mod))
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-            }
+            CyberPageTitle("Edit scripts", subtitle: ModDisplayFormatter.displayName(for: mod))
             Spacer()
             if isDirty {
                 Label("Unsaved changes", systemImage: "pencil.circle.fill")
@@ -186,9 +181,9 @@ struct ModScriptEditorView: View {
             TextEditor(text: $contents)
                 .font(.system(.body, design: .monospaced))
                 .scrollContentBackground(.hidden)
-                .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: CyberStyle.controlRadius, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: CyberStyle.controlRadius, style: .continuous)
                         .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 }
                 .disabled(selectedScript == nil || isBusy)
@@ -267,7 +262,7 @@ struct ModScriptEditorView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 selectedScript?.id == script.id ? CyberAccent.cyan.color.opacity(0.14) : Color.white.opacity(0.04),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                in: RoundedRectangle(cornerRadius: CyberStyle.controlRadius, style: .continuous)
             )
         }
         .buttonStyle(.plain)
@@ -284,9 +279,9 @@ struct ModScriptEditorView: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(accent.color.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(accent.color.opacity(0.10), in: RoundedRectangle(cornerRadius: CyberStyle.controlRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: CyberStyle.controlRadius, style: .continuous)
                 .stroke(accent.color.opacity(0.18), lineWidth: 1)
         }
     }

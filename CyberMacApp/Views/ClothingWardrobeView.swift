@@ -10,12 +10,9 @@ struct ClothingWardrobeView: View {
     private let columns = [GridItem(.adaptive(minimum: 205, maximum: 280), spacing: 16)]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Your wardrobe").font(.largeTitle.weight(.semibold))
-                    Text("Choose your clothes. Keep every original item.").foregroundStyle(.secondary)
-                }
+                CyberPageTitle("Your wardrobe", subtitle: "Choose your clothes. Keep every original item.")
                 Spacer()
                 Menu {
                     Button("Open prepared wardrobe…") { chooseWorkspace() }
@@ -24,6 +21,7 @@ struct ClothingWardrobeView: View {
                 } label: { Image(systemName: "ellipsis.circle").font(.title2) }
                 .menuStyle(.borderlessButton).frame(width: 32)
             }
+            Divider()
             if model.wardrobe != nil {
                 HStack(spacing: 12) {
                     TextField("Find clothes…", text: $model.search).textFieldStyle(.roundedBorder).frame(maxWidth: 300)
@@ -39,7 +37,7 @@ struct ClothingWardrobeView: View {
                     Button("Clear selection") { model.selected.removeAll() }
                     Spacer()
                     Text("Feminine V · Original body").font(.caption).foregroundStyle(.secondary)
-                }.buttonStyle(.borderless)
+                }.buttonStyle(CyberButtonStyle(.ghost)).controlSize(.small)
                 ScrollView {
                     if model.visibleItems.isEmpty {
                         ContentUnavailableView.search(text: model.search)
@@ -62,7 +60,7 @@ struct ClothingWardrobeView: View {
                 } description: {
                     Text("Open the prepared wardrobe folder to browse its rendered previews and launch with your chosen pieces. No large files are copied.")
                 } actions: {
-                    Button("Open wardrobe…") { chooseWorkspace() }.buttonStyle(.borderedProminent)
+                    Button("Open wardrobe…") { chooseWorkspace() }.buttonStyle(CyberButtonStyle(.primary))
                 }
             }
             if let message = model.message { Text(message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
@@ -79,13 +77,13 @@ struct ClothingWardrobeView: View {
         }
         .sheet(isPresented: $showAdvanced) {
             VStack { HStack { Spacer(); Button("Done") { showAdvanced = false } }; AppearanceModsView() }
-                .padding().frame(minWidth: 900, minHeight: 700)
+                .padding(CyberStyle.pagePadding).frame(minWidth: 900, minHeight: 700).cyberSheet()
         }
     }
 
     private func card(_ item: ClothingWardrobeItem) -> some View {
         let selected = model.selected.contains(item.id)
-        let accent = item.collection == "Lucy" ? CyberAccent.cyan : .purple
+        let accent = CyberAccent.cyan
         return Button { model.toggle(item.id) } label: {
             VStack(alignment: .leading, spacing: 10) {
                 ZStack(alignment: .topTrailing) {
@@ -104,8 +102,7 @@ struct ClothingWardrobeView: View {
                 Text(item.name.replacingOccurrences(of: item.collection + " ", with: ""))
                     .font(.headline).lineLimit(2).frame(height: 42, alignment: .topLeading)
             }
-            .padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(selected ? accent.color.opacity(0.8) : Color.white.opacity(0.08), lineWidth: selected ? 2 : 1))
+            .padding(12).cyberSurface(selected: selected)
         }.buttonStyle(.plain)
          .accessibilityLabel("\(item.name), \(item.slot), \(selected ? "selected" : "not selected")")
          .disabled(model.session?.isActive == true)

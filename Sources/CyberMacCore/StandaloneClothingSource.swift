@@ -3,6 +3,12 @@ import Foundation
 /// A real inventory grant and equipment request, using the created instance ID.
 /// Both vanilla duplicate and isolated Lucy packages use the same item IDs.
 enum StandaloneClothingSource {
+    private static func escapedLabel(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+    }
     struct Piece: Codable, Sendable, Equatable {
         let source: String
         let record: String
@@ -50,7 +56,7 @@ enum StandaloneClothingSource {
                        delivery: [Piece]? = nil, autoEquip: Bool = true, customIcons: Bool = false) -> String {
         let selected = delivery ?? pieces
         let ids = selected.map { "t\"\($0.record)\"" }.joined(separator: ", ")
-        let names = pieces.map { "    if id == t\"\($0.record)\" { return \"\($0.label)\"; }" }.joined(separator: "\n")
+        let names = pieces.map { "    if id == t\"\($0.record)\" { return \"\(escapedLabel($0.label))\"; }" }.joined(separator: "\n")
         let sources = pieces.map { "    if id == t\"\($0.record)\" { return t\"\($0.source)\"; }" }.joined(separator: "\n")
         let icons = customIcons ? pieces.map { "    if id == t\"\($0.record)\" { return \"CyberMac_\($0.record.split(separator: ".").last!)\"; }" }.joined(separator: "\n") : ""
         let wardrobe = showPhysicalClothes && autoEquip ? """

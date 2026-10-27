@@ -32,6 +32,7 @@ struct ClothingImportPresentation: Identifiable {
 }
 
 protocol ModInstallerProviding: Sendable {
+    var liveClothingPreviewsEnabled: Bool { get }
     func retain(_ url: URL) throws -> URL
     func prepare(_ url: URL, variant: String?, clothingRecords: [String]?) throws -> ModInstallPreparation
     func contents(_ url: URL) throws -> ModPackageContents?
@@ -44,6 +45,7 @@ protocol ModInstallerProviding: Sendable {
 }
 
 extension ModInstallerProviding {
+    var liveClothingPreviewsEnabled: Bool { false }
     func previewSession(_ url: URL, archivePaths: [String], force: Bool) throws -> (any ClothingPreviewSessionProviding)? { nil }
 }
 
@@ -63,13 +65,15 @@ struct ModInstallerService: ModInstallerProviding {
     func contents(_ url: URL) throws -> ModPackageContents? {
         guard url.pathExtension.lowercased() == "zip" else { return nil }
         let contents = try ClothingWardrobeManager(home: home).packageContents(in: url)
-        return contents.archives.isEmpty ? nil : contents
+        guard !contents.archives.isEmpty else { return nil }
+        guard try ModArchiveScanner().scan(zipURL: url).dependencyMarkers.frameworkMarkerLabels.isEmpty else { return nil }
+        return try ClothingAdditionInstaller(home: home).contents(url)
     }
     func clothingCatalog(_ contents: ModPackageContents) throws -> ClothingImportCatalog {
         do {
             let wardrobe = try ClothingWardrobeManager(home: home).current()
             return ClothingImportCatalog(contents: contents, wardrobe: wardrobe,
-                notice: wardrobe == nil ? "Open your prepared wardrobe in Clothing to enable the available garments." : nil)
+                notice: wardrobe == nil && contents.clothingDiscoveryVersion == nil ? "Open your prepared wardrobe in Clothing to enable the available garments." : nil)
         } catch {
             return ClothingImportCatalog(contents: contents, wardrobe: nil, notice: "Could not open the wardrobe: \(error)")
         }
@@ -87,6 +91,7 @@ struct ModInstallerService: ModInstallerProviding {
         try JSONEncoder().encode(jobs).write(to: historyURL, options: .atomic)
     }
     func previewSession(_ url: URL, archivePaths: [String], force: Bool) throws -> (any ClothingPreviewSessionProviding)? {
+        guard liveClothingPreviewsEnabled else { return nil }
         let resources = Bundle.main.resourceURL?.appendingPathComponent("ClothingPreviewRenderer", isDirectory: true)
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let tools = resources?.appendingPathComponent("renderer-tools.json")
@@ -109,6 +114,8 @@ final class ModInstallerModel {
     var clothingPresentation: ClothingImportPresentation?
     var visibleJobs: [ModImportJob] { jobs.filter { $0.removedAt == nil } }
     var removedJobs: [ModImportJob] { jobs.filter { $0.removedAt != nil }.sorted { ($0.removedAt ?? .distantPast) > ($1.removedAt ?? .distantPast) } }
+    var liveClothingPreviewsEnabled: Bool { service.liveClothingPreviewsEnabled }
+    var isLoadingHistory: Bool { loading != nil && !loaded }
     private var pendingClothingPanes: [UUID] = []
     private var waitingForPickerDismissal = false
     private let service: any ModInstallerProviding
@@ -126,9 +133,26 @@ final class ModInstallerModel {
         guard !loaded else { return }
         let task = loading ?? Task.detached { [service] in
             var history = try service.load()
+            var reconciled = false
+            // Repair the former no-payload receipt false negative. Verification
+            // checks every game file and commits the pending clothing library;
+            // it never authorizes another install or writes game files.
+            for index in history.indices where history[index].phase == .failed &&
+                history[index].message.contains("macOS Installer closed without completing this package") &&
+                history[index].appearanceID?.hasPrefix(ClothingAdditionInstaller.verificationPrefix) == true {
+                guard let transaction = history[index].transaction else { continue }
+                do {
+                    try service.verify(transaction, appearanceID: history[index].appearanceID)
+                    history[index].phase = .installed
+                    history[index].message = "Selected clothes added as separate inventory items. Load a save to receive them, then equip the pieces you want."
+                    reconciled = true
+                } catch { /* Keep the original failure and recovery plan. */ }
+            }
+            if reconciled { try service.save(history) }
             // Upgrade existing imports too; the user should not have to drop
             // Jinguji again just to see what was hidden in its package row.
-            for index in history.indices where history[index].contents == nil && history[index].removedAt == nil {
+            for index in history.indices where history[index].removedAt == nil &&
+                (history[index].contents == nil || (history[index].contents?.isClothingCollection == true && history[index].contents?.clothingDiscoveryVersion != 1)) {
                 do { history[index].contents = try service.contents(history[index].url) }
                 catch { history[index].contentsError = "Could not list package contents: \(error)" }
             }
@@ -219,6 +243,7 @@ final class ModInstallerModel {
     }
 
     func startPreviewRendering(_ id: UUID, force: Bool = false) {
+        guard liveClothingPreviewsEnabled else { cancelPreviewRendering(id); return }
         guard !previewPaused.contains(id), previewTasks[id] == nil, let index = jobs.firstIndex(where: { $0.id == id && $0.removedAt == nil }), jobs[index].clothingCatalog != nil else { return }
         if !force && jobs[index].previewProgress?.state == "finished" { return }
         if previewRequestedPaths[id]?.isEmpty != false {
@@ -280,6 +305,7 @@ final class ModInstallerModel {
     }
 
     func requestPreview(_ id: UUID, archivePath: String) {
+        guard liveClothingPreviewsEnabled else { return }
         guard let job = jobs.first(where: { $0.id == id && $0.removedAt == nil }),
               job.clothingCatalog?.items.contains(where: { $0.archivePath == archivePath && $0.previewURL == nil && $0.previewError == nil }) == true else { return }
         previewRequestedPaths[id, default: []].insert(archivePath)
@@ -312,6 +338,7 @@ final class ModInstallerModel {
     }
 
     func resumePreviewRendering(_ id: UUID) {
+        guard liveClothingPreviewsEnabled else { return }
         previewPaused.remove(id)
         startPreviewRendering(id, force: true)
     }
@@ -384,7 +411,7 @@ final class ModInstallerModel {
                         continue
                     }
                 }
-                if let previous = jobs.first(where: { $0.id != jobs[index].id && $0.url == retained && $0.variant == jobs[index].variant && $0.phase == .installed }),
+                if let previous = jobs.first(where: { $0.id != jobs[index].id && $0.url == retained && $0.variant == jobs[index].variant && $0.clothingRecords == jobs[index].clothingRecords && $0.phase == .installed }),
                    let transaction = previous.transaction {
                     let stillInstalled = await Task.detached { (try? transaction.verify()) != nil }.value
                     if stillInstalled {
@@ -395,6 +422,7 @@ final class ModInstallerModel {
                 if jobs[index].transaction == nil {
                     let variant = jobs[index].variant
                     let records = jobs[index].clothingRecords
+                    if records != nil { jobs[index].message = "Preparing your selected clothes as separate inventory items…" }
                     let preparation = try await BackgroundTaskRunner.run { [service] in try service.prepare(retained, variant: variant, clothingRecords: records) }
                     switch preparation {
                     case .ready(let message): jobs[index].phase = .ready; jobs[index].message = message
@@ -425,9 +453,13 @@ final class ModInstallerModel {
                     if !alreadyApplied { try await service.apply(transaction) }
                     try await BackgroundTaskRunner.run { [service] in try service.verify(transaction, appearanceID: appearanceID) }
                     jobs[index].phase = .installed
-                    jobs[index].message = appearanceID == nil
-                        ? "Installed and verified. Your enabled script mods and input patches are active."
-                        : "Installed and verified. Check the replacement in game; visual compatibility is unverified. This does not grant new clothing items."
+                    if appearanceID?.hasPrefix(ClothingAdditionInstaller.verificationPrefix) == true {
+                        jobs[index].message = "Selected clothes added as separate inventory items. Load a save to receive them, then equip the pieces you want."
+                    } else {
+                        jobs[index].message = appearanceID == nil
+                            ? "Installed and verified. Your enabled script mods and input patches are active."
+                            : "Installed and verified. Check the replacement in game; visual compatibility is unverified. This does not grant new clothing items."
+                    }
                 }
                 try await persist()
             } catch {

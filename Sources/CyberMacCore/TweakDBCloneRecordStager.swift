@@ -334,6 +334,100 @@ public struct AddonProbeTweakDBDualCloneRecordReport: Codable, Equatable, Sendab
 public struct TweakDBCloneRecordStager: Sendable {
     public init() {}
 
+    /// Clothing imports share one read/write/reparse per database, regardless
+    /// of selection size. Existing records and value pools stay intact.
+    func stageClothingAdditions(fileURL: URL, outputURL: URL, pieces: [StandaloneClothingSource.Piece]) throws {
+        guard !pieces.isEmpty, Set(pieces.map(\.record)).count == pieces.count else {
+            throw CyberMacError.invalidInput("The clothing batch is empty or duplicated.")
+        }
+        try Self.ensureOutputIsNotInsideInspectedApp(inputFileURL: fileURL, outputDirectoryURL: outputURL.deletingLastPathComponent())
+        guard fileURL.standardizedFileURL != outputURL.standardizedFileURL else { throw CyberMacError.unsafePath("Clothing output must be a separate file.") }
+        var parsed = try Self.parse(data: Self.readData(fileURL))
+        guard let cnameIndex = parsed.typeIndexByName["CName"], parsed.flatTypes[cnameIndex].isHighConfidence else {
+            throw CyberMacError.invalidInput("The clothing name pool cannot be safely extended.")
+        }
+        let originalRecords = Dictionary(uniqueKeysWithValues: parsed.records.map { ($0.id, $0.typeHash) })
+        var touched = Set<Int>()
+        var expectedKeys: [UInt64: (UInt64, Int)] = [:]
+        var expectedNames: [(String, String, String)] = []
+        for piece in pieces {
+            try Self.validateRecordName(piece.source, label: "source record")
+            try Self.validateRecordName(piece.record, label: "new record")
+            guard let entity = piece.entityName else { throw CyberMacError.invalidInput("A clothing identity is missing.") }
+            try Self.validateCNameValue(entity)
+            let sourceID = Self.tweakDBID(piece.source), newID = Self.tweakDBID(piece.record)
+            guard let source = originalRecords[sourceID], !parsed.records.contains(where: { $0.id == newID }) else {
+                throw CyberMacError.invalidInput("A clothing donor is missing or the new item already exists.")
+            }
+            let properties = TweakDBStructureInspector.recordProperties(typeName: Self.recordTypeNameForHash[source])
+            guard !properties.isEmpty else { throw CyberMacError.unsupported("Unknown clothing record schema.") }
+            for property in properties {
+                guard let location = parsed.flatLocationByID[Self.tweakDBID("\(piece.source).\(property)")] else { continue }
+                let flatID = Self.tweakDBID("\(piece.record).\(property)")
+                guard parsed.flatLocationByID[flatID] == nil else { throw CyberMacError.invalidInput("Clothing flat identity collision.") }
+                let valueIndex = parsed.flatTypes[location.typeIndex].keys[location.keyIndex].valueIndex
+                parsed.flatTypes[location.typeIndex].keys.append(.init(id: flatID, valueIndex: valueIndex))
+                parsed.flatLocationByID[flatID] = .init(typeIndex: location.typeIndex, keyIndex: parsed.flatTypes[location.typeIndex].keys.count - 1)
+                expectedKeys[flatID] = (parsed.flatTypes[location.typeIndex].typeHash, valueIndex)
+                touched.insert(location.typeIndex)
+            }
+            for (property, value) in [("entityName", entity), ("appearanceName", entity + "_")] {
+                let flatID = Self.tweakDBID("\(piece.record).\(property)")
+                guard let location = parsed.flatLocationByID[flatID], location.typeIndex == cnameIndex else {
+                    throw CyberMacError.invalidInput("A clothing donor has no \(property) CName.")
+                }
+                let prepared = Self.prepareOverrideValue(override: .cName(property: property, value: value))
+                let pool = parsed.flatTypes[cnameIndex]
+                let valueIndex: Int
+                if let index = pool.parsedValues.firstIndex(where: { $0.equality == prepared.equality }) { valueIndex = index }
+                else if let index = pool.appendedValues.firstIndex(where: { $0.equality == prepared.equality }) { valueIndex = pool.blockValueCount + index }
+                else {
+                    valueIndex = pool.blockValueCount + pool.appendedValues.count
+                    parsed.flatTypes[cnameIndex].appendedValues.append(.init(bytes: prepared.bytes, equality: prepared.equality, summary: prepared.summary))
+                }
+                parsed.flatTypes[cnameIndex].keys[location.keyIndex] = .init(id: flatID, valueIndex: valueIndex)
+                expectedKeys[flatID] = (pool.typeHash, valueIndex)
+                expectedNames.append((piece.record, property, value))
+            }
+            parsed.records.append(.init(id: newID, typeHash: source))
+        }
+        parsed.records.sort { $0.id < $1.id }
+        for index in touched { parsed.flatTypes[index].keys.sort { $0.id < $1.id } }
+        let staged = try Self.write(parsed: parsed)
+        // Release the large source index before reparsing the staged file.
+        parsed.flatLocationByID.removeAll(keepingCapacity: false)
+        parsed.flatTypes.removeAll(keepingCapacity: false)
+        parsed.records.removeAll(keepingCapacity: false)
+        let checked = try Self.parse(data: staged)
+        guard Self.firstUnsortedPair(ids: checked.records.map(\.id)) == nil,
+              checked.records.count == originalRecords.count + pieces.count,
+              Set(checked.records.map(\.id)) == Set(originalRecords.keys).union(pieces.map { Self.tweakDBID($0.record) }) else {
+            throw CyberMacError.invalidInput("Clothing record table failed validation.")
+        }
+        for record in checked.records {
+            if let original = originalRecords[record.id], original != record.typeHash { throw CyberMacError.invalidInput("An existing item changed type.") }
+        }
+        for piece in pieces {
+            guard checked.records.contains(where: { $0.id == Self.tweakDBID(piece.record) && $0.typeHash == originalRecords[Self.tweakDBID(piece.source)] }) else {
+                throw CyberMacError.invalidInput("A new clothing record could not be read back.")
+            }
+        }
+        for index in touched where Self.firstUnsortedPair(ids: checked.flatTypes[index].keys.map(\.id)) != nil {
+            throw CyberMacError.invalidInput("Clothing flat keys are out of order.")
+        }
+        for (id, expected) in expectedKeys {
+            guard let location = checked.flatLocationByID[id], checked.flatTypes[location.typeIndex].typeHash == expected.0,
+                  checked.flatTypes[location.typeIndex].keys[location.keyIndex].valueIndex == expected.1 else {
+                throw CyberMacError.invalidInput("A cloned clothing property failed validation.")
+            }
+        }
+        for (record, property, value) in expectedNames where Self.cNameFlatValue(parsed: checked, record: record, property: property) != value {
+            throw CyberMacError.invalidInput("A private clothing appearance name failed validation.")
+        }
+        try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try staged.write(to: outputURL, options: .atomic)
+    }
+
     public func stage(request: AddonProbeTweakDBCloneRecordRequest) throws -> AddonProbeTweakDBCloneRecordReport {
         let fileURL = request.fileURL.standardizedFileURL
         let outputDirectoryURL = request.outputDirectoryURL.standardizedFileURL

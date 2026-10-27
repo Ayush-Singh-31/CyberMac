@@ -12,8 +12,12 @@ struct CyberButtonStyle: ButtonStyle {
     let accent: CyberAccent
     let minWidth: CGFloat?
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovering = false
 
-    init(_ variant: CyberButtonVariant = .secondary, accent: CyberAccent = .blue, minWidth: CGFloat? = nil) {
+    init(_ variant: CyberButtonVariant = .secondary, accent: CyberAccent = .cyan, minWidth: CGFloat? = nil) {
         self.variant = variant
         self.accent = accent
         self.minWidth = minWidth
@@ -21,65 +25,56 @@ struct CyberButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, compact ? 10 : 14)
+            .padding(.vertical, compact ? 6 : 9)
             .frame(minWidth: minWidth)
             .foregroundStyle(foreground)
             .background {
-                background(configuration: configuration)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                background(pressed: configuration.isPressed)
+                    .clipShape(RoundedRectangle(cornerRadius: CyberStyle.controlRadius, style: .continuous))
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(strokeColor, lineWidth: 1)
+                RoundedRectangle(cornerRadius: CyberStyle.controlRadius, style: .continuous)
+                    .strokeBorder(strokeColor.opacity(isHovering && isEnabled ? 1 : 0.6), lineWidth: 1)
             }
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .opacity(configuration.isPressed ? 0.88 : 1)
-            .hoverGlow(variant == .destructive ? .red : accent, enabled: isEnabled, scale: 1.018, cornerRadius: 16)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.82 : 1) : 0.45)
             .modifier(CursorIfEnabled(enabled: isEnabled))
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+            .onHover { isHovering = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovering)
     }
+
+    private var compact: Bool { controlSize == .small || controlSize == .mini }
 
     private var foreground: Color {
         switch variant {
-        case .primary:
-            return .white
-        case .secondary, .ghost:
-            return .primary
-        case .destructive:
-            return Color(red: 1.0, green: 0.70, blue: 0.72)
+        case .primary: .white
+        case .secondary: .primary
+        case .ghost: colorScheme == .dark ? CyberAccent.cyan.color : CyberAccent.blue.color
+        case .destructive: colorScheme == .dark ? Color(red: 1, green: 0.60, blue: 0.64) : CyberAccent.red.color
         }
     }
 
     private var strokeColor: Color {
         switch variant {
-        case .primary:
-            return accent.secondary.opacity(0.24)
-        case .secondary:
-            return .white.opacity(0.10)
-        case .destructive:
-            return CyberAccent.red.color.opacity(0.24)
-        case .ghost:
-            return .clear
+        case .primary: CyberAccent.cyan.color.opacity(0.45)
+        case .secondary: Color.primary.opacity(0.18)
+        case .destructive: CyberAccent.red.color.opacity(0.35)
+        case .ghost: .clear
         }
     }
 
-    @ViewBuilder
-    private func background(configuration: Configuration) -> some View {
+    @ViewBuilder private func background(pressed: Bool) -> some View {
         switch variant {
         case .primary:
-            LinearGradient(
-                colors: [accent.color, accent.secondary.opacity(0.82)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            LinearGradient(colors: [CyberAccent.cyan.color, CyberAccent.blue.color], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .secondary:
-            Color.white.opacity(configuration.isPressed ? 0.10 : 0.07)
+            Color.primary.opacity(pressed ? 0.10 : (isHovering && isEnabled ? 0.075 : 0.045))
         case .destructive:
-            Color.red.opacity(configuration.isPressed ? 0.18 : 0.08)
+            CyberAccent.red.color.opacity(pressed ? 0.18 : 0.09)
         case .ghost:
-            Color.white.opacity(configuration.isPressed ? 0.08 : 0.00)
+            CyberAccent.cyan.color.opacity(pressed ? 0.10 : (isHovering && isEnabled ? 0.06 : 0))
         }
     }
 }
@@ -88,10 +83,7 @@ private struct CursorIfEnabled: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
-        if enabled {
-            content.cyberCursor()
-        } else {
-            content
-        }
+        if enabled { content.cyberCursor() }
+        else { content }
     }
 }

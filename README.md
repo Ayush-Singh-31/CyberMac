@@ -6,21 +6,25 @@ CyberMac is experimental developer-preview software for Cyberpunk 2077: Ultimate
 
 CyberMac is an experimental macOS mod manager for Cyberpunk 2077. The app opens on **Install mods**: drop ZIPs or choose files, and it identifies the package, prepares compatible files, backs up originals, installs through the macOS password prompt, and verifies the result. The CLI and Advanced tools retain their manual workflows.
 
+Install mods shows imports on the left and the selected ZIP's details on the right. Choose clothes, variant selection, retry and recovery actions stay with that ZIP. **Browse all variants** keeps long clothing collections out of the import list, and the panes stack in narrower windows.
+
 Multiple downloads are queued in order. A blocked or invalid package does not discard the rest. Runtime ZIPs use the same drop area; importing redscript resumes waiting script mods. Collections ask for one variant rather than installing conflicting alternatives. Installer history retains recovery plans and offers **Restore previous files**; restore changes in reverse install order when they share game files. Cancelled password prompts can be retried.
 
-Every import card has a top-right **×** to remove it from the list. Removed entries stay under **Recently removed**, with **Put back** and any existing file-restoration action; their recovery plans and retained downloads are kept. Removing a list entry does not uninstall game files or change clothing selections. Removal is disabled while work is running and is saved across app restarts. Library mod rows also have a top-right **×**, using the existing confirmation to remove managed files and the manifest; previously activated scripts still require reactivation afterward.
+Every import row has a right-side **×** to remove it from the list. Removed entries stay under **Recently removed**, with **Put back** and any existing file-restoration action; their recovery plans and retained downloads are kept. Removing a list entry does not uninstall game files or change clothing selections. Removal is disabled while work is running and is saved across app restarts. Library mod rows also have a top-right **×**, using the existing confirmation to remove managed files and the manifest; previously activated scripts still require reactivation afterward.
 
-Dropping a clothing ZIP opens a separate **Choose your clothes** pane before applying any selection. Prepared Lucy/Jinguji garments use their verified textured previews. Check individual cards, filter by category or name, then choose **Install selected**; nothing is preselected on a new import. Cancel keeps the current wardrobe unchanged. Selecting again replaces the previous choices from that ZIP, while retaining selections from other packs. Already-owned inventory items are not removed. The Clothing screen's ZIP chooser uses this same flow. Use **Clothing → Play** for the verified clothing session after the chosen pieces are prepared.
+Dropping a clothing ZIP opens **Choose your clothes**. Check individual garments, filter by category or name, then choose **Install selected**; new imports start with nothing selected. Compatible archive replacements are converted into independent item records and private assets, preserving the vanilla garments and allowing colour alternatives to coexist. Complete Apple's Installer, then load a save and equip the new inventory items. This flow does not require **Clothing → Play**. Other packs' selections and already-owned inventory items are kept.
 
-This is recipe recognition, not conversion of every clothing mod or every Jinguji variant. Other archive-only replacements use native inspection and staging when their resources and dependencies have verified destinations. These replacements do not create standalone item records or grant new inventory items, and their appearance still needs a gameplay check.
+Discovery reads the game's clothing templates and each archive's resources rather than relying only on pinned Lucy/Jinguji recipes. The local Jinguji collection has 214 archives and resolves to 232 garment/slot choices, including meshes usable in two slots. This count establishes discovery, not gameplay validation of every choice. Existing imports are upgraded when reopened. Finder metadata is ignored and repeated identical garments share one selector entry.
 
-Collection imports show their individual archive variants in a searchable list with a category filter. JingujiAllInOne contains 214 garment variants across 17 categories: three have prepared wardrobe items, while 211 remain unconverted. The selector opens on **All variants** so the remaining clothes can be browsed as **Preview only**; rendering an image does not make a variant installable. Existing imports can reopen the selector with **Choose clothes…**. Finder metadata and resource forks are excluded from mod files and variant counts.
+**Live Blender previews are paused.** Browsing and importing never launch a renderer. Existing saved wardrobe images remain visible; other garments show their names and a placeholder. Only selected clothes are converted. Game templates are cached as compressed metadata, and all selected item records are written in one batch per database. Large game archives use APFS clones and a small local Installer package, avoiding multi-gigabyte package compression.
 
-Clothing drops show a loader, then populate preview cards in the background. To keep power use low, automatic previews use the actual garment mesh at **160×160**, simple studio shading and approximate colours inferred from the author's variant label. Fabric patterns, transparency, shine and reflections are simplified. Existing verified textured wardrobe thumbnails are kept. Only a small initial batch and visible rows are requested (at most six per renderer invocation); scrolling away drops pending requests. Rendering is serialized across packages, runs at background priority, limits CPU workers to two, and never runs a full ray-traced material simulation. **Pause** stays paused while browsing; **Resume previews** continues. Removing an import or quitting stops its renderer. Cached images and geometry avoid repeating the work when reopening a package. Per-variant failures are shown without blocking other previews.
+The conversion adapter currently targets archive replacements for the six base-game feminine V clothing slots. Framework-dependent packages (ArchiveXL, TweakXL, RED4ext, custom body/refit rules) still need adapters; unsupported garments show an explanation. This is not universal support for every downloaded clothing ZIP. The generic Black and Carol bandeau additions are user-confirmed to appear in inventory and equip correctly. Other new variants need an in-game appearance check; the earlier seven prepared Lucy/Jinguji items retain their prior gameplay confirmation.
 
-Preview tools are configured from existing local installations during `scripts/build-app.sh`: Python with NumPy/Pillow, WolvenKit CLI, the existing ARM64 Kraken library and Blender. Paths are recorded in the app's renderer resources; `CYBERMAC_PREVIEW_PYTHON`, `CYBERMAC_PREVIEW_DOTNET`, `CYBERMAC_PREVIEW_BLENDER`, `CYBERMAC_PREVIEW_WOLVENKIT`, and `CYBERMAC_PREVIEW_KRAKEN` can override discovery before building. No tooling is downloaded at import time. Render outputs stay in CyberMac's generated preview cache. Meshes with embedded images use disposable geometry-only copies for export, leaving the ZIP untouched; the lightweight path does not decode multilayer textures or invoke DirectX.
+`scripts/build-app.sh` locates existing Python, WolvenKit CLI, .NET and ARM64 Kraken tools and records their paths in the app's conversion resources. Blender, NumPy and Pillow are not needed for the active import path. `CYBERMAC_PREVIEW_PYTHON`, `CYBERMAC_PREVIEW_DOTNET`, `CYBERMAC_PREVIEW_WOLVENKIT` and `CYBERMAC_PREVIEW_KRAKEN` can override discovery before building. No tooling is downloaded at import time. See [the clothing addition workflow](docs/clothing-additions.md) for validation and limits.
 
 The sidebar keeps Install mods, Clothing, Library and Settings visible. Activation, archive research, backups, outfits and diagnostics are under **Advanced**.
+
+All app screens and clothing dialogs share the same cyan actions, selection states, panel borders, spacing and typography. The sidebar uses native glass where available; cards use lightweight surfaces without a separate blur effect for every item. Reduced Motion and Reduced Transparency settings are respected.
 
 This is a source-only developer preview. CyberMac does not bundle redscript, input-loader, mods, Cyberpunk game files, or downloaded runtime files.
 
@@ -58,6 +62,7 @@ Supported:
 - automatic final.redscripts activation through the system authorization prompt
 - automatic input XML patching with backup and verification
 - experimental archive-only clothing inspection and native patch staging, without external archive tools
+- selective standalone additions from compatible feminine V clothing replacement ZIPs, using local conversion tools
 - bounded, local session recording of accessible macOS/CyberMac messages from Diagnostics
 
 Use redscript 0.5.32 or newer for 2.5. The old 0.5.31 compiler cannot load its
@@ -73,7 +78,8 @@ be installed. A health refresh can be dismissed with **Stop checking**.
 
 The local build prepares a narrow `.pkg` containing only the planned game files
 and opens Apple's Installer for authorization and placement. Finish its install
-window; CyberMac waits for the package receipt and then verifies the game files.
+window; CyberMac waits for a package receipt or the successful script-only entry
+in macOS's protected install history, then verifies the game files.
 Package scripts are generated by CyberMac, never taken from mod downloads.
 The original backups are retained. This avoids elevated-shell attribution
 problems and does not depend on Apple's restricted privileged-file-operations

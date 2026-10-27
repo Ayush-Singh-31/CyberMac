@@ -13,7 +13,7 @@ struct PrimaryButton: View {
         systemImage: String,
         disabled: Bool,
         variant: CyberButtonVariant = .primary,
-        accent: CyberAccent = .blue,
+        accent: CyberAccent = .cyan,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -30,6 +30,5 @@ struct PrimaryButton: View {
         }
         .buttonStyle(CyberButtonStyle(disabled ? .secondary : variant, accent: accent, minWidth: 150))
         .disabled(disabled)
-        .opacity(disabled ? 0.48 : 1.0)
     }
 }

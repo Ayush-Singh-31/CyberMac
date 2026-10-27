@@ -18,20 +18,21 @@ public struct ClothingImportCatalog: Codable, Sendable {
 
     public init(contents: ModPackageContents, wardrobe: ClothingWardrobe?, notice: String? = nil) {
         self.notice = notice
+        var seen = Set<String>()
         self.items = contents.archives.flatMap { archive -> [Item] in
             if archive.preparedPieces.isEmpty {
                 return [Item(id: "archive:" + archive.path,
                     name: archive.name.replacingOccurrences(of: "_", with: " "), category: archive.category,
                     archivePath: archive.path, record: nil, previewURL: nil,
-                    unavailableReason: archive.problem ?? "Preview only. Installing this clothing variant is not supported yet.", previewError: nil)]
+                    unavailableReason: archive.problem ?? "This garment needs a conversion adapter before it can be installed.", previewError: nil)]
             }
             return archive.preparedPieces.map { piece in
                 let prepared = wardrobe?.items.first { $0.id == piece.id }
                 return Item(id: piece.id, name: piece.name, category: archive.category, archivePath: archive.path,
                     record: piece.id, previewURL: prepared?.previewURL,
-                    unavailableReason: prepared == nil ? "Open the prepared wardrobe in Clothing to use this garment." : nil, previewError: nil)
+                    unavailableReason: prepared == nil && piece.requiresConversion != true ? "Open the prepared wardrobe in Clothing to use this garment." : nil, previewError: nil)
             }
-        }
+        }.filter { seen.insert($0.id).inserted }
     }
 
     private init(items: [Item], notice: String?) { self.items = items; self.notice = notice }

@@ -5,6 +5,62 @@ import XCTest
 
 @MainActor
 final class ModInstallerModelTests: XCTestCase {
+    func testCompletedClothingInstallIsReconciledWithoutReinstallingOnLoad() async throws {
+        let service = InstallerFixtureService(), transaction = try fixturePlan()
+        let failure = "macOS Installer closed without completing this package"
+        service.history = [.init(id: UUID(), url: url("clothes.zip"), phase: .failed, message: failure,
+            lastFailure: failure, transaction: transaction, appearanceID: ClothingAdditionInstaller.verificationPrefix + UUID().uuidString)]
+        let model = ModInstallerModel(service: service)
+        await model.load()
+        XCTAssertEqual(model.jobs[0].phase, .installed)
+        XCTAssertEqual(service.history[0].phase, .installed)
+        XCTAssertEqual(model.jobs[0].lastFailure, failure)
+        XCTAssertEqual(service.applied, 0)
+        XCTAssertTrue(service.prepared.isEmpty)
+        XCTAssertFalse(model.jobs[0].message.contains("Installer closed"))
+    }
+
+    func testCompletionReconciliationKeepsRemovedEntriesHidden() async throws {
+        let service = InstallerFixtureService(), removed = Date()
+        service.history = [.init(id: UUID(), url: url("clothes.zip"), phase: .failed,
+            message: "macOS Installer closed without completing this package", transaction: try fixturePlan(),
+            appearanceID: ClothingAdditionInstaller.verificationPrefix + UUID().uuidString, removedAt: removed)]
+        let model = ModInstallerModel(service: service)
+        await model.load()
+        XCTAssertEqual(model.jobs[0].phase, .installed)
+        XCTAssertEqual(model.jobs[0].removedAt, removed)
+        XCTAssertTrue(model.visibleJobs.isEmpty)
+        XCTAssertEqual(service.applied, 0)
+        XCTAssertTrue(service.prepared.isEmpty)
+    }
+
+    func testUnverifiedClothingInstallKeepsItsFailureAndRecoveryPlan() async throws {
+        let service = InstallerFixtureService(), transaction = try fixturePlan()
+        service.failVerify = true
+        let failure = "macOS Installer closed without completing this package"
+        service.history = [.init(id: UUID(), url: url("clothes.zip"), phase: .failed, message: failure,
+            transaction: transaction, appearanceID: ClothingAdditionInstaller.verificationPrefix + UUID().uuidString)]
+        let model = ModInstallerModel(service: service)
+        await model.load()
+        XCTAssertEqual(model.jobs[0].phase, .failed)
+        XCTAssertEqual(model.jobs[0].message, failure)
+        XCTAssertNotNil(model.jobs[0].transaction)
+        XCTAssertEqual(service.applied, 0)
+    }
+    func testPausedFeatureNeverStartsRenderingOnDropBrowseOrResume() async throws {
+        let service = clothingService()
+        service.liveClothingPreviewsEnabled = false
+        let model = ModInstallerModel(service: service)
+        await model.enqueue([url("clothing.zip")])
+        let id = model.jobs[0].id
+        model.requestPreview(id, archivePath: "Clothes/Other/unconverted.archive")
+        model.resumePreviewRendering(id)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(model.liveClothingPreviewsEnabled)
+        XCTAssertTrue(service.previewRequests.isEmpty)
+        XCTAssertNil(model.jobs[0].previewProgress)
+        XCTAssertNotNil(model.clothingPresentation)
+    }
     func testRestorePreservesOriginalInstallErrorAcrossReload() async throws {
         let service = InstallerFixtureService()
         service.plan = try fixturePlan()
@@ -185,6 +241,27 @@ final class ModInstallerModelTests: XCTestCase {
         XCTAssertNil(model.clothingPresentation)
     }
 
+    func testDifferentClothesFromAnInstalledZipArePreparedAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let data = root.appendingPathComponent("Game.app/Contents/Data")
+        let target = data.appendingPathComponent("r6/cache/final.redscripts")
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("installed".utf8).write(to: target)
+        let game = GameInstall(appURL: root.appendingPathComponent("Game.app"), executableURL: root.appendingPathComponent("FakeGame"), dataURL: data,
+                               archiveMacURL: nil, r6URL: nil, storefront: .unknown, displayName: "Fixture")
+        let transaction = try ModInstallTransaction(game: game, files: [.init(source: root.appendingPathComponent("source").path,
+            target: target.path, backup: root.appendingPathComponent("backup").path, originalSHA256: String(repeating: "a", count: 64),
+            installedSHA256: try PathSafety.sha256(url: target))])
+        let service = clothingService()
+        service.history = [.init(id: UUID(), url: url("clothing.zip"), phase: .installed, transaction: transaction, clothingRecords: ["Items.Corset"])]
+        let model = ModInstallerModel(service: service)
+        await model.enqueue([url("clothing.zip")])
+        await model.installClothingSelection(model.jobs[1].id, records: ["Items.Pants"])
+        XCTAssertEqual(service.clothingSelections, [["Items.Pants"]])
+        XCTAssertEqual(model.jobs[1].message, "Finished")
+    }
+
     func testCancellingClothingPaneDoesNotPrepareAnything() async {
         let service = clothingService(), model = ModInstallerModel(service: service)
         await model.enqueue([url("clothing.zip")])
@@ -331,6 +408,7 @@ final class ModInstallerModelTests: XCTestCase {
 }
 
 private final class InstallerFixtureService: ModInstallerProviding, @unchecked Sendable {
+    var liveClothingPreviewsEnabled = true
     private let lock = NSLock()
     private var calls: [String] = []
     private var runtime = false
@@ -340,6 +418,7 @@ private final class InstallerFixtureService: ModInstallerProviding, @unchecked S
     let release = DispatchSemaphore(value: 0)
     var failSave = false
     var failApply = false
+    var failVerify = false
     var plan: ModInstallTransaction?
     var history: [ModImportJob] = []
     var catalog: ModPackageContents?
@@ -376,7 +455,9 @@ private final class InstallerFixtureService: ModInstallerProviding, @unchecked S
         lock.withLock { applyCount += 1 }
         if failApply { throw CyberMacError.fileSystem("mv: Operation not permitted") }
     }
-    func verify(_ transaction: ModInstallTransaction, appearanceID: String?) throws { }
+    func verify(_ transaction: ModInstallTransaction, appearanceID: String?) throws {
+        if failVerify { throw CyberMacError.fileSystem("Installed files do not match") }
+    }
     func load() throws -> [ModImportJob] { lock.withLock { history } }
     func save(_ jobs: [ModImportJob]) throws {
         if failSave { throw CyberMacError.fileSystem("History is not writable") }

@@ -147,6 +147,8 @@ struct CyberMacCLI {
           cybermac clothing select --out-dir <wardrobe-workspace> --records <comma-separated item IDs> [--game-app <app>]
           cybermac clothing icons --workspace <working-wardrobe> --icons <icons.json> --out-dir <new-folder> [--game-app <app>]
           cybermac clothing register --workspace <icon-wardrobe>
+          cybermac clothing inspect-import --zip <clothes.zip> [--game-app <app>] [--home <directory>]
+          cybermac clothing prepare-import --zip <clothes.zip> --records <comma-separated IDs> --out <plan.json> [--game-app <app>] [--home <directory>]
           cybermac appearance stage <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance commands <experiment-id> [--game-app <app>] [--home <directory>] [--json]
           cybermac appearance verify <experiment-id> [--restore] [--game-app <app>] [--home <directory>] [--json]

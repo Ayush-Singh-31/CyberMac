@@ -13,21 +13,13 @@ struct CyberPanel<Content: View>: View {
 
     var body: some View {
         content
-            .padding(18)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(baseStroke, lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-            .hoverGlow(accent ?? .neutral, enabled: interactive, scale: 1.012, cornerRadius: 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(CyberStyle.panelPadding)
+            .cyberSurface()
+            .hoverGlow(.cyan, enabled: interactive, cornerRadius: CyberStyle.panelRadius)
             .modifier(CursorIfNeeded(enabled: interactive))
     }
 
-    private var baseStroke: Color {
-        accent?.color.opacity(interactive ? 0.12 : 0.08) ?? .white.opacity(0.08)
-    }
 }
 
 private struct CursorIfNeeded: ViewModifier {

@@ -6,9 +6,9 @@ struct BackupsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Backups")
-                    .font(.largeTitle.weight(.semibold))
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
+                CyberPageTitle("Backups", subtitle: "Restore saved game files and input settings.")
+                Divider()
                 CyberPanel(accent: .green, interactive: true) {
                     HStack(alignment: .center, spacing: 16) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -124,7 +124,7 @@ struct BackupsView: View {
                     }
                 }
             }
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

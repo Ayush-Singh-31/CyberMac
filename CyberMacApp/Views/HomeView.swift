@@ -13,14 +13,15 @@ struct HomeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: CyberStyle.sectionSpacing) {
                 header
+                Divider()
                 statusCards
                 primaryPanel
                 warnings
                 diagnosticsDisclosure
             }
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -28,7 +29,7 @@ struct HomeView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("CyberMac")
-                    .font(.largeTitle.weight(.semibold))
+                    .font(CyberStyle.pageTitle)
                 HStack(spacing: 10) {
                     Text(subtitle)
                         .foregroundStyle(.secondary)

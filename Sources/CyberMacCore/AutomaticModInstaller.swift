@@ -16,10 +16,22 @@ public struct AutomaticModInstaller: Sendable {
 
     public func prepare(_ url: URL, variant: String? = nil, clothingRecords: [String]? = nil, game gameOverride: GameInstall? = nil) throws -> ModInstallPreparation {
         let route = try ModPackageRouter(home: home).route(url)
-        if clothingRecords != nil {
-            guard case .clothing = route else {
+        if let clothingRecords {
+            let clothing: Bool
+            switch route {
+            case .clothing: clothing = true
+            case .appearance: clothing = url.pathExtension.lowercased() == "zip"
+            default: clothing = false
+            }
+            guard clothing else {
                 throw CyberMacError.unsupported("This package has no prepared clothing selection. Its variants need conversion first.")
             }
+            if let current = try ClothingWardrobeManager(home: home).current(),
+               try ClothingWardrobeManager(home: home).sessionStatus(workspace: current.workspace)?.isActive == true {
+                return .blocked("Finish the active clothing session before installing more clothes.")
+            }
+            let game = try gameOverride ?? GameInstallDetector().detect()
+            return try ClothingAdditionInstaller(home: home).prepare(url, records: clothingRecords, game: game)
         }
         if case .runtime = route {
             // Runtime imports do not change the game or clothing selection.
@@ -40,20 +52,7 @@ public struct AutomaticModInstaller: Sendable {
             _ = try kind == .redscript ? importer.importRedscript(zipURL: url) : importer.importInputLoader(zipURL: url)
             return .runtimeReady("\(kind == .redscript ? "redscript" : "Input loader") imported. Continuing any mods waiting for setup.")
         case .clothing:
-            guard let clothingRecords else { return .clothingSelectionRequired }
-            let manager = ClothingWardrobeManager(home: home)
-            guard let wardrobe = try manager.current() else {
-                return .blocked("These clothes match the prepared Lucy/Jinguji recipes. Open your prepared wardrobe in Clothing once, then retry this ZIP.")
-            }
-            guard try manager.sessionStatus(workspace: wardrobe.workspace)?.isActive != true else {
-                return .blocked("Wait for the clothing session to finish before changing the wardrobe.")
-            }
-            let contents = try manager.packageContents(in: url)
-            let catalog = ClothingImportCatalog(contents: contents, wardrobe: wardrobe)
-            try catalog.validateSelection(clothingRecords)
-            let selected = try ClothingImportCatalog.replacingPackageSelection(contents: contents, selected: clothingRecords, existing: wardrobe.selectedRecords)
-            _ = try manager.prepareLaunch(workspace: wardrobe.workspace, records: selected)
-            return .ready("\(clothingRecords.count) chosen garment(s) prepared for your next Clothing → Play session. Unchecked pieces from this ZIP were excluded. Previously owned inventory items are not removed.")
+            return .clothingSelectionRequired
         case .scripts:
             return try prepareScripts(url, game: gameOverride)
         case .appearance(let variants):
@@ -145,8 +144,12 @@ public struct AutomaticModInstaller: Sendable {
         try transaction.verify()
         let game = try gameOverride ?? GameInstallDetector().detect(preferredAppPath: transaction.gameApp)
         if let appearanceID {
-            guard try AppearancePatchManager(home: home).verify(id: appearanceID, game: game).matched else {
-                throw CyberMacError.fileSystem("Appearance installation verification failed.")
+            if appearanceID.hasPrefix(ClothingAdditionInstaller.verificationPrefix) {
+                try ClothingAdditionInstaller(home: home).verify(id: String(appearanceID.dropFirst(ClothingAdditionInstaller.verificationPrefix.count)), game: game)
+            } else {
+                guard try AppearancePatchManager(home: home).verify(id: appearanceID, game: game).matched else {
+                    throw CyberMacError.fileSystem("Appearance installation verification failed.")
+                }
             }
         } else {
             let state = StateStore(home: home).load()
