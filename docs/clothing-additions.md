@@ -1,40 +1,60 @@
-# Selective clothing additions
+# Clothing additions
 
-Drop a clothing ZIP in **Install mods** or choose it from **Clothing**. CyberMac lists discovered garments in **Choose your clothes**. Select pieces and click **Install selected**, finish Apple's Installer, then load a save. The delivery helper grants missing selected items; equip them from inventory. Existing items in a save are kept, including items unchecked on a later import.
+CyberMac turns compatible feminine V clothing replacements into separate
+inventory items. Select the pieces you want from a ZIP and equip them alongside
+your existing clothes.
 
-Live Blender previews are paused. Saved wardrobe images remain usable, and other cards show names and placeholders. Discovery and preparation never invoke Blender. A garment does not need an image to be selected.
+## Install clothes
 
-## Current adapter
+1. Close the game and open **Install mods**.
+2. Drop in a clothing ZIP or choose it from **Clothing**.
+3. In **Choose your clothes**, filter by name or category and select your pieces.
+4. Click **Install selected** and finish macOS Installer.
+5. Launch the game, load a save and equip the new items from inventory.
 
-The adapter discovers archive replacements against the installed game's feminine V appearance graphs for outer torso, inner torso, legs, feet, head and face. It assigns private item IDs, entity/appearance names, material resource paths and factory rows. Different colours replacing the same vanilla mesh receive independent IDs. Vanilla resources are retained. Earlier prepared Lucy/Jinguji records are reused when that verified wardrobe is registered.
+Each garment has its own item record and assets. Different colours can coexist,
+and the original garments remain available. Items already owned in a save are
+kept when you change a later selection.
 
-ZIP inspection shows individual archive entries, including several garments in one archive when they match different donor meshes. Shared meshes can offer different equipment slots. Finder resource forks are ignored; duplicate ZIP paths, links, unsafe paths and oversized inputs are rejected. Archives are decoded only after selection. Unsupported frameworks and missing templates produce explanations; they are not silently discarded.
+## Clothing collections
 
-ArchiveXL/TweakXL declarations, custom body/refit rules, masculine variants, outfit slots and arbitrary new asset layouts still need adapters. Finding a matching template is not a guarantee that a garment fits or renders correctly in gameplay. New inventory icons currently use donor icons; no new images are rendered.
+The importer discovers garments from the package's resources and the game's
+clothing templates. The current adapter covers feminine V's outer torso, inner
+torso, legs, feet, head and face slots.
 
-## Preparation and recovery
+Saved wardrobe images are shown when available; other pieces display their names
+and a placeholder. Selection and installation work without generating previews.
+Inventory icons use the corresponding donor items.
 
-The game supplies templates. A compressed metadata cache avoids re-decoding them on every drop. Only selected resources are converted, with round-trip graph checks and private paths. Each database is read, updated and verified once per selection batch, preserving the inherited item schema.
+See [tested mods](../KNOWN_WORKING_MODS.md) for the Lucy outfit, Jinguji
+selections and bandeau variants tested in gameplay. The importer explains when
+a package needs a different framework or body adapter.
 
-Preparation creates local APFS archive clones and recovery copies. The install plan covers the clothing factory archive, appearance archive, both TweakDBs and a script cache compiled with the user's other enabled redscript mods. Runtime and original-file checks run before preparation. No game files are modified during preparation.
+## Setup
 
-Large installs use a small local Apple Installer package whose generated script validates local payloads and backups, replaces the planned files, and rolls back on failure. This avoids compressing the game's multi-gigabyte archives into a package. Package scripts come from CyberMac; downloaded scripts are not executed by Installer. CyberMac checks the package receipt or its exact identifier in macOS's protected install history, then verifies installed hashes before promoting the clothing library state. Script-only packages do not produce a `pkgutil` receipt. Completed clothing jobs affected by the former receipt check are reconciled on reopen only when their files and script activation verify, without reinstalling. **Restore previous files** uses the retained recovery plan; restore shared-file changes in reverse installation order.
+Configure the [conversion tools](building.md#clothing-and-body-conversion-tools)
+and import a macOS redscript runtime before installing clothing additions.
+Game 2.5 uses redscript 0.5.32 or newer. CyberMac compiles inventory delivery
+together with your other enabled script mods.
 
-The older **Clothing → Play** workflow remains for prepared session bundles. Finish an active legacy clothing session before using persistent additions.
+## Restore an installation
 
-## Validation
+Select the import and choose **Restore previous files**. When clothing and body
+installs share archives, restore them in reverse installation order.
 
-Local discovery of JingujiAllInOne resolves all 214 archives into 232 garment/slot choices. Some meshes match both torso slots. This is discovery coverage, not a claim that every variant was installed or tested in gameplay.
+Restoration recovers the preceding game files. Unchecking a garment in a later
+selection does not remove an item already stored in your save.
 
-Pink and gold heel variants have been converted together in an isolated library, with private meshes, entities, appearances and independent records in both databases. The generated delivery script compiles with the four enabled local redscript mods. Original game files remain unchanged by this preparation check. These heel variants still require an interactive installation and gameplay check. The earlier seven pinned Lucy/Jinguji garments retain their existing gameplay confirmation.
-
-The Black and Carol bandeau pair also passes complete isolated preparation and an actual Apple Installer installation: all five installed file hashes match and macOS records success. On 28 October 2026, the user confirmed both appear in inventory and equip correctly as separate additions. Their material paths change serialized material sizes, so round-trip validation checks contiguous material headers and compares the decoded material contents independently of regenerated offsets. Changed geometry, material contents, missing materials and invalid offsets still fail validation.
-
-For a read-only preparation check using a separate home:
+## Inspect and prepare from the command line
 
 ```sh
-swift run cybermac clothing inspect-import --zip /path/to/clothes.zip --game-app /Applications/Cyberpunk2077.app --home /path/to/test-home
-swift run cybermac clothing prepare-import --zip /path/to/clothes.zip --records Items.CyberMac_Import_example --game-app /Applications/Cyberpunk2077.app --home /path/to/test-home --out /path/to/plan.json
+swift run cybermac clothing inspect-import --zip "/path/to/clothes.zip"
+swift run cybermac clothing prepare-import --zip "/path/to/clothes.zip" \
+  --records Items.CyberMac_Import_example --out "/path/to/plan.json"
 ```
 
-The test home needs a compatible macOS redscript runtime and verified base script cache. These commands retain the download and prepare local files but do not authorize or apply the install plan.
+Use the record IDs returned by inspection when preparing a selection. These
+commands inspect and prepare files without applying the installation plan.
+
+For an isolated workspace, pass `--home "/path/to/test-home"` to both commands
+and configure its redscript runtime and base script cache.
