@@ -34,7 +34,7 @@ public struct ClothingAdditionInstaller: Sendable {
     private var states: URL { home.generatedURL.appendingPathComponent("clothing-additions/states") }
     private var repo: URL { URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent() }
 
-    private func environment() throws -> (Tools, URL) {
+    func environment() throws -> (Tools, URL) {
         let bundled = Bundle.main.resourceURL?.appendingPathComponent("ClothingConversion")
         let scripts = bundled.flatMap { FileManager.default.fileExists(atPath: $0.appendingPathComponent("prepare_clothing_additions.py").path) ? $0 : nil } ?? repo.appendingPathComponent("tools")
         let config = [bundled?.appendingPathComponent("conversion-tools.json"), repo.appendingPathComponent(".research/conversion-tools.json"), repo.appendingPathComponent(".research/renderer-tools.json")]
@@ -109,6 +109,12 @@ public struct ClothingAdditionInstaller: Sendable {
         return try JSONDecoder().decode(State.self, from: Data(contentsOf: currentURL))
     }
 
+    func managedFiles(game: GameInstall) throws -> [ModInstallTransaction.File] {
+        guard let state = try current(), state.gameApp == game.appURL.path,
+              state.gameSealSHA256 == (try PathSafety.sha256(url: game.appURL.appendingPathComponent("Contents/_CodeSignature/CodeResources"))) else { return [] }
+        return state.files
+    }
+
     public func prepare(_ package: URL, records: [String], game: GameInstall) throws -> ModInstallPreparation {
         let scan = try ModArchiveScanner().scan(zipURL: package)
         guard scan.dependencyMarkers.frameworkMarkerLabels.isEmpty else {
@@ -162,7 +168,8 @@ public struct ClothingAdditionInstaller: Sendable {
             let target = game.appURL.appendingPathComponent("Contents/\(relative)")
             guard let sealed = sealFiles[relative] as? [String: Any], let hash = sealed["hash2"] as? Data else { throw CyberMacError.unsupported("No original digest for \(relative).") }
             let sealedHash = hash.map { String(format: "%02x", $0) }.joined()
-            let oldFile = old?.files.first { $0.target == target.path }
+            let oldFile = try ManagedArchiveStore(home: home).knownFile(target: target, game: game)
+                ?? old?.files.first { $0.target == target.path }
             let seed = legacyManifest?.files.first { $0.target == target.path }
             if let seed, seed.originalSHA256 != sealedHash { throw CyberMacError.unsupported("The prepared wardrobe belongs to another game version.") }
             let actual = try fingerprints.sha256(url: target)
@@ -281,5 +288,6 @@ public struct ClothingAdditionInstaller: Sendable {
         }
         try FileManager.default.createDirectory(at: home.configURL, withIntermediateDirectories: true)
         try JSONEncoder().encode(state).write(to: currentURL, options: .atomic)
+        try ManagedArchiveStore(home: home).remember(ModInstallTransaction(game: game, files: state.files), game: game)
     }
 }

@@ -22,6 +22,25 @@ struct ModImportJob: Identifiable, Codable, Sendable {
     var clothingRecords: [String]?
     var removedAt: Date?
     var previewProgress: ClothingPreviewProgress?
+
+    var installedMessage: String {
+        if appearanceID?.hasPrefix(ClothingAdditionInstaller.verificationPrefix) == true {
+            return "Selected clothes added as separate inventory items. Load a save to receive them, then equip the pieces you want."
+        }
+        if appearanceID?.hasPrefix(BodyModInstaller.verificationPrefix) == true {
+            if variant?.hasPrefix("Lethal Curves") == true {
+                return variant?.hasSuffix("(V + NPCs test)") == true
+                    ? "Lethal Curves maximum installed for V and feminine NPCs. This diagnostic changes the shared rig. Load a save and compare the body; restore this entry to remove it."
+                    : "Lethal Curves maximum installed for feminine V. Load a save and compare the body in inventory or Photo Mode."
+            }
+            return variant == BodyModInstaller.variants[1]
+                ? "Feminine V shoulder test installed. Load a save and check V in inventory and Photo Mode. Clothing items are preserved; the visible result still needs checking."
+                : "Unique V framework installed for feminine V. Original body shape retained. Clothing items are preserved."
+        }
+        return appearanceID == nil
+            ? "Installed and verified. Your enabled script mods and input patches are active."
+            : "Installed and verified. Check the replacement in game; visual compatibility is unverified. This does not grant new clothing items."
+    }
 }
 
 struct ClothingImportPresentation: Identifiable {
@@ -66,6 +85,7 @@ struct ModInstallerService: ModInstallerProviding {
         guard url.pathExtension.lowercased() == "zip" else { return nil }
         let contents = try ClothingWardrobeManager(home: home).packageContents(in: url)
         guard !contents.archives.isEmpty else { return nil }
+        if try BodyModInstaller.recognizes(url) { return contents }
         guard try ModArchiveScanner().scan(zipURL: url).dependencyMarkers.frameworkMarkerLabels.isEmpty else { return nil }
         return try ClothingAdditionInstaller(home: home).contents(url)
     }
@@ -135,16 +155,15 @@ final class ModInstallerModel {
             var history = try service.load()
             var reconciled = false
             // Repair the former no-payload receipt false negative. Verification
-            // checks every game file and commits the pending clothing library;
+            // checks every game file and commits the pending mod state;
             // it never authorizes another install or writes game files.
             for index in history.indices where history[index].phase == .failed &&
-                history[index].message.contains("macOS Installer closed without completing this package") &&
-                history[index].appearanceID?.hasPrefix(ClothingAdditionInstaller.verificationPrefix) == true {
+                history[index].message.contains("macOS Installer closed without completing this package") {
                 guard let transaction = history[index].transaction else { continue }
                 do {
                     try service.verify(transaction, appearanceID: history[index].appearanceID)
                     history[index].phase = .installed
-                    history[index].message = "Selected clothes added as separate inventory items. Load a save to receive them, then equip the pieces you want."
+                    history[index].message = history[index].installedMessage
                     reconciled = true
                 } catch { /* Keep the original failure and recovery plan. */ }
             }
@@ -453,13 +472,7 @@ final class ModInstallerModel {
                     if !alreadyApplied { try await service.apply(transaction) }
                     try await BackgroundTaskRunner.run { [service] in try service.verify(transaction, appearanceID: appearanceID) }
                     jobs[index].phase = .installed
-                    if appearanceID?.hasPrefix(ClothingAdditionInstaller.verificationPrefix) == true {
-                        jobs[index].message = "Selected clothes added as separate inventory items. Load a save to receive them, then equip the pieces you want."
-                    } else {
-                        jobs[index].message = appearanceID == nil
-                            ? "Installed and verified. Your enabled script mods and input patches are active."
-                            : "Installed and verified. Check the replacement in game; visual compatibility is unverified. This does not grant new clothing items."
-                    }
+                    jobs[index].message = jobs[index].installedMessage
                 }
                 try await persist()
             } catch {

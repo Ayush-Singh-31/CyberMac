@@ -21,7 +21,7 @@ if [[ -f .research/renderer-tools.json ]]; then
 fi
 conversion_resources="$app/Contents/Resources/ClothingConversion"
 mkdir -p "$conversion_resources"
-for conversion_source in prepare_clothing_additions.py prepare_lucy_assets.py prepare_jinguji_assets.py; do
+for conversion_source in prepare_clothing_additions.py prepare_lucy_assets.py prepare_jinguji_assets.py prepare_body_mod.py body_asset_codec.py; do
   /bin/cp "tools/$conversion_source" "$conversion_resources/$conversion_source"
 done
 python3 tools/configure_clothing_conversion.py --out .research/conversion-tools.json

@@ -3,6 +3,15 @@ import XCTest
 @testable import CyberMacCore
 
 final class ModInstallTransactionTests: XCTestCase {
+    func testSystemInstallHistoryAcceptsMacAdminGroupPermissionsAndRejectsUntrustedWriters() {
+        XCTAssertTrue(ModInstallerPackage.trustedHistoryMetadata(owner: 0, group: 80, mode: 0o100664))
+        XCTAssertTrue(ModInstallerPackage.trustedHistoryMetadata(owner: 0, group: 0, mode: 0o100664))
+        XCTAssertTrue(ModInstallerPackage.trustedHistoryMetadata(owner: 0, group: 20, mode: 0o100644))
+        XCTAssertFalse(ModInstallerPackage.trustedHistoryMetadata(owner: 501, group: 80, mode: 0o100664))
+        XCTAssertFalse(ModInstallerPackage.trustedHistoryMetadata(owner: 0, group: 20, mode: 0o100664))
+        XCTAssertFalse(ModInstallerPackage.trustedHistoryMetadata(owner: 0, group: 80, mode: 0o100666))
+        XCTAssertFalse(ModInstallerPackage.trustedHistoryMetadata(owner: 0, group: 80, mode: 0o120664))
+    }
     func testScriptOnlyPackageSuccessUsesExactIdentifierFromInstallerHistory() throws {
         let identifier = "com.cybermac.mod-files.test-unique-id"
         func history(_ ids: [String], process: String = "Installer") throws -> Data {

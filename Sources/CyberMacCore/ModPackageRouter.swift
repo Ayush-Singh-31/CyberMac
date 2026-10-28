@@ -5,6 +5,7 @@ public enum ModPackageRoute: Sendable {
     case scripts
     case clothing(records: [String])
     case appearance(variants: [String])
+    case body
     case runtime(RuntimeKind)
     case blocked(String)
 }
@@ -21,7 +22,7 @@ public struct ModPackageRouter: Sendable {
             throw CyberMacError.invalidInput("Choose a regular ZIP or archive file.")
         }
         try PathSafety.validateArchiveSize(url)
-        if url.pathExtension.lowercased() == "archive" { return .appearance(variants: []) }
+        if url.pathExtension.lowercased() == "archive" { return try BodyModInstaller.recognizes(url) ? .body : .appearance(variants: []) }
         guard url.pathExtension.lowercased() == "zip" else {
             return .blocked("Choose a .zip or .archive file. Extract RAR or 7z downloads and ZIP their contents first.")
         }
@@ -41,6 +42,7 @@ public struct ModPackageRouter: Sendable {
             if entry.type == .file { files.append(entry.path) }
         }
         let scan = try ModArchiveScanner().scan(zipURL: url)
+        if files == ["cybermac-body-preset.json"], try BodyModInstaller.recognizes(url) { return .body }
         let tools = files.filter { URL(fileURLWithPath: $0).lastPathComponent == "scc" }
         let loaders = files.filter { URL(fileURLWithPath: $0).lastPathComponent == "inputloader.pl" }
         if scan.redscriptEntries.isEmpty && scan.archiveEntries.isEmpty && scan.inputMappingEntries.isEmpty {
@@ -58,6 +60,7 @@ public struct ModPackageRouter: Sendable {
         }
         if scan.sidecarInstallable { return .scripts }
         if scan.kind == .archiveOnly && scan.dependencyMarkers.frameworkMarkerLabels.isEmpty {
+            if try BodyModInstaller.recognizes(url) { return .body }
             do { return .clothing(records: try ClothingWardrobeManager(home: home).pieces(in: url)) }
             catch CyberMacError.unsupported { /* Other packages use the native archive inspection route. */ }
             return .appearance(variants: scan.archiveEntries)

@@ -11,6 +11,37 @@ final class ModPackageRouterTests: XCTestCase {
     }
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
 
+    func testAuthoredBodyPresetRoutesWithoutClothingOrRuntimeAndShowsBothScopes() throws {
+        let data = try JSONSerialization.data(withJSONObject: ["format": "cybermac-body-preset-v1", "name": "Lethal Curves maximum",
+            "sourceSHA256": String(repeating: "a", count: 64), "bones": ["l_thigh_0_JNT": ["Scale": ["X": 1.2]]]])
+        let package = try zip([("cybermac-body-preset.json", data)])
+        guard case .body = try ModPackageRouter().route(package) else { return XCTFail("Expected body preset route") }
+        XCTAssertEqual(try BodyModInstaller.variants(for: package),
+            ["Lethal Curves maximum (V only)", "Lethal Curves maximum (V + NPCs test)"])
+    }
+
+    func testAuthoredBodyPresetRejectsInvalidScaleAndAdditionalPayload() throws {
+        func data(scale: Double) throws -> Data {
+            try JSONSerialization.data(withJSONObject: ["format": "cybermac-body-preset-v1", "name": "Lethal Curves maximum",
+                "sourceSHA256": String(repeating: "a", count: 64), "bones": ["l_thigh_0_JNT": ["Scale": ["X": scale]]]])
+        }
+        XCTAssertThrowsError(try ModPackageRouter().route(zip([("cybermac-body-preset.json", data(scale: -1))])))
+        let mixed = try zip([("cybermac-body-preset.json", data(scale: 1.2)), ("extra.archive", Data())])
+        XCTAssertThrowsError(try BodyModInstaller.recognizes(mixed))
+    }
+
+    func testGameplayBodyPresetValidatesFirstPersonBonesSeparately() throws {
+        var recipe: [String: Any] = ["format": "cybermac-body-preset-v1", "name": "Gameplay",
+            "sourceSHA256": String(repeating: "a", count: 64), "bones": ["l_SHL_1_JNT": ["Translation": ["X": 0.2405]]],
+            "firstPersonBones": ["l_SHL_1_JNT": ["Translation": ["X": 0.2536]]]]
+        let valid = try zip([("cybermac-body-preset.json", JSONSerialization.data(withJSONObject: recipe))])
+        guard case .body = try ModPackageRouter().route(valid) else { return XCTFail("Expected both rigs to route as a body preset") }
+        recipe["firstPersonBones"] = ["l_SHL_1_JNT": ["Scale": ["X": -1]]]
+        XCTAssertThrowsError(try BodyModInstaller.recognizes(zip([("cybermac-body-preset.json", JSONSerialization.data(withJSONObject: recipe))])))
+        recipe["firstPersonBones"] = [String: Any]()
+        XCTAssertThrowsError(try BodyModInstaller.recognizes(zip([("cybermac-body-preset.json", JSONSerialization.data(withJSONObject: recipe))])))
+    }
+
     func testScriptsAndInputModsShareAutomaticRoute() throws {
         let url = try zip([("r6/scripts/main.reds", Data()), ("r6/input/example_input.xml", Data("<bindings/>".utf8))])
         guard case .scripts = try ModPackageRouter().route(url) else { return XCTFail("Expected script route") }

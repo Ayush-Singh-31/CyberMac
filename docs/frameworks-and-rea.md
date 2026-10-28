@@ -130,3 +130,34 @@ implemented archive and inventory-helper preparation and checks. REA contributed
 static loader evidence, while the working jacket came from native archive
 transplantation and the official redscript compiler. Standalone record loading,
 internal engine tracing and a complete native framework port remain unverified.
+
+## Framework options rechecked — 28 October 2026
+
+The user proposed Nexus ArchiveXL (4198), CET (107) and TweakXL (4197) while
+downloading Lethal Curves. ArchiveXL's and TweakXL's current pages document game
+2.5 compatibility and RED4ext requirements; this alone does not establish Mac
+App Store compatibility. The CET 1.38.0 ZIP already in Resources contains
+`cyber_engine_tweaks.asi` and `version.dll` under `bin/x64`, not a native Mac
+runtime. These downloads are useful references and dependencies for supported
+platforms, rather than a drop-in solution for this installation.
+
+There is newer native work than the 24 October investigation captured:
+[NightCity Console](https://github.com/ysrdevs/nightcity-console-mac) 1.7.1 now
+documents native Steam macOS 2.5.0 support, including ArchiveXL, TweakXL,
+RED4ext and scoped Codeware features with reported player-tested mod flows.
+It still documents Steam-only support. Its
+[native 2.5 notes](https://github.com/ysrdevs/nightcity-console-mac/blob/main/native25/README.md)
+state that the current framework implementation sources/build recipe are
+maintained separately and are not included in that release tree. This is a
+credible runtime alternative to investigate for the App Store build, with
+compatibility work still required; it is not evidence those binaries already
+work here.
+
+Recommended immediate direction: finish the corrected graph test, then use the
+actual Lethal Curves rig as an authored deformation reference and adapt the
+operations it needs. Establish one visible body change before expanding presets.
+If the authored rig still produces no effect, resolve the active player rig and
+resource selection before further shape edits. Evaluate the Mac native runtime
+route for requirements that cannot be expressed by the existing asset adapter.
+The current source/installation tests establish asset preservation and successful
+placement, not a visible body deformation.

@@ -5,6 +5,34 @@ import XCTest
 
 @MainActor
 final class ModInstallerModelTests: XCTestCase {
+    func testCompletedBodyInstallIsReconciledWithoutReinstallingOnLoad() async throws {
+        let service = InstallerFixtureService(), transaction = try fixturePlan()
+        let failure = "macOS Installer closed without completing this package"
+        service.history = [.init(id: UUID(), url: url("framework.zip"), phase: .failed, message: failure,
+            lastFailure: failure, variants: BodyModInstaller.variants, variant: BodyModInstaller.variants[1],
+            transaction: transaction, appearanceID: BodyModInstaller.verificationPrefix + UUID().uuidString)]
+        let model = ModInstallerModel(service: service)
+        await model.load()
+        XCTAssertEqual(model.jobs[0].phase, .installed)
+        XCTAssertEqual(service.history[0].phase, .installed)
+        XCTAssertTrue(model.jobs[0].message.contains("shoulder test installed"))
+        XCTAssertEqual(model.jobs[0].lastFailure, failure)
+        XCTAssertEqual(service.applied, 0)
+        XCTAssertTrue(service.prepared.isEmpty)
+    }
+
+    func testUnverifiedBodyInstallKeepsItsFailureAndRecoveryPlan() async throws {
+        let service = InstallerFixtureService(), transaction = try fixturePlan()
+        service.failVerify = true
+        let failure = "macOS Installer closed without completing this package"
+        service.history = [.init(id: UUID(), url: url("framework.zip"), phase: .failed, message: failure,
+            transaction: transaction, appearanceID: BodyModInstaller.verificationPrefix + UUID().uuidString)]
+        let model = ModInstallerModel(service: service)
+        await model.load()
+        XCTAssertEqual(model.jobs[0].phase, .failed)
+        XCTAssertNotNil(model.jobs[0].transaction)
+        XCTAssertEqual(service.applied, 0)
+    }
     func testCompletedClothingInstallIsReconciledWithoutReinstallingOnLoad() async throws {
         let service = InstallerFixtureService(), transaction = try fixturePlan()
         let failure = "macOS Installer closed without completing this package"

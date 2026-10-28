@@ -127,10 +127,19 @@ public struct ModInstallerPackage: Sendable {
         // after postinstall succeeds. Never use payload visibility as success.
         let history = URL(fileURLWithPath: "/Library/Receipts/InstallHistory.plist")
         var info = stat()
-        guard lstat(history.path, &info) == 0, info.st_uid == 0,
-              (info.st_mode & S_IFMT) == S_IFREG, (info.st_mode & 0o022) == 0,
+        guard lstat(history.path, &info) == 0,
+              Self.trustedHistoryMetadata(owner: info.st_uid, group: info.st_gid, mode: info.st_mode),
               let data = try? Data(contentsOf: history) else { return false }
         return Self.successRecorded(identifier: identifier, history: data)
+    }
+
+    static func trustedHistoryMetadata(owner: uid_t, group: gid_t, mode: mode_t) -> Bool {
+        // macOS maintains this as root:admin 0664 on supported installations.
+        // Both wheel (0) and admin (80) are system administration groups.
+        // Reject world writes and group writes by any other group. A success
+        // record is still followed by verification of every planned game file.
+        owner == 0 && (mode & S_IFMT) == S_IFREG && (mode & 0o002) == 0 &&
+            ((mode & 0o020) == 0 || group == 0 || group == 80)
     }
 
     static func successRecorded(identifier: String, history: Data) -> Bool {

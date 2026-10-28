@@ -52,6 +52,30 @@ now confirms v2 renders Lucy throughout gameplay and preview views, with donor
 images in the inventory slots. V2 uses unique appearance names, a valid default
 and explicit donor icon lookup, and disables an active wardrobe set for the test. See the [Lucy duplicate workflow](docs/appearance-native-workflow.md#lucy-outfit-on-the-four-duplicates--25-october).
 
+The initial **body-rig adapter** recognizes the legacy Unique V 2.31 framework ZIP.
+Drop it into Install mods and choose **Original shape (Unique V)** or
+**Shoulder test (+20%)**. It rebuilds feminine player definitions from the
+installed Mac 2.5 files, preserves their animations and physics, and inserts
+player-only rig resources. Current clothing additions are retained, and later
+clothing installs use the combined archives. The shoulder option is a visible
+test preset; its in-game appearance still needs confirmation. Restore shared
+archive installations in reverse order. Other body meshes, skins, presets,
+masculine V and automatic clothing refits need additional adapters. See the
+[body investigation and implementation](docs/body-mods-roadmap.md).
+
+Lethal Curves Modular Rig Deform Builder 2.1.1 is a Windows application, but its
+authored JSON presets can be imported without running its executable. The local
+`tools/import_lethal_curves.py` extracts the six maximum preset groups for both preview and gameplay rigs into a
+small `cybermac-body-preset.json` ZIP. Import that generated ZIP in CyberMac.
+**V + NPCs test** replaces the shared feminine deformation rig as a diagnostic;
+it temporarily affects feminine NPCs too and should be restored before switching
+to the V-only option. Each native Mac rig receives its own 38 authored bone
+overrides as absolute values. The initial preview-only package has confirmed
+visible inventory/photo-mode changes. The updated gameplay package also covers
+the separate live player rig. The shared maximum gameplay preset is user-confirmed
+working in first person and on a motorcycle on the Mac App Store 2.5 build.
+V-only routing and other presets still need separate gameplay validation.
+
 ## Current support
 
 Supported:
@@ -97,7 +121,7 @@ Unsupported:
 - DLL / ASI
 - REDmod-only mods
 - arbitrary standalone clothing/body conversion and framework-dependent appearance add-ons
-- simultaneous appearance mod stacks or automatic body/refit compatibility
+- arbitrary appearance mod stacks or automatic body/refit compatibility
 
 ## Record a test session
 

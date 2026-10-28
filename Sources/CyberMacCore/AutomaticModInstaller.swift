@@ -53,6 +53,9 @@ public struct AutomaticModInstaller: Sendable {
             return .runtimeReady("\(kind == .redscript ? "redscript" : "Input loader") imported. Continuing any mods waiting for setup.")
         case .clothing:
             return .clothingSelectionRequired
+        case .body:
+            return try BodyModInstaller(home: home).prepare(url, variant: variant,
+                game: gameOverride ?? GameInstallDetector().detect())
         case .scripts:
             return try prepareScripts(url, game: gameOverride)
         case .appearance(let variants):
@@ -144,7 +147,9 @@ public struct AutomaticModInstaller: Sendable {
         try transaction.verify()
         let game = try gameOverride ?? GameInstallDetector().detect(preferredAppPath: transaction.gameApp)
         if let appearanceID {
-            if appearanceID.hasPrefix(ClothingAdditionInstaller.verificationPrefix) {
+            if appearanceID.hasPrefix(BodyModInstaller.verificationPrefix) {
+                try BodyModInstaller(home: home).verify(id: String(appearanceID.dropFirst(BodyModInstaller.verificationPrefix.count)), game: game)
+            } else if appearanceID.hasPrefix(ClothingAdditionInstaller.verificationPrefix) {
                 try ClothingAdditionInstaller(home: home).verify(id: String(appearanceID.dropFirst(ClothingAdditionInstaller.verificationPrefix.count)), game: game)
             } else {
                 guard try AppearancePatchManager(home: home).verify(id: appearanceID, game: game).matched else {
