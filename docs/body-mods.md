@@ -1,65 +1,43 @@
-# Body mods
+# Character customization
 
-CyberMac can prepare and install the Lethal Curves maximum body preset for
-feminine V using the game's native Mac rigs. The gameplay preset has been tested
-in inventory, Photo Mode, first person and while riding a motorcycle on the
-Mac App Store 2.5 build.
+CyberMac supports character appearance changes through body preset packages.
+It prepares presets using the installed game's native resources, with separate
+settings for character previews and gameplay.
 
-## Prepare the preset
-
-Download **Lethal Curves – Modular Rig Deform Builder 2.1.1** from its
-[original mod page](https://www.nexusmods.com/cyberpunk2077/mods/23462).
-
-From the CyberMac repository, run:
-
-```sh
-python3 tools/import_lethal_curves.py "/path/to/Lethal Curves builder.zip" \
-  --out "/path/to/Lethal Curves Maximum Gameplay - CyberMac.zip"
-```
-
-The importer reads the author's maximum presets for arms, chest, buttocks,
-upper thighs, lower thighs and calves. It creates a small data-only ZIP with
-separate preview and gameplay values, without running the Windows builder.
-
-Set up the [conversion tools](building.md#clothing-and-body-conversion-tools)
-before installing the generated preset.
-
-## Install in CyberMac
+## Install a preset
 
 1. Close the game and open **Install mods**.
-2. Import the generated **Lethal Curves Maximum Gameplay** ZIP.
-3. Select **Lethal Curves maximum gameplay (V + NPCs test)**.
+2. Import a body preset ZIP prepared for CyberMac and your game version.
+3. Choose a variant from the options shown in the app.
 4. Click **Install selected variant** and finish macOS Installer.
 5. Launch the game and load your save.
 
-This tested variant changes the shared feminine rig, so it also affects feminine
-NPCs. The **V only** variant is available for testing player-specific routing.
-Restore the current body installation before switching between these scopes.
+Check the result in inventory, Photo Mode and gameplay. Clothing can affect how
+an appearance change is displayed, so use the same outfit when comparing presets.
 
-For a clear comparison, use close-fitting clothes and check the body in
-inventory, first person and on a motorcycle.
+Set up the [conversion tools](building.md#clothing-and-body-conversion-tools)
+before using this workflow.
 
-## Restore
+## Variant scope
+
+Presets can target the player or shared character resources. A shared variant
+can also affect NPC appearances. Review the selected variant's scope before
+installing, and restore the current preset before switching scopes.
+
+## Restore a preset
 
 Select the import and choose **Restore previous files**. If clothing or another
-body installation was added afterward, restore those shared-file changes first.
+preset was installed afterward, restore those shared-file changes first.
 
-CyberMac retains existing clothing changes when preparing a body installation.
-It rebuilds each native Mac rig with its corresponding authored values and
-verifies the generated resources before installation.
+CyberMac retains existing clothing changes when preparing a preset and verifies
+the generated resources before installation.
 
-## Preparation from the command line
+## Prepare from the command line
 
 ```sh
-swift run cybermac body prepare "/path/to/Lethal Curves Maximum Gameplay - CyberMac.zip" \
+swift run cybermac body prepare "/path/to/body-preset.zip" \
   --variant shared --out "/path/to/body-plan.json"
 ```
 
-This command prepares an installation plan without applying it. Use `--variant player` to prepare the player-specific variant.
-
-## Credits
-
-The body preset data comes from Lethal Curves. CyberMac's rig adapter also uses
-the [Unique V Body Shape framework](https://www.nexusmods.com/cyberpunk2077/mods/3725)
-as a reference for player-specific rig routing. Obtain both projects from their
-original authors.
+This command prepares an installation plan without applying it. Use
+`--variant player` to prepare a player-specific plan.

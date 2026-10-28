@@ -13,7 +13,7 @@
   <a href="https://github.com/Ayush-Singh-31/CyberMac/issues">Report an issue</a>
 </p>
 
-CyberMac brings script mods, clothing additions and body shaping into one macOS app.
+CyberMac brings script mods, clothing additions and character customization into one macOS app.
 Import a mod ZIP, choose what to install, and let CyberMac prepare the files,
 keep backups and verify the installation.
 
@@ -23,12 +23,12 @@ Built with Swift and SwiftUI for **Apple Silicon**. Tested with the **Mac App St
 
 - **Script mods**: Import redscript mods and input mappings, with compilation and activation handled in the app.
 - **Clothing additions**: Browse clothing collections, select individual pieces and add them as separate inventory items.
-- **Body shaping**: Apply the Lethal Curves maximum preset across inventory, Photo Mode, first person and motorcycle gameplay.
+- **Character customization**: Install supported appearance presets for inventory, Photo Mode and gameplay.
 - **Install and restore**: Complete installation through macOS Installer, with verified backups and a **Restore previous files** action.
 - **Mod library**: Manage imports, choose variants and review installation history from one place.
 - **Diagnostics**: Check setup, inspect packages and record local test sessions.
 
-See [tested mods](KNOWN_WORKING_MODS.md) for examples.
+See [tested workflows](KNOWN_WORKING_MODS.md) for the current installation workflows.
 
 ## Getting started
 
@@ -92,8 +92,8 @@ swift run cybermac help
 | --- | --- |
 | [Building CyberMac](docs/building.md) | Source builds, conversion tools and local app packaging |
 | [Clothing additions](docs/clothing-additions.md) | Selecting garments, inventory delivery and restoration |
-| [Body mods](docs/body-mods.md) | Preparing and installing the Lethal Curves gameplay preset |
-| [Tested mods](KNOWN_WORKING_MODS.md) | Reported gameplay results and setup notes |
+| [Character customization](docs/body-mods.md) | Importing appearance presets and choosing variants |
+| [Tested workflows](KNOWN_WORKING_MODS.md) | Script, clothing and appearance installation results |
 | [Installation and recovery](SAFETY.md) | Backups, verification, storage and troubleshooting |
 | [Changelog](CHANGELOG.md) | Current development features and fixes |
 

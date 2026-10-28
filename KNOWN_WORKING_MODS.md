@@ -1,32 +1,24 @@
-# Tested mods
+# Tested workflows
 
-These examples record gameplay results reported during CyberMac development.
-The clothing and body entries were tested on Apple Silicon with the Mac App Store
-version of Cyberpunk 2077, version 2.5.
+CyberMac's script, clothing and character customization workflows have been
+tested on Apple Silicon with the Mac App Store version of Cyberpunk 2077.
+The clothing and appearance results below were confirmed on game version 2.5.
 
-## Clothing and body mods
-
-| Mod or collection | Result |
+| Workflow | Observed result |
 | --- | --- |
-| Lucy outfit | Jacket, top, pants and boots available as independent items, working in inventory and gameplay |
-| Jinguji selections | Black/silver corset, black Judy pants and chrome heels working alongside the Lucy outfit |
-| Black and Carol bandeau variants | Separate inventory additions that equip correctly |
-| Lethal Curves maximum gameplay preset | Body changes visible in inventory, Photo Mode, first person and motorcycle gameplay |
+| Script installation | Script mods compile, activate and run through the managed installation flow |
+| Input mappings | Mod input bindings are installed alongside their script changes |
+| Clothing additions | Selected pieces appear as independent inventory items and can be equipped in gameplay |
+| Character customization | Preset changes appear in inventory, Photo Mode, first person and vehicle gameplay |
+| Combined installations | Clothing and appearance changes coexist in the managed game archives |
+| Restoration | Previous game files are restored and verified using retained recovery plans |
 
-The Lethal Curves result uses the **V + NPCs test** variant. See the
-[body mod guide](docs/body-mods.md) for preparation and installation.
-
-## Script mods
-
-| Mod | Setup notes |
-| --- | --- |
-| Reset Attributes Always Available | redscript |
-| RedBurrito | redscript; reactivate after editing the mod's script |
-| InsaneCyberdeck / Zero Trace Netrunner | redscript and input mappings |
-| RipperDeck | redscript |
-
-## Share a result
+## Report compatibility
 
 Open a [mod compatibility report](https://github.com/Ayush-Singh-31/CyberMac/issues/new?template=mod_compatibility.md)
-with the mod link, version, game version, storefront and what you observed
-in gameplay. This helps keep the list useful as mods and the game are updated.
+with the package's original link, mod version, game version and storefront.
+Describe the installation result and what you observed in gameplay.
+
+For setup and installation instructions, see the [README](README.md),
+[clothing guide](docs/clothing-additions.md) and
+[character customization guide](docs/body-mods.md).

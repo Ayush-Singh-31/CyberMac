@@ -9,7 +9,7 @@
 - redscript compilation, activation and input mapping support.
 - Standalone clothing additions with automatic inventory delivery.
 - Native body-rig conversion with separate preview and gameplay presets.
-- Lethal Curves maximum preset support for first person and motorcycle gameplay.
+- Character appearance presets applied across preview and gameplay views.
 - Command-line tools for setup, inspection and preparation.
 
 ### Improved

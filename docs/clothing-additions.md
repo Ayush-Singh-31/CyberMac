@@ -1,6 +1,6 @@
 # Clothing additions
 
-CyberMac turns compatible feminine V clothing replacements into separate
+CyberMac turns supported clothing replacements into separate
 inventory items. Select the pieces you want from a ZIP and equip them alongside
 your existing clothes.
 
@@ -19,16 +19,14 @@ kept when you change a later selection.
 ## Clothing collections
 
 The importer discovers garments from the package's resources and the game's
-clothing templates. The current adapter covers feminine V's outer torso, inner
-torso, legs, feet, head and face slots.
+clothing templates. Supported categories include outer torso, inner torso, legs, feet, head and face.
 
 Saved wardrobe images are shown when available; other pieces display their names
 and a placeholder. Selection and installation work without generating previews.
 Inventory icons use the corresponding donor items.
 
-See [tested mods](../KNOWN_WORKING_MODS.md) for the Lucy outfit, Jinguji
-selections and bandeau variants tested in gameplay. The importer explains when
-a package needs a different framework or body adapter.
+See [tested workflows](../KNOWN_WORKING_MODS.md) for installation results.
+CyberMac shows package requirements and available options during import.
 
 ## Setup
 
