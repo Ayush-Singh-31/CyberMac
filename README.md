@@ -28,8 +28,6 @@ Built with Swift and SwiftUI for **Apple Silicon**. Tested with the **Mac App St
 - **Mod library**: Manage imports, choose variants and review installation history from one place.
 - **Diagnostics**: Check setup, inspect packages and record local test sessions.
 
-See [tested workflows](KNOWN_WORKING_MODS.md) for the current installation workflows.
-
 ## Getting started
 
 ### Requirements
@@ -68,6 +66,11 @@ Clothing additions appear as inventory items ready to equip. Body presets apply
 to V's appearance. Imports are queued, and each entry keeps its installation
 details and recovery options together.
 
+Clothing collections let you select individual pieces and colour variants.
+Appearance presets can target the player or shared character resources; shared
+variants can also affect NPCs. Choose the scope shown in the app and restore the
+current preset before switching scopes.
+
 ### Restore an installation
 
 Select the import and choose **Restore previous files**. When several installs
@@ -75,6 +78,16 @@ share game archives, restore them in reverse installation order.
 
 CyberMac stores downloads, generated files, history and backups in
 `~/Library/Application Support/CyberMac`.
+
+Removing an import from the list only changes the list. Use **Restore previous
+files** to undo its installation, and keep the support folder while you need
+its backups.
+
+### Troubleshooting
+
+Choose **Retry** if macOS Installer was cancelled. For setup checks, use
+`swift run cybermac doctor`. Open **Advanced → Diagnostics** to record a local
+test session and collect details for a bug report.
 
 ### Command-line tools
 
@@ -91,11 +104,8 @@ swift run cybermac help
 | Guide | Contents |
 | --- | --- |
 | [Building CyberMac](docs/building.md) | Source builds, conversion tools and local app packaging |
-| [Clothing additions](docs/clothing-additions.md) | Selecting garments, inventory delivery and restoration |
-| [Character customization](docs/body-mods.md) | Importing appearance presets and choosing variants |
-| [Tested workflows](KNOWN_WORKING_MODS.md) | Script, clothing and appearance installation results |
-| [Installation and recovery](SAFETY.md) | Backups, verification, storage and troubleshooting |
-| [Changelog](CHANGELOG.md) | Current development features and fixes |
+| [Contributing](CONTRIBUTING.md) | Development checks, bug reports and pull requests |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Dependency licenses and implementation credits |
 
 ## Contributing
 
